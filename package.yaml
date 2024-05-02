@@ -1,0 +1,64 @@
+name:        org-data
+version:     0.0.1
+license:     BSD3
+author:      John Wiegley
+maintainer:  johnw@newartisans.com
+description: Org-mode parser and data drier
+
+ghc-options:
+   - -Wall
+   - -Wno-missing-home-modules
+
+dependencies:
+  - aeson
+  - base >= 4.5
+  - bytestring
+  - cassava
+  - comonad
+  - constraints
+  - containers
+  - data-default
+  - free
+  - lens
+  - megaparsec
+  - mtl
+  - pretty
+  - pretty-show
+  - profunctors
+  - row-types
+  - semigroupoids
+  - simple-amount >= 0.2.0
+  - split
+  - text
+  - time
+  - transformers
+  - unordered-containers
+  - vector
+
+library:
+  source-dirs: src
+  exposed-modules:
+    - Foo
+
+tests:
+  org-data-tests:
+    main: Main.hs
+    source-dirs: tests
+    dependencies:
+      - HUnit
+      - hedgehog
+      - here
+      - tasty
+      - tasty-hedgehog
+      - tasty-hunit
+      - org-data
+
+executables:
+  org-data:
+    main: Main.hs
+    source-dirs: bin
+    other-modules:
+      - Options
+    dependencies:
+      - org-data
+      - optparse-applicative
