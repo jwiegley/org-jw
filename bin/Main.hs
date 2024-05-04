@@ -49,6 +49,8 @@ main = do
               "NOTE",
               "LINK"
             ]
+          priorities =
+            ["A", "B", "C"]
       case runReader (runParserT parseOrg path content) OrgConfig {..} of
         Left bundle -> putStr $ errorBundlePretty bundle
         Right org -> do

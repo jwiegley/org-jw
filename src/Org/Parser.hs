@@ -20,7 +20,8 @@ import Text.Megaparsec.Char
 
 data OrgConfig = OrgConfig
   { openKeywords :: [Text],
-    closedKeywords :: [Text]
+    closedKeywords :: [Text],
+    priorities :: [Text]
   }
   deriving (Show)
 
@@ -109,9 +110,14 @@ parseText = do
   traceM "parseText"
   manyTill line (try (void (lookAhead parseHeaderStars)) <|> eof)
 
+data OrgKeyword
+  = OpenKeyword Text
+  | ClosedKeyword Text
+  deriving (Show, Eq, Ord)
+
 data OrgEntry = OrgEntry
   { entryDepth :: Int,
-    entryKeyword :: Maybe Text,
+    entryKeyword :: Maybe OrgKeyword,
     entryPriority :: Maybe Text,
     entryTitle :: Text,
     entryContext :: Maybe Text,
@@ -123,20 +129,25 @@ data OrgEntry = OrgEntry
   }
   deriving (Show)
 
+oneOfList :: (MonadParsec e s m) => [Tokens s] -> m (Tokens s)
+oneOfList = foldr (\x rest -> string x <|> rest) mzero
+
 parseEntry :: Parser OrgEntry
 parseEntry = do
   traceM "parseEntry"
   entryDepth <- parseHeaderStars
   OrgConfig {..} <- ask
   entryKeyword <-
-    optional $
-      ( foldr
-          (\x rest -> string x <|> rest)
-          mzero
-          (openKeywords ++ closedKeywords)
+    optional
+      ( try
+          ( OpenKeyword <$> oneOfList openKeywords
+              <|> ClosedKeyword <$> oneOfList closedKeywords
+          )
+          <* some singleSpace
       )
-        <* some singleSpace
-  entryPriority <- optional parseEntryPriority
+  entryPriority <- optional $ do
+    guard $ isJust entryKeyword
+    parseEntryPriority
   entryContext <- optional parseEntryContext
   (entryTitle, (entryLocation, entryTags)) <-
     first pack
@@ -174,7 +185,8 @@ parseEntry = do
 
 parseEntryPriority :: Parser Text
 parseEntryPriority = do
-  prio <- string "[#" *> (pack . (: []) <$> oneOf ['A' .. 'C']) <* char ']'
+  OrgConfig {..} <- ask
+  prio <- string "[#" *> oneOfList priorities <* char ']'
   skipSome singleSpace
   pure prio
 
@@ -324,11 +336,7 @@ parseOrgTimeSingle = do
   let orgTimeDayEnd = Nothing
   _ <- char ' '
   traceM "parseOrgTimeSingle..1"
-  _dow <-
-    foldr
-      (\x rest -> string x <|> rest)
-      mzero
-      ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+  _dow <- oneOfList ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
   traceM "parseOrgTimeSingle..2"
   orgTimeStart <- optional $ try $ do
     traceM "parseOrgTimeSingle..2a"
