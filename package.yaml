@@ -38,7 +38,7 @@ dependencies:
 library:
   source-dirs: src
   exposed-modules:
-    - Foo
+    - Org.Parser
 
 tests:
   org-data-tests:

@@ -14,14 +14,15 @@
         inherit system overlays;
         inherit (haskellNix) config;
       };
-      flake = pkgs.trade-journal.flake {
+      flake = pkgs.org-data.flake {
       };
       overlays = [ haskellNix.overlay
         (final: prev: {
-          trade-journal =
+          org-data =
             final.haskell-nix.project' {
               src = ./.;
-              compiler-nix-name = "ghc963";
+              supportHpack = true;
+              compiler-nix-name = "ghc982";
               shell.tools = {
                 cabal = {};
                 haskell-language-server = {};
@@ -34,7 +35,7 @@
         })
       ];
     in {
-      packages.default = flake.packages."trade-journal:exe:trade-journal";
+      packages.default = flake.packages."org-data:exe:org-data";
       devShell = flake.devShell // {
         withHoogle = true;
       };

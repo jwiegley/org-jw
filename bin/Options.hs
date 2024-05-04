@@ -18,23 +18,20 @@ copyright = "2020"
 
 tradeJournalSummary :: String
 tradeJournalSummary =
-  "trade-journal "
+  "org-data "
     ++ version
     ++ ", (C) "
     ++ copyright
     ++ " John Wiegley"
 
 data Command
-  = Coinmetro !FilePath
-  | ThinkOrSwim !FilePath
-  | Journal !FilePath
+  = Parse !FilePath
   deriving (Data, Show, Eq, Typeable, Generic)
 
 makeLenses ''Command
 
 data Options = Options
   { _verbose :: !Bool,
-    _totals :: !Bool,
     _command :: !Command
   }
   deriving (Data, Show, Eq, Typeable, Generic)
@@ -49,44 +46,18 @@ tradeJournalOpts =
           <> long "verbose"
           <> help "Report progress verbosely"
       )
-    <*> switch
-      ( long "totals"
-          <> help "Show calculated totals for entries"
-      )
-    <*> hsubparser (coinmetroCommand <> thinkOrSwimCommand <> journalCommand)
+    <*> hsubparser parseCommand
   where
-    coinmetroCommand :: Mod CommandFields Command
-    coinmetroCommand =
+    parseCommand :: Mod CommandFields Command
+    parseCommand =
       OA.command
-        "coinmetro"
-        (info coinmetroOptions (progDesc "Process Coinmetro CSV file"))
+        "parse"
+        (info parseOptions (progDesc "Parse Org-mode file"))
       where
-        coinmetroOptions :: Parser Command
-        coinmetroOptions =
-          Coinmetro
-            <$> strArgument (metavar "FILE" <> help "CSV file to read")
-
-    thinkOrSwimCommand :: Mod CommandFields Command
-    thinkOrSwimCommand =
-      OA.command
-        "thinkorswim"
-        (info thinkOrSwimOptions (progDesc "Process ThinkOrSwim export file"))
-      where
-        thinkOrSwimOptions :: Parser Command
-        thinkOrSwimOptions =
-          ThinkOrSwim
-            <$> strArgument (metavar "FILE" <> help "Export file to read")
-
-    journalCommand :: Mod CommandFields Command
-    journalCommand =
-      OA.command
-        "journal"
-        (info journalOptions (progDesc "Process trade-journal file"))
-      where
-        journalOptions :: Parser Command
-        journalOptions =
-          Journal
-            <$> strArgument (metavar "FILE" <> help "Journal file to read")
+        parseOptions :: Parser Command
+        parseOptions =
+          Parse
+            <$> strArgument (metavar "FILE" <> help "Org-mode file to read")
 
 optionsDefinition :: ParserInfo Options
 optionsDefinition =
