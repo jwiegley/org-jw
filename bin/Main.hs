@@ -12,7 +12,6 @@ import GHC.Generics
 import Options qualified
 import Org.Parser
 import Text.Megaparsec
-import Text.Megaparsec.Debug
 import Text.Show.Pretty
 
 data Config = Config
@@ -33,6 +32,6 @@ main = do
     Options.Parse path -> do
       putStrLn $ "Reading Org-mode file " ++ path
       content <- readFile path
-      case parse (dbg "debug" parseOrg) path (pack content) of
+      case parse parseOrg path (pack content) of
         Left bundle -> putStr $ errorBundlePretty bundle
         Right org -> pPrint org
