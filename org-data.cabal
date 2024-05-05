@@ -15,7 +15,9 @@ build-type:     Simple
 
 library
   exposed-modules:
+      Org.Printer
       Org.Parser
+      Org.Types
   other-modules:
       Paths_org_data
   hs-source-dirs:

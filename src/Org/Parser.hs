@@ -1,57 +1,33 @@
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Org.Parser where
+module Org.Parser (parseOrg) where
 
 import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad
 import Control.Monad.Reader
 import Data.Char (isPrint)
-import Data.Maybe (fromMaybe, isJust, maybeToList)
+import Data.Maybe (isJust, maybeToList)
 import Data.Text (Text, pack)
-import Data.Text qualified as T
 import Data.Time
-import Data.Void
-import Debug.Trace
+import Org.Types
 import Text.Megaparsec hiding (many, some)
 import Text.Megaparsec.Char
 
-data OrgConfig = OrgConfig
-  { openKeywords :: [Text],
-    closedKeywords :: [Text],
-    priorities :: [Text]
-  }
-  deriving (Show)
-
-type Parser = ParsecT Void Text (Reader OrgConfig)
-
-data OrgFile = OrgFile
-  { fileHeader :: OrgHeader,
-    fileEntries :: [OrgEntry]
-  }
-  deriving (Show)
-
-parseOrg :: Parser OrgFile
-parseOrg =
-  OrgFile
-    <$> parseHeader
-    <*> many parseEntry
-
-data Property = Property
-  { propertyName :: Text,
-    propertyValue :: Text
-  }
-  deriving (Show)
+oneOfList :: (MonadParsec e s m) => [Tokens s] -> m (Tokens s)
+oneOfList = foldr (\x rest -> string x <|> rest) mzero
 
 singleSpace :: Parser Char
 singleSpace = char ' '
 
 trailingSpace :: Parser ()
-trailingSpace = do
-  traceM "trailingSpace"
-  skipManyTill singleSpace (void newline)
+trailingSpace = skipManyTill singleSpace (void newline)
+
+line :: Parser Text
+line = pack <$> manyTill (printChar <|> singleSpace) (try trailingSpace)
 
 restOfLine :: Parser Text
 restOfLine = pack <$> someTill (printChar <|> singleSpace) (try trailingSpace)
@@ -59,9 +35,14 @@ restOfLine = pack <$> someTill (printChar <|> singleSpace) (try trailingSpace)
 identifier :: Parser Text
 identifier = pack <$> many (alphaNumChar <|> char '_')
 
+parseOrg :: Parser OrgFile
+parseOrg =
+  OrgFile
+    <$> parseHeader
+    <*> many (parseEntry 1)
+
 parseProperties :: Parser [Property]
 parseProperties = do
-  traceM "parseProperties"
   string ":PROPERTIES:" *> trailingSpace
   props <- some $ try $ do
     propertyName <- between (char ':') (char ':') identifier
@@ -72,16 +53,8 @@ parseProperties = do
   string ":END:" *> trailingSpace
   return props
 
-data OrgHeader = OrgHeader
-  { headerPropertiesDrawer :: [Property],
-    headerFileProperties :: [Property],
-    headerPreamble :: Maybe [Text]
-  }
-  deriving (Show)
-
 parseHeader :: Parser OrgHeader
-parseHeader = do
-  traceM "parseHeader"
+parseHeader =
   OrgHeader
     <$> (join . maybeToList <$> optional (try parseProperties))
     <*> many parseFileProperty
@@ -89,53 +62,23 @@ parseHeader = do
 
 parseFileProperty :: Parser Property
 parseFileProperty = do
-  traceM "parseFileProperty"
   propertyName <- between (string "#+") (char ':') identifier
   skipMany singleSpace
   propertyValue <- restOfLine
   pure Property {..}
 
-line :: Parser Text
-line = pack <$> manyTill (printChar <|> singleSpace) (try trailingSpace)
-
 parseHeaderStars :: Parser Int
 parseHeaderStars = length <$> someTill (char '*') (some singleSpace)
 
-listToMaybeList :: [Text] -> Maybe [Text]
-listToMaybeList [] = Nothing
-listToMaybeList xs = Just xs
-
 parseText :: Parser [Text]
-parseText = do
-  traceM "parseText"
-  manyTill line (try (void (lookAhead parseHeaderStars)) <|> eof)
+parseText = manyTill line (try (void (lookAhead parseHeaderStars)) <|> eof)
 
-data OrgKeyword
-  = OpenKeyword Text
-  | ClosedKeyword Text
-  deriving (Show, Eq, Ord)
-
-data OrgEntry = OrgEntry
-  { entryDepth :: Int,
-    entryKeyword :: Maybe OrgKeyword,
-    entryPriority :: Maybe Text,
-    entryTitle :: Text,
-    entryContext :: Maybe Text,
-    entryLocation :: Maybe Text,
-    entryTags :: [Text],
-    entryStamps :: [OrgStamp],
-    entryProperties :: [Property],
-    entryText :: Maybe [Text]
-  }
-  deriving (Show)
-
-oneOfList :: (MonadParsec e s m) => [Tokens s] -> m (Tokens s)
-oneOfList = foldr (\x rest -> string x <|> rest) mzero
-
-parseEntry :: Parser OrgEntry
-parseEntry = do
-  traceM "parseEntry"
-  entryDepth <- parseHeaderStars
+parseEntry :: Int -> Parser OrgEntry
+parseEntry parseAtDepth = do
+  entryDepth <- try $ do
+    depth <- parseHeaderStars
+    guard $ depth == parseAtDepth
+    pure depth
   OrgConfig {..} <- ask
   entryKeyword <-
     optional
@@ -149,7 +92,7 @@ parseEntry = do
     guard $ isJust entryKeyword
     parseEntryPriority
   entryContext <- optional parseEntryContext
-  (entryTitle, (entryLocation, entryTags)) <-
+  (entryTitle, (entryLocator, entryTags)) <-
     first pack
       <$> manyTill_ (printChar <|> singleSpace) (try parseTitleSuffix)
   entryStamps <-
@@ -163,24 +106,7 @@ parseEntry = do
     when (":PROPERTIES:" `elem` txt) $
       fail $
         "Floating properties drawer in: " ++ show txt
-  traceM $
-    T.unpack $
-      pack (show entryDepth)
-        <> " "
-        <> pack (show entryKeyword)
-        <> " "
-        <> pack (show entryPriority)
-        <> " \""
-        <> entryTitle
-        <> "\" "
-        <> pack (show entryContext)
-        <> " "
-        <> pack (show entryLocation)
-        <> " "
-        <> pack (show entryTags)
-        <> " \""
-        <> T.intercalate " " (map showOrgStamp entryStamps)
-        <> "\""
+  entryItems <- many (parseEntry (succ entryDepth))
   pure OrgEntry {..}
 
 parseEntryPriority :: Parser Text
@@ -200,19 +126,21 @@ parseEntryContext = do
   skipSome singleSpace
   pure context
 
-parseTitleSuffix :: Parser (Maybe Text, [Text])
+parseTitleSuffix :: Parser (Maybe Text, [OrgTag])
 parseTitleSuffix =
   ((Nothing, []) <$ try (skipManyTill singleSpace newline))
     <|> do
       _ <- some singleSpace
-      location <- optional parseLocation
+      location <- optional (try parseLocation)
       tags <-
         optional
-          ( ( case location of
-                Nothing -> pure ()
-                Just _ -> void $ singleSpace *> some singleSpace
-            )
-              *> parseTags
+          ( try
+              ( ( case location of
+                    Nothing -> pure ()
+                    Just _ -> void $ singleSpace *> some singleSpace
+                )
+                  *> parseTags
+              )
           )
       trailingSpace
       pure (location, join (maybeToList tags))
@@ -220,20 +148,25 @@ parseTitleSuffix =
 parseLocation :: Parser Text
 parseLocation = between (char '{') (char '}') identifier
 
-parseTags :: Parser [Text]
-parseTags = filter (not . T.null) <$> (char ':' *> sepBy1 identifier (char ':'))
+parseTags :: Parser [OrgTag]
+parseTags =
+  filter
+    ( \case
+        OrgPlainTag "" -> False
+        _ -> True
+    )
+    <$> (char ':' *> sepBy1 parseTag (char ':'))
+  where
+    parseTag = do
+      name <- identifier
+      OrgConfig {..} <- ask
+      pure $
+        if name `elem` specialTags
+          then OrgSpecialTag name
+          else OrgPlainTag name
 
-data OrgStampKind
-  = ClosedStamp
-  | ScheduledStamp
-  | DeadlineStamp
-  deriving (Show, Eq, Ord, Enum, Bounded)
-
-data OrgStamp = OrgStamp
-  { orgStampKind :: OrgStampKind,
-    orgStampTime :: OrgTime
-  }
-  deriving (Show, Eq, Ord)
+parseOrgStamps :: Parser [OrgStamp]
+parseOrgStamps = sepBy1 parseOrgStamp (char ' ')
 
 parseOrgStamp :: Parser OrgStamp
 parseOrgStamp = do
@@ -256,62 +189,26 @@ parseOrgStamp = do
     _ -> pure ()
   pure OrgStamp {..}
 
-parseOrgStamps :: Parser [OrgStamp]
-parseOrgStamps = sepBy1 parseOrgStamp (char ' ')
-
-showOrgStamp :: OrgStamp -> Text
-showOrgStamp OrgStamp {..} =
-  T.concat
-    [ case orgStampKind of
-        ClosedStamp -> "CLOSED: "
-        ScheduledStamp -> "SCHEDULED: "
-        DeadlineStamp -> "DEADLINE: ",
-      showOrgTime orgStampTime
-    ]
-
-data OrgTimeKind
-  = ActiveTime
-  | InactiveTime
-  deriving (Show, Eq, Ord, Enum, Bounded)
-
-data OrgTime = OrgTime
-  { orgTimeKind :: OrgTimeKind,
-    orgTimeDay :: Day,
-    orgTimeDayEnd :: Maybe Day,
-    orgTimeStart :: Maybe DiffTime,
-    orgTimeEnd :: Maybe DiffTime,
-    orgTimeSuffix :: Maybe OrgTimeSuffix
-  }
-  deriving (Show, Eq, Ord)
-
-data OrgTimeSpan
-  = OrgDaySpan
-  | OrgWeekSpan
-  | OrgMonthSpan
-  deriving (Show, Eq, Ord, Enum, Bounded)
-
-data OrgTimeSuffixKind
-  = OrgTimeRepeat
-  | OrgTimeDottedRepeat
-  | OrgTimeWithin
-  deriving (Show, Eq, Ord, Enum, Bounded)
-
-data OrgTimeSuffix = OrgTimeSuffix
-  { orgSuffixKind :: OrgTimeSuffixKind,
-    orgSuffixNum :: Int,
-    orgSuffixSpan :: OrgTimeSpan
-  }
-  deriving (Show, Eq, Ord)
-
-orgTimeStartToUTCTime :: OrgTime -> UTCTime
-orgTimeStartToUTCTime OrgTime {..} =
-  UTCTime orgTimeDay (fromMaybe (secondsToDiffTime 0) orgTimeStart)
-
-orgTimeEndToUTCTime :: OrgTime -> Maybe UTCTime
-orgTimeEndToUTCTime OrgTime {..} =
-  UTCTime
-    <$> orgTimeDayEnd
-    <*> Just (fromMaybe (secondsToDiffTime 0) orgTimeEnd)
+{-
+parseOrgTime :: Parser OrgTime
+parseOrgTime = do
+  start <- parseOrgTimeSingle
+  mend <- optional $ string "--" *> parseOrgTimeSingle
+  case mend of
+    Nothing -> pure start
+    Just ts@OrgTime {..} -> do
+      forM_ orgTimeDayEnd $ \_ ->
+        fail $ "Invalid org time: " ++ show ts
+      forM_ orgTimeEnd $ \_ ->
+        fail $ "Invalid org time: " ++ show ts
+      forM_ orgTimeSuffix $ \_ ->
+        fail $ "Invalid org time: " ++ show ts
+      pure
+        start
+          { orgTimeDayEnd = Just orgTimeDay,
+            orgTimeEnd = orgTimeStart
+          }
+-}
 
 parseOrgTimeSingle :: Parser OrgTime
 parseOrgTimeSingle = do
@@ -335,21 +232,13 @@ parseOrgTimeSingle = do
           ++ day
   let orgTimeDayEnd = Nothing
   _ <- char ' '
-  traceM "parseOrgTimeSingle..1"
   _dow <- oneOfList ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-  traceM "parseOrgTimeSingle..2"
   orgTimeStart <- optional $ try $ do
-    traceM "parseOrgTimeSingle..2a"
     _ <- char ' '
-    traceM "parseOrgTimeSingle..2b"
     hour <- count 2 numberChar
-    traceM "parseOrgTimeSingle..2c"
     _ <- char ':'
-    traceM "parseOrgTimeSingle..2d"
     minute <- count 2 numberChar
-    traceM "parseOrgTimeSingle..2e"
     pure $ secondsToDiffTime (read hour * 60 + read minute)
-  traceM "parseOrgTimeSingle..3"
   orgTimeEnd <- optional $ do
     guard $ isJust orgTimeStart
     _ <- char '-'
@@ -357,7 +246,6 @@ parseOrgTimeSingle = do
     _ <- char ':'
     minute <- count 2 numberChar
     pure $ secondsToDiffTime (read hour * 60 + read minute)
-  traceM "parseOrgTimeSingle..4"
   orgTimeSuffix <- optional $ do
     _ <- char ' '
     repeatDotted <- isJust <$> optional (char '.')
@@ -374,93 +262,7 @@ parseOrgTimeSingle = do
         <|> OrgDaySpan <$ char 'd'
         <|> OrgWeekSpan <$ char 'w'
     pure OrgTimeSuffix {..}
-  traceM "parseOrgTimeSingle..5"
   _ <- case orgTimeKind of
     ActiveTime -> char '>'
     InactiveTime -> char ']'
-  traceM "parseOrgTimeSingle..6"
   pure OrgTime {..}
-
-parseOrgTime :: Parser OrgTime
-parseOrgTime = do
-  start <- parseOrgTimeSingle
-  mend <- optional $ string "--" *> parseOrgTimeSingle
-  case mend of
-    Nothing -> pure start
-    Just ts@OrgTime {..} -> do
-      forM_ orgTimeDayEnd $ \_ ->
-        fail $ "Invalid org time: " ++ show ts
-      forM_ orgTimeEnd $ \_ ->
-        fail $ "Invalid org time: " ++ show ts
-      forM_ orgTimeSuffix $ \_ ->
-        fail $ "Invalid org time: " ++ show ts
-      pure
-        start
-          { orgTimeDayEnd = Just orgTimeDay,
-            orgTimeEnd = orgTimeStart
-          }
-
-showOrgTimeSingle :: OrgTime -> Text
-showOrgTimeSingle OrgTime {..} =
-  T.concat $
-    [ beg,
-      pack (formatTime defaultTimeLocale "%Y-%m-%d %a" orgTimeDay)
-    ]
-      ++ case orgTimeStart of
-        Nothing -> []
-        Just start ->
-          [ pack
-              ( formatTime
-                  defaultTimeLocale
-                  " %H:%M"
-                  (UTCTime orgTimeDay start)
-              )
-          ]
-      ++ case orgTimeEnd of
-        Nothing -> []
-        Just finish ->
-          [ pack
-              ( formatTime
-                  defaultTimeLocale
-                  "-%H:%M"
-                  (UTCTime orgTimeDay finish)
-              )
-          ]
-      ++ case orgTimeSuffix of
-        Nothing -> []
-        Just OrgTimeSuffix {..} ->
-          [ " ",
-            case orgSuffixKind of
-              OrgTimeRepeat -> "+"
-              OrgTimeDottedRepeat -> ".+"
-              OrgTimeWithin -> "-",
-            pack (show orgSuffixNum),
-            case orgSuffixSpan of
-              OrgDaySpan -> "d"
-              OrgWeekSpan -> "w"
-              OrgMonthSpan -> "m"
-          ]
-      ++ [ end
-         ]
-  where
-    (beg, end) = case orgTimeKind of
-      ActiveTime -> ("<", ">")
-      InactiveTime -> ("[", "]")
-
-showOrgTime :: OrgTime -> Text
-showOrgTime ts =
-  T.concat $
-    [ showOrgTimeSingle ts
-    ]
-      ++ case orgTimeDayEnd ts of
-        Nothing -> []
-        Just end ->
-          [ "--",
-            showOrgTimeSingle
-              ts
-                { orgTimeDay = end,
-                  orgTimeDayEnd = Nothing,
-                  orgTimeStart = orgTimeEnd ts,
-                  orgTimeEnd = Nothing
-                }
-          ]

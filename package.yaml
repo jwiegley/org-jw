@@ -38,7 +38,9 @@ dependencies:
 library:
   source-dirs: src
   exposed-modules:
+    - Org.Printer
     - Org.Parser
+    - Org.Types
 
 tests:
   org-data-tests:
