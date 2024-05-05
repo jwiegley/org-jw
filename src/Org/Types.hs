@@ -17,7 +17,9 @@ data OrgConfig = OrgConfig
   { openKeywords :: [Text],
     closedKeywords :: [Text],
     priorities :: [Text],
-    specialTags :: [Text]
+    specialTags :: [Text],
+    propertyColumn :: Int,
+    tagsColumn :: Int
   }
   deriving (Show)
 

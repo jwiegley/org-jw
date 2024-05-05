@@ -27,19 +27,16 @@ trailingSpace :: Parser ()
 trailingSpace = skipManyTill singleSpace (void newline)
 
 line :: Parser Text
-line = pack <$> manyTill (printChar <|> singleSpace) (try trailingSpace)
+line = pack <$> manyTill (printChar <|> singleSpace) newline
 
 restOfLine :: Parser Text
-restOfLine = pack <$> someTill (printChar <|> singleSpace) (try trailingSpace)
+restOfLine = pack <$> someTill (printChar <|> singleSpace) newline
 
 identifier :: Parser Text
 identifier = pack <$> many (alphaNumChar <|> char '_')
 
 parseOrg :: Parser OrgFile
-parseOrg =
-  OrgFile
-    <$> parseHeader
-    <*> many (parseEntry 1)
+parseOrg = OrgFile <$> parseHeader <*> many (parseEntry 1)
 
 parseProperties :: Parser [Property]
 parseProperties = do

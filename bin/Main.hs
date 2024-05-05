@@ -37,7 +37,6 @@ main = do
   opts <- Options.getOptions
   case opts ^. Options.command of
     Options.Parse path -> do
-      putStrLn $ "Reading Org-mode file " ++ path
       content <- T.readFile path
       case runReader (runParserT parseOrg path content) OrgConfig {..} of
         Left bundle -> putStr $ errorBundlePretty bundle
@@ -92,19 +91,16 @@ main = do
                 (map entryTitle (fileEntries org))
             )
     Options.Print path -> do
-      putStrLn $ "Reading Org-mode file " ++ path
       content <- T.readFile path
       case runReader (runParserT parseOrg path content) OrgConfig {..} of
         Left bundle -> putStr $ errorBundlePretty bundle
-        Right org -> pPrint org
+        Right org -> mapM_ T.putStrLn (showOrgFile propertyColumn tagsColumn org)
     Options.Dump path -> do
-      putStrLn $ "Reading Org-mode file " ++ path
       content <- T.readFile path
       case runReader (runParserT parseOrg path content) OrgConfig {..} of
         Left bundle -> putStr $ errorBundlePretty bundle
         Right org -> pPrint org
     Options.Outline path -> do
-      putStrLn $ "Reading Org-mode file " ++ path
       content <- T.readFile path
       case runReader (runParserT parseOrg path content) OrgConfig {..} of
         Left bundle -> putStr $ errorBundlePretty bundle
@@ -129,3 +125,5 @@ main = do
       ["A", "B", "C"]
     specialTags =
       ["ARCHIVE", "FILE", "URL"]
+    propertyColumn = 11
+    tagsColumn = 97

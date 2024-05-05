@@ -5,7 +5,7 @@
 
 module Org.Printer where
 
-import Data.Maybe (maybeToList)
+import Data.Maybe (fromMaybe, maybeToList)
 import Data.Text (Text, pack)
 import Data.Text qualified as T
 import Data.Time
@@ -86,20 +86,110 @@ showOrgTime ts =
           ActiveTime -> ("<", ">")
           InactiveTime -> ("[", "]")
 
+showOrgEntry :: Int -> Int -> OrgEntry -> [Text]
+showOrgEntry propertyColumn tagsColumn OrgEntry {..} =
+  [title]
+    ++ timestamps
+    ++ properties
+    ++ body
+    ++ concatMap (showOrgEntry propertyColumn tagsColumn) entryItems
+  where
+    title
+      | T.null suffix = prefix
+      | otherwise = prefix <> spacer <> suffix
+      where
+        spacer
+          | width < 2 = "  "
+          | otherwise = T.replicate width " "
+          where
+            width = tagsColumn - T.length prefix - T.length suffix
+        prefix =
+          T.concat $
+            [T.replicate entryDepth "*"]
+              ++ [" "]
+              ++ [ case kw of
+                     OpenKeyword n -> n <> " "
+                     ClosedKeyword n -> n <> " "
+                   | kw <- maybeToList entryKeyword
+                 ]
+              ++ [ "(" <> c <> ") "
+                   | c <- maybeToList entryContext
+                 ]
+              ++ [entryTitle]
+              ++ [ " {" <> c <> "}"
+                   | c <- maybeToList entryLocator
+                 ]
+        suffix
+          | not (null entryTags) =
+              T.concat $
+                [":"]
+                  ++ [ case tag of
+                         OrgSpecialTag t -> t <> ":"
+                         OrgPlainTag t -> t <> ":"
+                       | tag <- entryTags
+                     ]
+          | otherwise = ""
+    timestamps
+      | null entryStamps = []
+      | otherwise = [T.intercalate " " (map showOrgStamp entryStamps)]
+    properties
+      | null entryProperties = []
+      | otherwise = showProperties propertyColumn True entryProperties
+    body = fromMaybe [] entryText
+
+showOrgFile :: Int -> Int -> OrgFile -> [Text]
+showOrgFile propertyColumn tagsColumn OrgFile {..} =
+  showOrgHeader propertyColumn fileHeader
+    ++ concatMap (showOrgEntry propertyColumn tagsColumn) fileEntries
+
+showOrgHeader :: Int -> OrgHeader -> [Text]
+showOrgHeader propertyColumn OrgHeader {..} =
+  propertiesDrawer
+    ++ fileProperties
+    ++ preamble
+  where
+    propertiesDrawer
+      | null headerPropertiesDrawer = []
+      | otherwise = showProperties propertyColumn True headerPropertiesDrawer
+    fileProperties
+      | null headerFileProperties = []
+      | otherwise = showFileProperties headerFileProperties
+    preamble = fromMaybe [] headerPreamble
+
+showProperties :: Int -> Bool -> [Property] -> [Text]
+showProperties propertyColumn closed ps =
+  [":PROPERTIES:"]
+    ++ map propLine ps
+    ++ [":END:" | closed]
+  where
+    propLine Property {..}
+      | T.null suffix = prefix
+      | otherwise = prefix <> spacer <> suffix
+      where
+        spacer
+          | width < 1 = " "
+          | otherwise = T.replicate width " "
+          where
+            width = propertyColumn - T.length prefix
+        prefix = T.concat [":" <> propertyName <> ":"]
+        suffix = propertyValue
+
+showFileProperties :: [Property] -> [Text]
+showFileProperties ps =
+  [ "#+" <> propertyName <> ": " <> propertyValue
+    | Property {..} <- ps
+  ]
+
 summarizeEntry :: OrgEntry -> [Text]
 summarizeEntry OrgEntry {..} =
-  [ T.replicate entryDepth "*" <> " " <> entryTitle,
-    ":PROPERTIES:"
-  ]
+  [T.replicate entryDepth "*" <> " " <> entryTitle]
+    ++ showProperties 0 False entryProperties
     ++ [":KEYWORD: " <> T.pack (show x) | x <- maybeToList entryKeyword]
     ++ [":PRIORITY: " <> x | x <- maybeToList entryPriority]
     ++ [":CONTEXT: " <> x | x <- maybeToList entryContext]
     ++ [":LOCATOR: " <> x | x <- maybeToList entryLocator]
     ++ [ ":TEXT_LENGTH: " <> T.pack (show (length xs))
          | xs <- maybeToList entryText
-       ]
-    ++ [ ":" <> propertyName <> ": " <> propertyValue
-         | Property {..} <- entryProperties
        ]
     ++ case entryTags of
       [] -> []
