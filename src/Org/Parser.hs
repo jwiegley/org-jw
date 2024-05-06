@@ -82,6 +82,7 @@ parseOrgKeyword = do
 
 parseEntry :: Int -> Parser OrgEntry
 parseEntry parseAtDepth = do
+  entryPos <- getSourcePos
   entryDepth <- try $ do
     depth <- parseHeaderStars
     guard $ depth == parseAtDepth

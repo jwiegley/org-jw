@@ -62,7 +62,8 @@ data OrgLogEntry
   deriving (Show, Eq, Ord)
 
 data OrgEntry = OrgEntry
-  { entryDepth :: Int,
+  { entryPos :: SourcePos,
+    entryDepth :: Int,
     entryKeyword :: Maybe OrgKeyword,
     entryPriority :: Maybe Text,
     entryTitle :: Text,
