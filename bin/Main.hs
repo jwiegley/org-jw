@@ -90,23 +90,22 @@ main = do
                 mempty
                 (map entryTitle (fileEntries org))
             )
-    Options.Print path -> do
-      content <- T.readFile path
-      case runReader (runParserT parseOrg path content) OrgConfig {..} of
-        Left bundle -> putStr $ errorBundlePretty bundle
-        Right org -> mapM_ T.putStrLn (showOrgFile propertyColumn tagsColumn org)
-    Options.Dump path -> do
-      content <- T.readFile path
-      case runReader (runParserT parseOrg path content) OrgConfig {..} of
-        Left bundle -> putStr $ errorBundlePretty bundle
-        Right org -> pPrint org
-    Options.Outline path -> do
-      content <- T.readFile path
-      case runReader (runParserT parseOrg path content) OrgConfig {..} of
-        Left bundle -> putStr $ errorBundlePretty bundle
-        Right org ->
-          mapM_ T.putStrLn $ concatMap summarizeEntry (fileEntries org)
+    Options.Print path ->
+      processFile path $
+        mapM_ T.putStrLn . showOrgFile propertyColumn tagsColumn
+    Options.Dump path ->
+      processFile path pPrint
+    Options.Outline path ->
+      processFile path $
+        mapM_ T.putStrLn
+          . concatMap (summarizeEntry propertyColumn)
+          . fileEntries
   where
+    processFile path f = do
+      content <- T.readFile path
+      case runReader (runParserT parseOrg path content) OrgConfig {..} of
+        Left bundle -> putStr $ errorBundlePretty bundle
+        Right org -> f org
     openKeywords =
       [ "TODO",
         "CATEGORY",

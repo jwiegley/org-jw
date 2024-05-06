@@ -153,7 +153,7 @@ showOrgEntry propertyColumn tagsColumn OrgEntry {..} =
       | otherwise = [T.intercalate " " (map showOrgStamp entryStamps)]
     properties
       | null entryProperties = []
-      | otherwise = showProperties propertyColumn True entryProperties
+      | otherwise = showProperties propertyColumn entryProperties
     logEntries = concatMap showOrgLogEntry entryLogEntries
     body = entryText
 
@@ -170,17 +170,17 @@ showOrgHeader propertyColumn OrgHeader {..} =
   where
     propertiesDrawer
       | null headerPropertiesDrawer = []
-      | otherwise = showProperties propertyColumn True headerPropertiesDrawer
+      | otherwise = showProperties propertyColumn headerPropertiesDrawer
     fileProperties
       | null headerFileProperties = []
       | otherwise = showFileProperties headerFileProperties
     preamble = headerPreamble
 
-showProperties :: Int -> Bool -> [Property] -> [Text]
-showProperties propertyColumn closed ps =
+showProperties :: Int -> [Property] -> [Text]
+showProperties propertyColumn ps =
   [":PROPERTIES:"]
     ++ map propLine ps
-    ++ [":END:" | closed]
+    ++ [":END:"]
   where
     propLine Property {..}
       | T.null suffix = prefix
@@ -200,40 +200,48 @@ showFileProperties ps =
     | Property {..} <- ps
   ]
 
-summarizeEntry :: OrgEntry -> [Text]
-summarizeEntry OrgEntry {..} =
+summarizeEntry :: Int -> OrgEntry -> [Text]
+summarizeEntry propertyColumn OrgEntry {..} =
   [T.replicate entryDepth "*" <> " " <> entryTitle]
-    ++ showProperties 0 False entryProperties
-    ++ [":KEYWORD: " <> T.pack (show x) | x <- maybeToList entryKeyword]
-    ++ [":PRIORITY: " <> x | x <- maybeToList entryPriority]
-    ++ [":CONTEXT: " <> x | x <- maybeToList entryContext]
-    ++ [":LOCATOR: " <> x | x <- maybeToList entryLocator]
-    ++ [ ":LOG_LEN: " <> T.pack (show (length entryLogEntries))
-         | not (null entryLogEntries)
-       ]
-    ++ [ ":BODY_LEN: " <> T.pack (show (length entryText))
-         | not (null entryText)
-       ]
-    ++ case entryTags of
-      [] -> []
-      _ ->
-        [ ":TAGS: :"
-            <> T.concat
-              [ case tag of
-                  OrgSpecialTag t -> t <> ":"
-                  OrgPlainTag t -> t <> ":"
-                | tag <- entryTags
+    ++ showProperties
+      propertyColumn
+      ( entryProperties
+          ++ [ Property "KEYWORD" (T.pack (show x))
+               | x <- maybeToList entryKeyword
+             ]
+          ++ [Property "PRIORITY" x | x <- maybeToList entryPriority]
+          ++ [Property "CONTEXT" x | x <- maybeToList entryContext]
+          ++ [Property "LOCATOR" x | x <- maybeToList entryLocator]
+          ++ [ Property "LOG_LEN" (T.pack (show (length entryLogEntries)))
+               | not (null entryLogEntries)
+             ]
+          ++ [ Property "BODY_LEN" (T.pack (show (length entryText)))
+               | not (null entryText)
+             ]
+          ++ case entryTags of
+            [] -> []
+            _ ->
+              [ Property
+                  "TAGS"
+                  ( T.concat $
+                      [":"]
+                        ++ [ case tag of
+                               OrgSpecialTag t -> t <> ":"
+                               OrgPlainTag t -> t <> ":"
+                             | tag <- entryTags
+                           ]
+                  )
               ]
-        ]
-    ++ map
-      ( \OrgStamp {..} ->
-          ( case orgStampKind of
-              ClosedStamp -> ":CLOSED: "
-              ScheduledStamp -> ":SCHEDULED: "
-              DeadlineStamp -> ":DEADLINE: "
-          )
-            <> showOrgTime orgStampTime
+          ++ map
+            ( \OrgStamp {..} ->
+                Property
+                  ( case orgStampKind of
+                      ClosedStamp -> "CLOSED"
+                      ScheduledStamp -> "SCHEDULED"
+                      DeadlineStamp -> "DEADLINE"
+                  )
+                  (showOrgTime orgStampTime)
+            )
+            entryStamps
       )
-      entryStamps
-    ++ [":END:"]
-    ++ concatMap summarizeEntry entryItems
+    ++ concatMap (summarizeEntry propertyColumn) entryItems
