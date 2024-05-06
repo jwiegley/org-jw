@@ -41,6 +41,9 @@ library:
     - Org.Printer
     - Org.Parser
     - Org.Types
+    - Org.Lint
+    - Org.Normalize
+    - Org.Data
 
 tests:
   org-data-tests:

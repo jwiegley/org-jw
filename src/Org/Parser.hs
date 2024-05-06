@@ -1,9 +1,11 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeOperators #-}
 
-module Org.Parser (parseOrg) where
+module Org.Parser (parseOrg, parseOrgTime, parseOrgTimeSingle) where
 
 import Control.Applicative
 import Control.Arrow (first)
@@ -11,6 +13,7 @@ import Control.Monad
 import Control.Monad.Reader
 import Data.Char (isPrint, isSpace)
 import Data.Maybe (isJust, maybeToList)
+import Data.String
 import Data.Text (Text, pack)
 import Data.Text qualified as T
 import Data.Time
@@ -186,7 +189,6 @@ parseOrgStamp = do
     _ -> pure ()
   pure OrgStamp {..}
 
-{-
 parseOrgTime :: Parser OrgTime
 parseOrgTime = do
   start <- parseOrgTimeSingle
@@ -205,9 +207,8 @@ parseOrgTime = do
           { orgTimeDayEnd = Just orgTimeDay,
             orgTimeEnd = orgTimeStart
           }
--}
 
-parseOrgTimeSingle :: Parser OrgTime
+parseOrgTimeSingle :: (MonadParsec e s m, Token s ~ Char, IsString (Tokens s), MonadFail m) => m OrgTime
 parseOrgTimeSingle = do
   orgTimeKind <-
     ActiveTime <$ char '<'
@@ -276,15 +277,17 @@ parseLogEntry = parseStateChange <|> parseNote
       _ <- char '"'
       skipSome singleSpace
       logTime <- parseOrgTimeSingle
-      skipSome singleSpace
-      logNote <- [] <$ newline <|> string "\\\\" *> newline *> parseNoteText
+      logNote <-
+        [] <$ try newline
+          <|> skipSome singleSpace *> string "\\\\" *> newline *> parseNoteText
       pure $ OrgLogStateChange fromKeyword toKeyword logTime logNote
 
     parseNote = do
       _ <- string "- Note take on "
       logTime <- parseOrgTimeSingle
-      skipSome singleSpace
-      logNote <- [] <$ newline <|> string "\\\\" *> newline *> parseNoteText
+      logNote <-
+        [] <$ newline
+          <|> skipSome singleSpace *> string "\\\\" *> newline *> parseNoteText
       pure $ OrgLogNote logTime logNote
 
 parseNoteText :: Parser [Text]

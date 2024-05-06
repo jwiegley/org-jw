@@ -18,6 +18,9 @@ library
       Org.Printer
       Org.Parser
       Org.Types
+      Org.Lint
+      Org.Normalize
+      Org.Data
   other-modules:
       Paths_org_data
   hs-source-dirs:

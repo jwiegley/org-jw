@@ -208,8 +208,12 @@ summarizeEntry OrgEntry {..} =
     ++ [":PRIORITY: " <> x | x <- maybeToList entryPriority]
     ++ [":CONTEXT: " <> x | x <- maybeToList entryContext]
     ++ [":LOCATOR: " <> x | x <- maybeToList entryLocator]
-    ++ [":LOG_LEN: " <> T.pack (show (length entryLogEntries))]
-    ++ [":BODY_LEN: " <> T.pack (show (length entryText))]
+    ++ [ ":LOG_LEN: " <> T.pack (show (length entryLogEntries))
+         | not (null entryLogEntries)
+       ]
+    ++ [ ":BODY_LEN: " <> T.pack (show (length entryText))
+         | not (null entryText)
+       ]
     ++ case entryTags of
       [] -> []
       _ ->

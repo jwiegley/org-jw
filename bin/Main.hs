@@ -113,7 +113,10 @@ main = do
         "PROJECT",
         "STARTED",
         "WAITING",
-        "DEFERRED"
+        "DEFERRED",
+        "SOMEDAY",
+        "DELEGATED",
+        "APPT"
       ]
     closedKeywords =
       [ "DONE",
