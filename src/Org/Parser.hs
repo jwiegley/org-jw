@@ -9,9 +9,10 @@ import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad
 import Control.Monad.Reader
-import Data.Char (isPrint)
+import Data.Char (isPrint, isSpace)
 import Data.Maybe (isJust, maybeToList)
 import Data.Text (Text, pack)
+import Data.Text qualified as T
 import Data.Time
 import Org.Types
 import Text.Megaparsec hiding (many, some)
@@ -55,7 +56,7 @@ parseHeader =
   OrgHeader
     <$> (join . maybeToList <$> optional (try parseProperties))
     <*> many parseFileProperty
-    <*> (listToMaybeList <$> parseText)
+    <*> parseEntryText
 
 parseFileProperty :: Parser Property
 parseFileProperty = do
@@ -67,8 +68,14 @@ parseFileProperty = do
 parseHeaderStars :: Parser Int
 parseHeaderStars = length <$> someTill (char '*') (some singleSpace)
 
-parseText :: Parser [Text]
-parseText = manyTill line (try (void (lookAhead parseHeaderStars)) <|> eof)
+parseEntryText :: Parser [Text]
+parseEntryText = manyTill line (try (void (lookAhead parseHeaderStars)) <|> eof)
+
+parseOrgKeyword :: Parser OrgKeyword
+parseOrgKeyword = do
+  OrgConfig {..} <- ask
+  OpenKeyword <$> oneOfList openKeywords
+    <|> ClosedKeyword <$> oneOfList closedKeywords
 
 parseEntry :: Int -> Parser OrgEntry
 parseEntry parseAtDepth = do
@@ -76,15 +83,7 @@ parseEntry parseAtDepth = do
     depth <- parseHeaderStars
     guard $ depth == parseAtDepth
     pure depth
-  OrgConfig {..} <- ask
-  entryKeyword <-
-    optional
-      ( try
-          ( OpenKeyword <$> oneOfList openKeywords
-              <|> ClosedKeyword <$> oneOfList closedKeywords
-          )
-          <* some singleSpace
-      )
+  entryKeyword <- optional (try parseOrgKeyword <* some singleSpace)
   entryPriority <- optional $ do
     guard $ isJust entryKeyword
     parseEntryPriority
@@ -98,9 +97,10 @@ parseEntry parseAtDepth = do
   entryProperties <-
     join . maybeToList
       <$> try (optional parseProperties)
-  entryText <- listToMaybeList <$> parseText
+  entryLogEntries <- many parseLogEntry
+  entryText <- parseEntryText
   forM_ entryText $ \txt ->
-    when (":PROPERTIES:" `elem` txt) $
+    when (":PROPERTIES:" `T.isInfixOf` txt) $
       fail $
         "Floating properties drawer in: " ++ show txt
   entryItems <- many (parseEntry (succ entryDepth))
@@ -263,3 +263,40 @@ parseOrgTimeSingle = do
     ActiveTime -> char '>'
     InactiveTime -> char ']'
   pure OrgTime {..}
+
+parseLogEntry :: Parser OrgLogEntry
+parseLogEntry = parseStateChange <|> parseNote
+  where
+    parseStateChange = do
+      _ <- string "- State \""
+      fromKeyword <- parseOrgKeyword
+      _ <- char '"'
+      skipManyTill singleSpace (void (string "from \""))
+      toKeyword <- parseOrgKeyword
+      _ <- char '"'
+      skipSome singleSpace
+      logTime <- parseOrgTimeSingle
+      skipSome singleSpace
+      logNote <- [] <$ newline <|> string "\\\\" *> newline *> parseNoteText
+      pure $ OrgLogStateChange fromKeyword toKeyword logTime logNote
+
+    parseNote = do
+      _ <- string "- Note take on "
+      logTime <- parseOrgTimeSingle
+      skipSome singleSpace
+      logNote <- [] <$ newline <|> string "\\\\" *> newline *> parseNoteText
+      pure $ OrgLogNote logTime logNote
+
+parseNoteText :: Parser [Text]
+parseNoteText = do
+  xs <-
+    manyTill
+      line
+      ( try (void (lookAhead (satisfy (not . isSpace))))
+          <|> eof
+      )
+  let leaders = filter (\x -> x /= "  " && x /= "") $ map (T.take 2) xs
+  unless (null leaders) $
+    fail $
+      "Unexpected log entry: " ++ show xs
+  pure $ map (T.drop 2) xs

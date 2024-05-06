@@ -42,7 +42,7 @@ data Property = Property
 data OrgHeader = OrgHeader
   { headerPropertiesDrawer :: [Property],
     headerFileProperties :: [Property],
-    headerPreamble :: Maybe [Text]
+    headerPreamble :: [Text]
   }
   deriving (Show)
 
@@ -56,6 +56,11 @@ data OrgTag
   | OrgPlainTag Text
   deriving (Show, Eq, Ord)
 
+data OrgLogEntry
+  = OrgLogStateChange OrgKeyword OrgKeyword OrgTime [Text]
+  | OrgLogNote OrgTime [Text]
+  deriving (Show, Eq, Ord)
+
 data OrgEntry = OrgEntry
   { entryDepth :: Int,
     entryKeyword :: Maybe OrgKeyword,
@@ -66,7 +71,8 @@ data OrgEntry = OrgEntry
     entryTags :: [OrgTag],
     entryStamps :: [OrgStamp],
     entryProperties :: [Property],
-    entryText :: Maybe [Text],
+    entryLogEntries :: [OrgLogEntry],
+    entryText :: [Text],
     entryItems :: [OrgEntry]
   }
   deriving (Show)
@@ -116,10 +122,6 @@ data OrgTimeSuffix = OrgTimeSuffix
     orgSuffixSpan :: OrgTimeSpan
   }
   deriving (Show, Eq, Ord)
-
-listToMaybeList :: [Text] -> Maybe [Text]
-listToMaybeList [] = Nothing
-listToMaybeList xs = Just xs
 
 orgTimeStartToUTCTime :: OrgTime -> UTCTime
 orgTimeStartToUTCTime OrgTime {..} =

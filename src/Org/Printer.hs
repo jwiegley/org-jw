@@ -5,7 +5,7 @@
 
 module Org.Printer where
 
-import Data.Maybe (fromMaybe, maybeToList)
+import Data.Maybe (maybeToList)
 import Data.Text (Text, pack)
 import Data.Text qualified as T
 import Data.Time
@@ -86,11 +86,34 @@ showOrgTime ts =
           ActiveTime -> ("<", ">")
           InactiveTime -> ("[", "]")
 
+showOrgLogEntry :: OrgLogEntry -> [Text]
+showOrgLogEntry (OrgLogStateChange from to time text) =
+  [ "- State \""
+      <> showOrgKeyword from
+      <> "\" from \""
+      <> showOrgKeyword to
+      <> "\" "
+      <> showOrgTime time
+      <> if null text then "" else " \\\\"
+  ]
+    ++ map ("  " <>) text
+showOrgLogEntry (OrgLogNote time text) =
+  [ "- Note taken on "
+      <> showOrgTime time
+      <> if null text then "" else " \\\\"
+  ]
+    ++ map ("  " <>) text
+
+showOrgKeyword :: OrgKeyword -> Text
+showOrgKeyword (OpenKeyword n) = n
+showOrgKeyword (ClosedKeyword n) = n
+
 showOrgEntry :: Int -> Int -> OrgEntry -> [Text]
 showOrgEntry propertyColumn tagsColumn OrgEntry {..} =
   [title]
     ++ timestamps
     ++ properties
+    ++ logEntries
     ++ body
     ++ concatMap (showOrgEntry propertyColumn tagsColumn) entryItems
   where
@@ -107,11 +130,7 @@ showOrgEntry propertyColumn tagsColumn OrgEntry {..} =
           T.concat $
             [T.replicate entryDepth "*"]
               ++ [" "]
-              ++ [ case kw of
-                     OpenKeyword n -> n <> " "
-                     ClosedKeyword n -> n <> " "
-                   | kw <- maybeToList entryKeyword
-                 ]
+              ++ [showOrgKeyword kw <> " " | kw <- maybeToList entryKeyword]
               ++ [ "(" <> c <> ") "
                    | c <- maybeToList entryContext
                  ]
@@ -135,7 +154,8 @@ showOrgEntry propertyColumn tagsColumn OrgEntry {..} =
     properties
       | null entryProperties = []
       | otherwise = showProperties propertyColumn True entryProperties
-    body = fromMaybe [] entryText
+    logEntries = concatMap showOrgLogEntry entryLogEntries
+    body = entryText
 
 showOrgFile :: Int -> Int -> OrgFile -> [Text]
 showOrgFile propertyColumn tagsColumn OrgFile {..} =
@@ -154,7 +174,7 @@ showOrgHeader propertyColumn OrgHeader {..} =
     fileProperties
       | null headerFileProperties = []
       | otherwise = showFileProperties headerFileProperties
-    preamble = fromMaybe [] headerPreamble
+    preamble = headerPreamble
 
 showProperties :: Int -> Bool -> [Property] -> [Text]
 showProperties propertyColumn closed ps =
@@ -188,9 +208,8 @@ summarizeEntry OrgEntry {..} =
     ++ [":PRIORITY: " <> x | x <- maybeToList entryPriority]
     ++ [":CONTEXT: " <> x | x <- maybeToList entryContext]
     ++ [":LOCATOR: " <> x | x <- maybeToList entryLocator]
-    ++ [ ":TEXT_LENGTH: " <> T.pack (show (length xs))
-         | xs <- maybeToList entryText
-       ]
+    ++ [":LOG_LEN: " <> T.pack (show (length entryLogEntries))]
+    ++ [":BODY_LEN: " <> T.pack (show (length entryText))]
     ++ case entryTags of
       [] -> []
       _ ->
