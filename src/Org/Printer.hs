@@ -201,23 +201,27 @@ summarizeEntry Entry {..} =
     ++ showProperties
       0
       ( _entryProperties
-          ++ [Property "ORIGIN" (T.pack (show _entryPos))]
-          ++ [ Property "KEYWORD" (T.pack (show x))
+          ++ [Property False "ORIGIN" (T.pack (show _entryPos))]
+          ++ [ Property False "KEYWORD" (T.pack (show x))
                | x <- maybeToList _entryKeyword
              ]
-          ++ [Property "PRIORITY" x | x <- maybeToList _entryPriority]
-          ++ [Property "CONTEXT" x | x <- maybeToList _entryContext]
-          ++ [Property "LOCATOR" x | x <- maybeToList _entryLocator]
-          ++ [ Property "LOG_LEN" (T.pack (show (length _entryLogEntries)))
+          ++ [Property False "PRIORITY" x | x <- maybeToList _entryPriority]
+          ++ [Property False "CONTEXT" x | x <- maybeToList _entryContext]
+          ++ [Property False "LOCATOR" x | x <- maybeToList _entryLocator]
+          ++ [ Property
+                 False
+                 "LOG_LEN"
+                 (T.pack (show (length _entryLogEntries)))
                | not (null _entryLogEntries)
              ]
-          ++ [ Property "BODY_LEN" (T.pack (show (length _entryText)))
+          ++ [ Property False "BODY_LEN" (T.pack (show (length _entryText)))
                | not (null _entryText)
              ]
           ++ case _entryTags of
             [] -> []
             _ ->
               [ Property
+                  False
                   "TAGS"
                   ( T.concat $
                       [":"]
@@ -230,9 +234,9 @@ summarizeEntry Entry {..} =
               ]
           ++ map
             ( \case
-                ClosedStamp tm -> Property "CLOSED" (showTime tm)
-                ScheduledStamp tm -> Property "SCHEDULED" (showTime tm)
-                DeadlineStamp tm -> Property "DEADLINE" (showTime tm)
+                ClosedStamp tm -> Property False "CLOSED" (showTime tm)
+                ScheduledStamp tm -> Property False "SCHEDULED" (showTime tm)
+                DeadlineStamp tm -> Property False "DEADLINE" (showTime tm)
             )
             _entryStamps
       )

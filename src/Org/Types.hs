@@ -35,7 +35,8 @@ type BasicParser = ParsecT Void Text Identity
 type Parser = ParsecT Void Text (Reader Config)
 
 data Property = Property
-  { _name :: Text,
+  { _inherited :: Bool,
+    _name :: Text,
     _value :: Text
   }
   deriving (Show, Eq, Ord, Generic, Data, Typeable)

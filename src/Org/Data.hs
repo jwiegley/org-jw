@@ -12,6 +12,7 @@ import Control.Lens
 import Control.Monad.Reader
 import Data.Map
 import Data.Map qualified as M
+import Data.Maybe (maybeToList)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Void
@@ -55,19 +56,44 @@ deadlineTime = entryStamps . traverse . _DeadlineStamp
 closedTime :: Traversal' Entry Time
 closedTime = entryStamps . traverse . _ClosedStamp
 
-foldEntries :: (Entry -> b -> b) -> b -> [Entry] -> b
-foldEntries _ z [] = z
-foldEntries f z (x : xs) = f x (foldEntries f z (x ^. entryItems ++ xs))
+-- jww (2024-05-07): Need to consider inherited properties in this function.
+foldEntries :: [Property] -> (Entry -> b -> b) -> b -> [Entry] -> b
+foldEntries _ _ z [] = z
+foldEntries props f z (e : es) =
+  f
+    (inheritProperties props e)
+    (foldEntries props f z (e ^. entryItems ++ es))
 
-traverseEntries :: (Applicative f) => (Entry -> f a) -> [Entry] -> f [a]
-traverseEntries f = foldEntries (liftA2 (:) . f) (pure [])
+hardCodedInheritedProperties :: [Text]
+hardCodedInheritedProperties = ["COLUMNS", "CATEGORY", "ARCHIVE", "LOGGING"]
 
-entries :: Traversal' OrgFile Entry
-entries f = fileEntries %%~ traverseEntries f
+inheritProperties :: [Property] -> Entry -> Entry
+inheritProperties [] e = e
+inheritProperties (Property _ n v : ps) e =
+  inheritProperties finalProperties finalEntry
+  where
+    finalEntry
+      | has (property n) e = e & property n .~ v
+      | otherwise = e & entryProperties <>~ [Property True n v]
+    finalProperties =
+      concatMap injectedProperty hardCodedInheritedProperties ++ ps
+    injectedProperty k =
+      [Property False k x | x <- maybeToList (e ^? property k)]
 
-entriesMap :: OrgFile -> ([String], Map Text Entry)
-entriesMap OrgFile {..} =
-  foldEntries f ([], M.empty) _fileEntries
+traverseEntries ::
+  (Applicative f) =>
+  [Property] ->
+  (Entry -> f a) ->
+  [Entry] ->
+  f [a]
+traverseEntries ps f = foldEntries ps (liftA2 (:) . f) (pure [])
+
+entries :: [Property] -> Traversal' OrgFile Entry
+entries ps f = fileEntries %%~ traverseEntries ps f
+
+entriesMap :: [Property] -> OrgFile -> ([String], Map Text Entry)
+entriesMap ps OrgFile {..} =
+  foldEntries ps f ([], M.empty) _fileEntries
   where
     f e (errs, m) =
       case e ^? entryId of

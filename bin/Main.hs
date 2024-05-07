@@ -80,7 +80,7 @@ main = do
     Options.Dump path ->
       processFile path $ \org -> do
         pPrint org
-        pPrint $ entriesMap org
+        pPrint $ entriesMap [] org
     Options.Outline path ->
       processFile path $
         mapM_ T.putStrLn . concatMap summarizeEntry . _fileEntries
