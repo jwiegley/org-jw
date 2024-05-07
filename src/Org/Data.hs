@@ -6,6 +6,7 @@
 
 module Org.Data where
 
+import Control.Lens
 import Data.Map
 import Data.Map qualified as M
 import Data.Text (Text)
@@ -18,39 +19,36 @@ import Org.Types
 import Text.Megaparsec
 
 lookupProperty :: [Property] -> Text -> Maybe Text
-lookupProperty [] _ = Nothing
-lookupProperty (Property name value : xs) key
-  | name == key = Just value
-  | otherwise = lookupProperty xs key
+lookupProperty ps n = ps ^? traverse . filtered (\x -> x ^. name == n) . value
 
-orgEntryId :: OrgEntry -> Maybe Text
-orgEntryId entry = lookupProperty (entryProperties entry) "ID"
+entryId :: Entry -> Maybe Text
+entryId e = lookupProperty (e ^. entryProperties) "ID"
 
-orgEntryCreatedTime :: OrgEntry -> Maybe UTCTime
-orgEntryCreatedTime entry = do
-  created <- lookupProperty (entryProperties entry) "CREATED"
-  time <- parseMaybe @Void parseOrgTimeSingle created
-  pure $ orgTimeStartToUTCTime time
+entryCreatedTime :: Entry -> Maybe UTCTime
+entryCreatedTime e = do
+  created <- lookupProperty (e ^. entryProperties) "CREATED"
+  tm <- parseMaybe @Void parseOrgTimeSingle created
+  pure $ orgTimeStartToUTCTime tm
 
-orgFoldEntries :: (OrgEntry -> a -> a) -> a -> [OrgEntry] -> a
-orgFoldEntries _ z [] = z
-orgFoldEntries f z (x : xs) = f x (orgFoldEntries f z (entryItems x ++ xs))
+foldEntries :: (Entry -> a -> a) -> a -> [Entry] -> a
+foldEntries _ z [] = z
+foldEntries f z (x : xs) = f x (foldEntries f z (_entryItems x ++ xs))
 
-orgEntriesMap :: OrgFile -> ([String], Map Text OrgEntry)
-orgEntriesMap OrgFile {..} =
-  orgFoldEntries f ([], M.empty) fileEntries
+entriesMap :: OrgFile -> ([String], Map Text Entry)
+entriesMap OrgFile {..} =
+  foldEntries f ([], M.empty) _fileEntries
   where
-    f entry (errs, m) =
-      case orgEntryId entry of
+    f e (errs, m) =
+      case entryId e of
         Nothing -> (errs, m)
         Just ident ->
-          case M.lookup ident m of
-            Nothing -> (errs, M.insert ident entry m)
+          case m ^. at ident of
+            Nothing -> (errs, m & at ident ?~ e)
             Just found ->
               ( errs
                   ++ [ T.unpack $
                          "Identifier already exists: entry =\n"
-                           <> T.concat (summarizeEntry entry)
+                           <> T.concat (summarizeEntry e)
                            <> "\nfound =\n"
                            <> T.concat (summarizeEntry found)
                      ],

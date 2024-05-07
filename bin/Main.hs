@@ -12,7 +12,6 @@ import Control.Lens
 import Control.Monad.Reader
 import Data.Set qualified as S
 import Data.Text.IO qualified as T
-import GHC.Generics
 import Options qualified
 import Org.Data
 import Org.Parser
@@ -22,40 +21,29 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Show.Pretty
 
-data Config = Config
-  {
-  }
-  deriving (Generic, Show)
-
-newConfig :: Config
-newConfig =
-  Config
-    {
-    }
-
 main :: IO ()
 main = do
   opts <- Options.getOptions
   case opts ^. Options.command of
     Options.Parse path -> do
       content <- T.readFile path
-      case runReader (runParserT parseOrg path content) OrgConfig {..} of
+      case runReader (runParserT parseOrg path content) Config {..} of
         Left bundle -> putStr $ errorBundlePretty bundle
         Right org -> do
           putStrLn $
             "There are "
-              <> show (length (fileEntries org))
+              <> show (length (_fileEntries org))
               <> " org-mode entries"
           putStrLn "Tags found:"
           mapM_
             ( \case
-                OrgPlainTag tag -> T.putStrLn $ "  " <> tag
-                OrgSpecialTag tag -> T.putStrLn $ "  [" <> tag <> "]"
+                PlainTag tag -> T.putStrLn $ "  " <> tag
+                SpecialTag tag -> T.putStrLn $ "  [" <> tag <> "]"
             )
             ( foldr
                 S.insert
                 mempty
-                (concatMap entryTags (fileEntries org))
+                (concatMap _entryTags (_fileEntries org))
             )
           putStrLn "Contexts found:"
           mapM_
@@ -66,7 +54,7 @@ main = do
             ( foldr
                 S.insert
                 mempty
-                (map entryContext (fileEntries org))
+                (map _entryContext (_fileEntries org))
             )
           putStrLn "Locations found:"
           mapM_
@@ -77,7 +65,7 @@ main = do
             ( foldr
                 S.insert
                 mempty
-                (map entryLocator (fileEntries org))
+                (map _entryLocator (_fileEntries org))
             )
           mapM_
             ( \title -> case parseMaybe
@@ -89,25 +77,25 @@ main = do
             ( foldr
                 S.insert
                 mempty
-                (map entryTitle (fileEntries org))
+                (map _entryTitle (_fileEntries org))
             )
     Options.Print path ->
       processFile path $
-        mapM_ T.putStrLn . showOrgFile propertyColumn tagsColumn
+        mapM_ T.putStrLn . showOrgFile _propertyColumn _tagsColumn
     Options.Dump path ->
       processFile path $ \org -> do
         pPrint org
-        pPrint $ orgEntriesMap org
+        pPrint $ entriesMap org
     Options.Outline path ->
       processFile path $
-        mapM_ T.putStrLn . concatMap summarizeEntry . fileEntries
+        mapM_ T.putStrLn . concatMap summarizeEntry . _fileEntries
   where
     processFile path f = do
       content <- T.readFile path
-      case runReader (runParserT parseOrg path content) OrgConfig {..} of
+      case runReader (runParserT parseOrg path content) Config {..} of
         Left bundle -> putStr $ errorBundlePretty bundle
         Right org -> f org
-    openKeywords =
+    _openKeywords =
       [ "TODO",
         "CATEGORY",
         "PROJECT",
@@ -118,15 +106,15 @@ main = do
         "DELEGATED",
         "APPT"
       ]
-    closedKeywords =
+    _closedKeywords =
       [ "DONE",
         "CANCELED",
         "NOTE",
         "LINK"
       ]
-    priorities =
+    _priorities =
       ["A", "B", "C"]
-    specialTags =
+    _specialTags =
       ["ARCHIVE", "FILE", "URL"]
-    propertyColumn = 11
-    tagsColumn = 97
+    _propertyColumn = 11
+    _tagsColumn = 97

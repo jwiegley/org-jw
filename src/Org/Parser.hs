@@ -46,26 +46,26 @@ parseProperties :: Parser [Property]
 parseProperties = do
   string ":PROPERTIES:" *> trailingSpace
   props <- some $ try $ do
-    propertyName <- between (char ':') (char ':') identifier
-    guard $ propertyName /= "END"
+    _name <- between (char ':') (char ':') identifier
+    guard $ _name /= "END"
     skipMany singleSpace
-    propertyValue <- restOfLine
+    _value <- restOfLine
     pure Property {..}
   string ":END:" *> trailingSpace
   return props
 
-parseHeader :: Parser OrgHeader
+parseHeader :: Parser Header
 parseHeader =
-  OrgHeader
+  Header
     <$> (join . maybeToList <$> optional (try parseProperties))
     <*> many parseFileProperty
     <*> parseEntryText
 
 parseFileProperty :: Parser Property
 parseFileProperty = do
-  propertyName <- between (string "#+") (char ':') identifier
+  _name <- between (string "#+") (char ':') identifier
   skipMany singleSpace
-  propertyValue <- restOfLine
+  _value <- restOfLine
   pure Property {..}
 
 parseHeaderStars :: Parser Int
@@ -74,46 +74,46 @@ parseHeaderStars = length <$> someTill (char '*') (some singleSpace)
 parseEntryText :: Parser [Text]
 parseEntryText = manyTill line (try (void (lookAhead parseHeaderStars)) <|> eof)
 
-parseOrgKeyword :: Parser OrgKeyword
+parseOrgKeyword :: Parser Keyword
 parseOrgKeyword = do
-  OrgConfig {..} <- ask
-  OpenKeyword <$> oneOfList openKeywords
-    <|> ClosedKeyword <$> oneOfList closedKeywords
+  Config {..} <- ask
+  OpenKeyword <$> oneOfList _openKeywords
+    <|> ClosedKeyword <$> oneOfList _closedKeywords
 
-parseEntry :: Int -> Parser OrgEntry
+parseEntry :: Int -> Parser Entry
 parseEntry parseAtDepth = do
-  entryPos <- getSourcePos
-  entryDepth <- try $ do
+  _entryPos <- getSourcePos
+  _entryDepth <- try $ do
     depth <- parseHeaderStars
     guard $ depth == parseAtDepth
     pure depth
-  entryKeyword <- optional (try parseOrgKeyword <* some singleSpace)
-  entryPriority <- optional $ do
-    guard $ isJust entryKeyword
+  _entryKeyword <- optional (try parseOrgKeyword <* some singleSpace)
+  _entryPriority <- optional $ do
+    guard $ isJust _entryKeyword
     parseEntryPriority
-  entryContext <- optional parseEntryContext
-  (entryTitle, (entryLocator, entryTags)) <-
+  _entryContext <- optional parseEntryContext
+  (_entryTitle, (_entryLocator, _entryTags)) <-
     first pack
       <$> manyTill_ (printChar <|> singleSpace) (try parseTitleSuffix)
-  entryStamps <-
+  _entryStamps <-
     join . maybeToList
       <$> try (optional (parseOrgStamps <* trailingSpace))
-  entryProperties <-
+  _entryProperties <-
     join . maybeToList
       <$> try (optional parseProperties)
-  entryLogEntries <- many parseLogEntry
-  entryText <- parseEntryText
-  forM_ entryText $ \txt ->
+  _entryLogEntries <- many parseLogEntry
+  _entryText <- parseEntryText
+  forM_ _entryText $ \txt ->
     when (":PROPERTIES:" `T.isInfixOf` txt) $
       fail $
         "Floating properties drawer in: " ++ show txt
-  entryItems <- many (parseEntry (succ entryDepth))
-  pure OrgEntry {..}
+  _entryItems <- many (parseEntry (succ _entryDepth))
+  pure Entry {..}
 
 parseEntryPriority :: Parser Text
 parseEntryPriority = do
-  OrgConfig {..} <- ask
-  prio <- string "[#" *> oneOfList priorities <* char ']'
+  Config {..} <- ask
+  prio <- string "[#" *> oneOfList _priorities <* char ']'
   skipSome singleSpace
   pure prio
 
@@ -127,7 +127,7 @@ parseEntryContext = do
   skipSome singleSpace
   pure context
 
-parseTitleSuffix :: Parser (Maybe Text, [OrgTag])
+parseTitleSuffix :: Parser (Maybe Text, [Tag])
 parseTitleSuffix =
   ((Nothing, []) <$ try (skipManyTill singleSpace newline))
     <|> do
@@ -149,27 +149,27 @@ parseTitleSuffix =
 parseLocation :: Parser Text
 parseLocation = between (char '{') (char '}') identifier
 
-parseTags :: Parser [OrgTag]
+parseTags :: Parser [Tag]
 parseTags =
   filter
     ( \case
-        OrgPlainTag "" -> False
+        PlainTag "" -> False
         _ -> True
     )
     <$> (char ':' *> sepBy1 parseTag (char ':'))
   where
     parseTag = do
-      name <- identifier
-      OrgConfig {..} <- ask
+      nm <- identifier
+      Config {..} <- ask
       pure $
-        if name `elem` specialTags
-          then OrgSpecialTag name
-          else OrgPlainTag name
+        if nm `elem` _specialTags
+          then SpecialTag nm
+          else PlainTag nm
 
-parseOrgStamps :: Parser [OrgStamp]
+parseOrgStamps :: Parser [Stamp]
 parseOrgStamps = sepBy1 parseOrgStamp (char ' ')
 
-parseOrgStamp :: Parser OrgStamp
+parseOrgStamp :: Parser Stamp
 parseOrgStamp = do
   orgStampKind <-
     ClosedStamp <$ string "CLOSED"
@@ -179,39 +179,41 @@ parseOrgStamp = do
   orgStampTime <- parseOrgTimeSingle
   case orgStampKind of
     ClosedStamp
-      | orgTimeKind orgStampTime == ActiveTime ->
+      | _timeKind orgStampTime == ActiveTime ->
           fail $ "Closed stamps must use inactive times"
     ScheduledStamp
-      | orgTimeKind orgStampTime == InactiveTime ->
+      | _timeKind orgStampTime == InactiveTime ->
           fail $ "Scheduled stamps must use active times"
     DeadlineStamp
-      | orgTimeKind orgStampTime == InactiveTime ->
+      | _timeKind orgStampTime == InactiveTime ->
           fail $ "Deadline stamps must use active times"
     _ -> pure ()
-  pure OrgStamp {..}
+  pure Stamp {..}
 
-parseOrgTime :: Parser OrgTime
+parseOrgTime :: Parser Time
 parseOrgTime = do
   start <- parseOrgTimeSingle
   mend <- optional $ string "--" *> parseOrgTimeSingle
   case mend of
     Nothing -> pure start
-    Just ts@OrgTime {..} -> do
-      forM_ orgTimeDayEnd $ \_ ->
+    Just ts@Time {..} -> do
+      forM_ _timeDayEnd $ \_ ->
         fail $ "Invalid org time: " ++ show ts
-      forM_ orgTimeEnd $ \_ ->
+      forM_ _timeEnd $ \_ ->
         fail $ "Invalid org time: " ++ show ts
-      forM_ orgTimeSuffix $ \_ ->
+      forM_ _timeSuffix $ \_ ->
         fail $ "Invalid org time: " ++ show ts
       pure
         start
-          { orgTimeDayEnd = Just orgTimeDay,
-            orgTimeEnd = orgTimeStart
+          { _timeDayEnd = Just _timeDay,
+            _timeEnd = _timeStart
           }
 
-parseOrgTimeSingle :: (MonadParsec e s m, Token s ~ Char, IsString (Tokens s), MonadFail m) => m OrgTime
+parseOrgTimeSingle ::
+  (MonadParsec e s m, Token s ~ Char, IsString (Tokens s), MonadFail m) =>
+  m Time
 parseOrgTimeSingle = do
-  orgTimeKind <-
+  _timeKind <-
     ActiveTime <$ char '<'
       <|> InactiveTime <$ char '['
   year <- count 4 numberChar
@@ -219,7 +221,7 @@ parseOrgTimeSingle = do
   month <- count 2 numberChar
   _ <- char '-'
   day <- count 2 numberChar
-  orgTimeDay <- case fromGregorianValid (read year) (read month) (read day) of
+  _timeDay <- case fromGregorianValid (read year) (read month) (read day) of
     Just d -> pure d
     Nothing ->
       fail $
@@ -229,44 +231,44 @@ parseOrgTimeSingle = do
           ++ month
           ++ "-"
           ++ day
-  let orgTimeDayEnd = Nothing
+  let _timeDayEnd = Nothing
   _ <- char ' '
   _dow <- oneOfList ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-  orgTimeStart <- optional $ try $ do
+  _timeStart <- optional $ try $ do
     _ <- char ' '
     hour <- count 2 numberChar
     _ <- char ':'
     minute <- count 2 numberChar
     pure $ secondsToDiffTime (read hour * 60 + read minute)
-  orgTimeEnd <- optional $ do
-    guard $ isJust orgTimeStart
+  _timeEnd <- optional $ do
+    guard $ isJust _timeStart
     _ <- char '-'
     hour <- count 2 numberChar
     _ <- char ':'
     minute <- count 2 numberChar
     pure $ secondsToDiffTime (read hour * 60 + read minute)
-  orgTimeSuffix <- optional $ do
+  _timeSuffix <- optional $ do
     _ <- char ' '
     repeatDotted <- isJust <$> optional (char '.')
-    orgSuffixKind <-
+    _suffixKind <-
       ( if repeatDotted
-          then OrgTimeDottedRepeat
-          else OrgTimeRepeat
+          then TimeDottedRepeat
+          else TimeRepeat
         )
         <$ char '+'
-        <|> OrgTimeWithin <$ char '-'
-    orgSuffixNum <- read <$> some digitChar
-    orgSuffixSpan <-
-      OrgMonthSpan <$ char 'm'
-        <|> OrgDaySpan <$ char 'd'
-        <|> OrgWeekSpan <$ char 'w'
-    pure OrgTimeSuffix {..}
-  _ <- case orgTimeKind of
+        <|> TimeWithin <$ char '-'
+    _suffixNum <- read <$> some digitChar
+    _suffixSpan <-
+      MonthSpan <$ char 'm'
+        <|> DaySpan <$ char 'd'
+        <|> WeekSpan <$ char 'w'
+    pure TimeSuffix {..}
+  _ <- case _timeKind of
     ActiveTime -> char '>'
     InactiveTime -> char ']'
-  pure OrgTime {..}
+  pure Time {..}
 
-parseLogEntry :: Parser OrgLogEntry
+parseLogEntry :: Parser LogEntry
 parseLogEntry = parseStateChange <|> parseNote
   where
     parseStateChange = do
@@ -281,7 +283,7 @@ parseLogEntry = parseStateChange <|> parseNote
       logNote <-
         [] <$ try newline
           <|> skipSome singleSpace *> string "\\\\" *> newline *> parseNoteText
-      pure $ OrgLogStateChange fromKeyword toKeyword logTime logNote
+      pure $ LogStateChange fromKeyword toKeyword logTime logNote
 
     parseNote = do
       _ <- string "- Note take on "
@@ -289,7 +291,7 @@ parseLogEntry = parseStateChange <|> parseNote
       logNote <-
         [] <$ newline
           <|> skipSome singleSpace *> string "\\\\" *> newline *> parseNoteText
-      pure $ OrgLogNote logTime logNote
+      pure $ LogNote logTime logNote
 
 parseNoteText :: Parser [Text]
 parseNoteText = do

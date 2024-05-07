@@ -1,135 +1,170 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Org.Types where
 
+import Control.Lens
 import Control.Monad.Reader
-import Data.Functor.Identity
+import Data.Data
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Time
 import Data.Void
+import GHC.Generics
 import Text.Megaparsec hiding (many, some)
 
-data OrgConfig = OrgConfig
-  { openKeywords :: [Text],
-    closedKeywords :: [Text],
-    priorities :: [Text],
-    specialTags :: [Text],
-    propertyColumn :: Int,
-    tagsColumn :: Int
+data Config = Config
+  { _openKeywords :: [Text],
+    _closedKeywords :: [Text],
+    _priorities :: [Text],
+    _specialTags :: [Text],
+    _propertyColumn :: Int,
+    _tagsColumn :: Int
   }
-  deriving (Show)
+  deriving (Show, Eq, Generic, Data, Typeable)
+
+makeClassy ''Config
 
 type BasicParser = ParsecT Void Text Identity
 
-type Parser = ParsecT Void Text (Reader OrgConfig)
-
-data OrgFile = OrgFile
-  { fileHeader :: OrgHeader,
-    fileEntries :: [OrgEntry]
-  }
-  deriving (Show)
+type Parser = ParsecT Void Text (Reader Config)
 
 data Property = Property
-  { propertyName :: Text,
-    propertyValue :: Text
+  { _name :: Text,
+    _value :: Text
   }
-  deriving (Show)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable)
 
-data OrgHeader = OrgHeader
-  { headerPropertiesDrawer :: [Property],
-    headerFileProperties :: [Property],
-    headerPreamble :: [Text]
+makeClassy ''Property
+
+data Header = Header
+  { _headerPropertiesDrawer :: [Property],
+    _headerFileProperties :: [Property],
+    _headerPreamble :: [Text]
   }
-  deriving (Show)
+  deriving (Show, Eq, Generic, Data, Typeable)
 
-data OrgKeyword
+makeClassy ''Header
+
+data Keyword
   = OpenKeyword Text
   | ClosedKeyword Text
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable)
 
-data OrgTag
-  = OrgSpecialTag Text
-  | OrgPlainTag Text
-  deriving (Show, Eq, Ord)
+makePrisms ''Keyword
 
-data OrgLogEntry
-  = OrgLogStateChange OrgKeyword OrgKeyword OrgTime [Text]
-  | OrgLogNote OrgTime [Text]
-  deriving (Show, Eq, Ord)
+data Tag
+  = SpecialTag Text
+  | PlainTag Text
+  deriving (Show, Eq, Ord, Generic, Data, Typeable)
 
-data OrgEntry = OrgEntry
-  { entryPos :: SourcePos,
-    entryDepth :: Int,
-    entryKeyword :: Maybe OrgKeyword,
-    entryPriority :: Maybe Text,
-    entryTitle :: Text,
-    entryContext :: Maybe Text,
-    entryLocator :: Maybe Text,
-    entryTags :: [OrgTag],
-    entryStamps :: [OrgStamp],
-    entryProperties :: [Property],
-    entryLogEntries :: [OrgLogEntry],
-    entryText :: [Text],
-    entryItems :: [OrgEntry]
+makePrisms ''Tag
+
+data TimeSpan
+  = DaySpan
+  | WeekSpan
+  | MonthSpan
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable)
+
+makePrisms ''TimeSpan
+
+data TimeKind
+  = ActiveTime
+  | InactiveTime
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable)
+
+makePrisms ''TimeKind
+
+data TimeSuffixKind
+  = TimeRepeat
+  | TimeDottedRepeat
+  | TimeWithin
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable)
+
+makePrisms ''TimeSuffixKind
+
+data TimeSuffix = TimeSuffix
+  { _suffixKind :: TimeSuffixKind,
+    _suffixNum :: Int,
+    _suffixSpan :: TimeSpan
   }
-  deriving (Show)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable)
 
-data OrgStampKind
+makeLenses ''TimeSuffix
+
+data Time = Time
+  { _timeKind :: TimeKind,
+    _timeDay :: Day,
+    _timeDayEnd :: Maybe Day,
+    _timeStart :: Maybe DiffTime,
+    _timeEnd :: Maybe DiffTime,
+    _timeSuffix :: Maybe TimeSuffix
+  }
+  deriving (Show, Eq, Ord, Generic, Data, Typeable)
+
+makeClassy ''Time
+
+data StampKind
   = ClosedStamp
   | ScheduledStamp
   | DeadlineStamp
-  deriving (Show, Eq, Ord, Enum, Bounded)
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable)
 
-data OrgStamp = OrgStamp
-  { orgStampKind :: OrgStampKind,
-    orgStampTime :: OrgTime
+makePrisms ''StampKind
+
+data Stamp = Stamp
+  { orgStampKind :: StampKind,
+    orgStampTime :: Time
   }
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable)
 
-data OrgTimeKind
-  = ActiveTime
-  | InactiveTime
-  deriving (Show, Eq, Ord, Enum, Bounded)
+makeClassy ''Stamp
 
-data OrgTime = OrgTime
-  { orgTimeKind :: OrgTimeKind,
-    orgTimeDay :: Day,
-    orgTimeDayEnd :: Maybe Day,
-    orgTimeStart :: Maybe DiffTime,
-    orgTimeEnd :: Maybe DiffTime,
-    orgTimeSuffix :: Maybe OrgTimeSuffix
-  }
-  deriving (Show, Eq, Ord)
+orgTimeStartToUTCTime :: Time -> UTCTime
+orgTimeStartToUTCTime Time {..} =
+  UTCTime _timeDay (fromMaybe (secondsToDiffTime 0) _timeStart)
 
-data OrgTimeSpan
-  = OrgDaySpan
-  | OrgWeekSpan
-  | OrgMonthSpan
-  deriving (Show, Eq, Ord, Enum, Bounded)
-
-data OrgTimeSuffixKind
-  = OrgTimeRepeat
-  | OrgTimeDottedRepeat
-  | OrgTimeWithin
-  deriving (Show, Eq, Ord, Enum, Bounded)
-
-data OrgTimeSuffix = OrgTimeSuffix
-  { orgSuffixKind :: OrgTimeSuffixKind,
-    orgSuffixNum :: Int,
-    orgSuffixSpan :: OrgTimeSpan
-  }
-  deriving (Show, Eq, Ord)
-
-orgTimeStartToUTCTime :: OrgTime -> UTCTime
-orgTimeStartToUTCTime OrgTime {..} =
-  UTCTime orgTimeDay (fromMaybe (secondsToDiffTime 0) orgTimeStart)
-
-orgTimeEndToUTCTime :: OrgTime -> Maybe UTCTime
-orgTimeEndToUTCTime OrgTime {..} =
+orgTimeEndToUTCTime :: Time -> Maybe UTCTime
+orgTimeEndToUTCTime Time {..} =
   UTCTime
-    <$> orgTimeDayEnd
-    <*> Just (fromMaybe (secondsToDiffTime 0) orgTimeEnd)
+    <$> _timeDayEnd
+    <*> Just (fromMaybe (secondsToDiffTime 0) _timeEnd)
+
+data LogEntry
+  = LogStateChange Keyword Keyword Time [Text]
+  | LogNote Time [Text]
+  deriving (Show, Eq, Ord, Generic, Data, Typeable)
+
+makePrisms ''LogEntry
+
+data Entry = Entry
+  { _entryPos :: SourcePos,
+    _entryDepth :: Int,
+    _entryKeyword :: Maybe Keyword,
+    _entryPriority :: Maybe Text,
+    _entryTitle :: Text,
+    _entryContext :: Maybe Text,
+    _entryLocator :: Maybe Text,
+    _entryTags :: [Tag],
+    _entryStamps :: [Stamp],
+    _entryProperties :: [Property],
+    _entryLogEntries :: [LogEntry],
+    _entryText :: [Text],
+    _entryItems :: [Entry]
+  }
+  deriving (Show, Eq, Generic, Data, Typeable)
+
+makeClassy ''Entry
+
+data OrgFile = OrgFile
+  { _fileHeader :: Header,
+    _fileEntries :: [Entry]
+  }
+  deriving (Show, Eq, Generic, Data, Typeable)
+
+makeClassy ''OrgFile
