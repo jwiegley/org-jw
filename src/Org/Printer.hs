@@ -200,12 +200,13 @@ showFileProperties ps =
     | Property {..} <- ps
   ]
 
-summarizeEntry :: Int -> OrgEntry -> [Text]
-summarizeEntry propertyColumn OrgEntry {..} =
+summarizeEntry :: OrgEntry -> [Text]
+summarizeEntry OrgEntry {..} =
   [T.replicate entryDepth "*" <> " " <> entryTitle]
     ++ showProperties
-      propertyColumn
+      0
       ( entryProperties
+          ++ [Property "ORIGIN" (T.pack (show entryPos))]
           ++ [ Property "KEYWORD" (T.pack (show x))
                | x <- maybeToList entryKeyword
              ]
@@ -244,4 +245,4 @@ summarizeEntry propertyColumn OrgEntry {..} =
             )
             entryStamps
       )
-    ++ concatMap (summarizeEntry propertyColumn) entryItems
+    ++ concatMap summarizeEntry entryItems

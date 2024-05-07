@@ -14,6 +14,7 @@ import Data.Set qualified as S
 import Data.Text.IO qualified as T
 import GHC.Generics
 import Options qualified
+import Org.Data
 import Org.Parser
 import Org.Printer
 import Org.Types
@@ -94,12 +95,12 @@ main = do
       processFile path $
         mapM_ T.putStrLn . showOrgFile propertyColumn tagsColumn
     Options.Dump path ->
-      processFile path pPrint
+      processFile path $ \org -> do
+        pPrint org
+        pPrint $ orgEntriesMap org
     Options.Outline path ->
       processFile path $
-        mapM_ T.putStrLn
-          . concatMap (summarizeEntry propertyColumn)
-          . fileEntries
+        mapM_ T.putStrLn . concatMap summarizeEntry . fileEntries
   where
     processFile path f = do
       content <- T.readFile path
