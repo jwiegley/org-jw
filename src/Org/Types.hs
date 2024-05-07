@@ -40,7 +40,7 @@ data Property = Property
   }
   deriving (Show, Eq, Ord, Generic, Data, Typeable)
 
-makeClassy ''Property
+makeLenses ''Property
 
 data Header = Header
   { _headerPropertiesDrawer :: [Property],
@@ -109,28 +109,20 @@ data Time = Time
 
 makeClassy ''Time
 
-data StampKind
-  = ClosedStamp
-  | ScheduledStamp
-  | DeadlineStamp
-  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable)
-
-makePrisms ''StampKind
-
-data Stamp = Stamp
-  { orgStampKind :: StampKind,
-    orgStampTime :: Time
-  }
+data Stamp
+  = ClosedStamp Time
+  | ScheduledStamp Time
+  | DeadlineStamp Time
   deriving (Show, Eq, Ord, Generic, Data, Typeable)
 
-makeClassy ''Stamp
+makePrisms ''Stamp
 
-orgTimeStartToUTCTime :: Time -> UTCTime
-orgTimeStartToUTCTime Time {..} =
+timeStartToUTCTime :: Time -> UTCTime
+timeStartToUTCTime Time {..} =
   UTCTime _timeDay (fromMaybe (secondsToDiffTime 0) _timeStart)
 
-orgTimeEndToUTCTime :: Time -> Maybe UTCTime
-orgTimeEndToUTCTime Time {..} =
+timeEndToUTCTime :: Time -> Maybe UTCTime
+timeEndToUTCTime Time {..} =
   UTCTime
     <$> _timeDayEnd
     <*> Just (fromMaybe (secondsToDiffTime 0) _timeEnd)

@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Org.Parser (parseOrg, parseOrgTime, parseOrgTimeSingle) where
+module Org.Parser (parseOrgFile, parseTime, parseTimeSingle) where
 
 import Control.Applicative
 import Control.Arrow (first)
@@ -39,8 +39,8 @@ restOfLine = pack <$> someTill (printChar <|> singleSpace) newline
 identifier :: Parser Text
 identifier = pack <$> many (alphaNumChar <|> char '_')
 
-parseOrg :: Parser OrgFile
-parseOrg = OrgFile <$> parseHeader <*> many (parseEntry 1)
+parseOrgFile :: Parser OrgFile
+parseOrgFile = OrgFile <$> parseHeader <*> many (parseEntry 1)
 
 parseProperties :: Parser [Property]
 parseProperties = do
@@ -74,8 +74,8 @@ parseHeaderStars = length <$> someTill (char '*') (some singleSpace)
 parseEntryText :: Parser [Text]
 parseEntryText = manyTill line (try (void (lookAhead parseHeaderStars)) <|> eof)
 
-parseOrgKeyword :: Parser Keyword
-parseOrgKeyword = do
+parseKeyword :: Parser Keyword
+parseKeyword = do
   Config {..} <- ask
   OpenKeyword <$> oneOfList _openKeywords
     <|> ClosedKeyword <$> oneOfList _closedKeywords
@@ -87,17 +87,15 @@ parseEntry parseAtDepth = do
     depth <- parseHeaderStars
     guard $ depth == parseAtDepth
     pure depth
-  _entryKeyword <- optional (try parseOrgKeyword <* some singleSpace)
-  _entryPriority <- optional $ do
-    guard $ isJust _entryKeyword
-    parseEntryPriority
+  _entryKeyword <- optional (try parseKeyword <* some singleSpace)
+  _entryPriority <- optional $ parseEntryPriority
   _entryContext <- optional parseEntryContext
   (_entryTitle, (_entryLocator, _entryTags)) <-
     first pack
       <$> manyTill_ (printChar <|> singleSpace) (try parseTitleSuffix)
   _entryStamps <-
     join . maybeToList
-      <$> try (optional (parseOrgStamps <* trailingSpace))
+      <$> try (optional (parseStamps <* trailingSpace))
   _entryProperties <-
     join . maybeToList
       <$> try (optional parseProperties)
@@ -166,34 +164,27 @@ parseTags =
           then SpecialTag nm
           else PlainTag nm
 
-parseOrgStamps :: Parser [Stamp]
-parseOrgStamps = sepBy1 parseOrgStamp (char ' ')
+parseStamps :: Parser [Stamp]
+parseStamps = sepBy1 parseStamp (char ' ')
 
-parseOrgStamp :: Parser Stamp
-parseOrgStamp = do
-  orgStampKind <-
-    ClosedStamp <$ string "CLOSED"
-      <|> ScheduledStamp <$ string "SCHEDULED"
-      <|> DeadlineStamp <$ string "DEADLINE"
-  _ <- string ": "
-  orgStampTime <- parseOrgTimeSingle
-  case orgStampKind of
-    ClosedStamp
-      | _timeKind orgStampTime == ActiveTime ->
-          fail $ "Closed stamps must use inactive times"
-    ScheduledStamp
-      | _timeKind orgStampTime == InactiveTime ->
-          fail $ "Scheduled stamps must use active times"
-    DeadlineStamp
-      | _timeKind orgStampTime == InactiveTime ->
-          fail $ "Deadline stamps must use active times"
-    _ -> pure ()
-  pure Stamp {..}
+parseStamp :: Parser Stamp
+parseStamp =
+  string "CLOSED"
+    *> string ": "
+    *> (ClosedStamp <$> parseTimeSingle)
+    <|> string "SCHEDULED"
+      *> string ": "
+      *> (ScheduledStamp <$> parseTimeSingle)
+    <|> string "DEADLINE"
+      *> string ": "
+      *> (DeadlineStamp <$> parseTimeSingle)
 
-parseOrgTime :: Parser Time
-parseOrgTime = do
-  start <- parseOrgTimeSingle
-  mend <- optional $ string "--" *> parseOrgTimeSingle
+parseTime ::
+  (MonadParsec e s m, Token s ~ Char, IsString (Tokens s), MonadFail m) =>
+  m Time
+parseTime = do
+  start <- parseTimeSingle
+  mend <- optional $ string "--" *> parseTimeSingle
   case mend of
     Nothing -> pure start
     Just ts@Time {..} -> do
@@ -209,10 +200,10 @@ parseOrgTime = do
             _timeEnd = _timeStart
           }
 
-parseOrgTimeSingle ::
+parseTimeSingle ::
   (MonadParsec e s m, Token s ~ Char, IsString (Tokens s), MonadFail m) =>
   m Time
-parseOrgTimeSingle = do
+parseTimeSingle = do
   _timeKind <-
     ActiveTime <$ char '<'
       <|> InactiveTime <$ char '['
@@ -273,13 +264,13 @@ parseLogEntry = parseStateChange <|> parseNote
   where
     parseStateChange = do
       _ <- string "- State \""
-      fromKeyword <- parseOrgKeyword
+      fromKeyword <- parseKeyword
       _ <- char '"'
       skipManyTill singleSpace (void (string "from \""))
-      toKeyword <- parseOrgKeyword
+      toKeyword <- parseKeyword
       _ <- char '"'
       skipSome singleSpace
-      logTime <- parseOrgTimeSingle
+      logTime <- parseTimeSingle
       logNote <-
         [] <$ try newline
           <|> skipSome singleSpace *> string "\\\\" *> newline *> parseNoteText
@@ -287,7 +278,7 @@ parseLogEntry = parseStateChange <|> parseNote
 
     parseNote = do
       _ <- string "- Note take on "
-      logTime <- parseOrgTimeSingle
+      logTime <- parseTimeSingle
       logNote <-
         [] <$ newline
           <|> skipSome singleSpace *> string "\\\\" *> newline *> parseNoteText

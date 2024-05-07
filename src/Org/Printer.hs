@@ -12,14 +12,9 @@ import Data.Time
 import Org.Types hiding (propertyColumn, tagsColumn)
 
 showStamp :: Stamp -> Text
-showStamp Stamp {..} =
-  T.concat
-    [ case orgStampKind of
-        ClosedStamp -> "CLOSED: "
-        ScheduledStamp -> "SCHEDULED: "
-        DeadlineStamp -> "DEADLINE: ",
-      showTime orgStampTime
-    ]
+showStamp (ClosedStamp tm) = "CLOSED: " <> showTime tm
+showStamp (ScheduledStamp tm) = "SCHEDULED: " <> showTime tm
+showStamp (DeadlineStamp tm) = "DEADLINE: " <> showTime tm
 
 showTime :: Time -> Text
 showTime ts =
@@ -234,14 +229,10 @@ summarizeEntry Entry {..} =
                   )
               ]
           ++ map
-            ( \Stamp {..} ->
-                Property
-                  ( case orgStampKind of
-                      ClosedStamp -> "CLOSED"
-                      ScheduledStamp -> "SCHEDULED"
-                      DeadlineStamp -> "DEADLINE"
-                  )
-                  (showTime orgStampTime)
+            ( \case
+                ClosedStamp tm -> Property "CLOSED" (showTime tm)
+                ScheduledStamp tm -> Property "SCHEDULED" (showTime tm)
+                DeadlineStamp tm -> Property "DEADLINE" (showTime tm)
             )
             _entryStamps
       )
