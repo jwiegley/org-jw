@@ -1,4 +1,5 @@
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeApplications #-}
@@ -10,7 +11,7 @@ import Control.Lens
 import Control.Monad.Reader
 import Data.Map
 import Data.Map qualified as M
-import Data.Maybe (maybeToList)
+import Data.Maybe (fromMaybe, maybeToList)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Void
@@ -88,23 +89,32 @@ traverseEntries ps f = foldEntries ps (liftA2 (:) . f) (pure [])
 entries :: [Property] -> Traversal' OrgData Entry
 entries ps f = orgFiles . traverse . fileEntries %%~ traverseEntries ps f
 
-entriesMap :: [Property] -> OrgData -> ([String], Map Text Entry)
-entriesMap ps db = Prelude.foldr f ([], M.empty) (db ^.. entries ps)
+-- This is the "raw" form of the entries map, with a few invalid yet
+-- informational states:
+--
+--   - If a key has multiple values, there is an ID conflict between two or
+--     more entries
+--
+--   - If a key has no value, there is a link to an unknown ID.
+--
+--   - If there are values behind the empty key, then there are entries with
+--     no ID. This is fine except for certain cases, such as TODOs.
+entriesMap :: [Property] -> OrgData -> Map Text [Entry]
+entriesMap ps db =
+  Prelude.foldr addEntryToMap M.empty (db ^.. entries ps)
+
+addEntryToMap :: Entry -> Map Text [Entry] -> Map Text [Entry]
+addEntryToMap e =
+  at ident
+    %~ Just . \case
+      Nothing -> [e]
+      Just es -> (e : es)
   where
-    f e (errs, m) =
-      case e ^? entryId of
-        Nothing -> (errs, m)
-        Just ident ->
-          case m ^. at ident of
-            Nothing ->
-              (errs, m & at ident ?~ e)
-            Just found ->
-              ( errs
-                  ++ [ T.unpack $
-                         "Identifier already exists: entry =\n"
-                           <> T.concat (summarizeEntry e)
-                           <> "\nfound =\n"
-                           <> T.concat (summarizeEntry found)
-                     ],
-                m
-              )
+    ident = fromMaybe "" (e ^? entryId)
+
+addRefToMap :: Text -> Map Text [Entry] -> Map Text [Entry]
+addRefToMap ident =
+  at ident
+    %~ Just . \case
+      Nothing -> []
+      Just es -> es
