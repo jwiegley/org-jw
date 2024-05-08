@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -9,6 +8,7 @@
 module Main where
 
 import Control.Lens
+import Data.Map qualified as M
 import Data.Set qualified as S
 import Data.Text.IO qualified as T
 import Options qualified
@@ -46,22 +46,14 @@ main = do
               Nothing -> pure ()
               Just x -> T.putStrLn $ "  " <> x
           )
-          ( foldr
-              S.insert
-              mempty
-              (map _entryContext (_fileEntries org))
-          )
+          (foldr (S.insert . _entryContext) mempty (_fileEntries org))
         putStrLn "Locations found:"
         mapM_
           ( \case
               Nothing -> pure ()
               Just x -> T.putStrLn $ "  " <> x
           )
-          ( foldr
-              S.insert
-              mempty
-              (map _entryLocator (_fileEntries org))
-          )
+          (foldr (S.insert . _entryLocator) mempty (_fileEntries org))
         mapM_
           ( \title -> case parseMaybe
               (count 4 upperChar :: BasicParser String)
@@ -69,18 +61,14 @@ main = do
               Nothing -> pure ()
               Just _ -> T.putStrLn $ "Fishy title: " <> title
           )
-          ( foldr
-              S.insert
-              mempty
-              (map _entryTitle (_fileEntries org))
-          )
+          (foldr (S.insert . _entryTitle) mempty (_fileEntries org))
     Options.Print path ->
       processFile path $
         mapM_ T.putStrLn . showOrgFile _propertyColumn _tagsColumn
     Options.Dump path ->
       processFile path $ \org -> do
         pPrint org
-        pPrint $ entriesMap [] org
+        pPrint $ entriesMap [] OrgData {_orgFiles = M.singleton path org}
     Options.Outline path ->
       processFile path $
         mapM_ T.putStrLn . concatMap summarizeEntry . _fileEntries

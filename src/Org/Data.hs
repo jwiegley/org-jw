@@ -1,8 +1,6 @@
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
 
 module Org.Data where
@@ -56,7 +54,6 @@ deadlineTime = entryStamps . traverse . _DeadlineStamp
 closedTime :: Traversal' Entry Time
 closedTime = entryStamps . traverse . _ClosedStamp
 
--- jww (2024-05-07): Need to consider inherited properties in this function.
 foldEntries :: [Property] -> (Entry -> b -> b) -> b -> [Entry] -> b
 foldEntries _ _ z [] = z
 foldEntries props f z (e : es) =
@@ -88,12 +85,11 @@ traverseEntries ::
   f [a]
 traverseEntries ps f = foldEntries ps (liftA2 (:) . f) (pure [])
 
-entries :: [Property] -> Traversal' OrgFile Entry
-entries ps f = fileEntries %%~ traverseEntries ps f
+entries :: [Property] -> Traversal' OrgData Entry
+entries ps f = orgFiles . traverse . fileEntries %%~ traverseEntries ps f
 
-entriesMap :: [Property] -> OrgFile -> ([String], Map Text Entry)
-entriesMap ps OrgFile {..} =
-  foldEntries ps f ([], M.empty) _fileEntries
+entriesMap :: [Property] -> OrgData -> ([String], Map Text Entry)
+entriesMap ps db = Prelude.foldr f ([], M.empty) (db ^.. entries ps)
   where
     f e (errs, m) =
       case e ^? entryId of

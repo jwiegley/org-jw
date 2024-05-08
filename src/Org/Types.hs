@@ -11,6 +11,7 @@ module Org.Types where
 import Control.Lens
 import Control.Monad.Reader
 import Data.Data
+import Data.Map (Map)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Time
@@ -161,3 +162,10 @@ data OrgFile = OrgFile
   deriving (Show, Eq, Generic, Data, Typeable)
 
 makeClassy ''OrgFile
+
+newtype OrgData = OrgData
+  { _orgFiles :: Map FilePath OrgFile
+  }
+  deriving (Show, Eq, Generic, Data, Typeable)
+
+makeClassy ''OrgData

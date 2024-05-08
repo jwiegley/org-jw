@@ -50,6 +50,7 @@ parseProperties = do
     guard $ _name /= "END"
     skipMany singleSpace
     _value <- restOfLine
+    let _inherited = False
     pure Property {..}
   string ":END:" *> trailingSpace
   return props
@@ -66,6 +67,7 @@ parseFileProperty = do
   _name <- between (string "#+") (char ':') identifier
   skipMany singleSpace
   _value <- restOfLine
+  let _inherited = False
   pure Property {..}
 
 parseHeaderStars :: Parser Int
