@@ -8,17 +8,22 @@ module Org.Data where
 
 import Control.Arrow (left)
 import Control.Lens
+import Control.Monad.Except
+import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Data.ByteString.Lazy qualified as B
 import Data.Map
 import Data.Map qualified as M
 import Data.Maybe (fromMaybe, maybeToList)
-import Data.Text (Text)
-import Data.Text qualified as T
+import Data.Text.Lazy (Text)
+import Data.Text.Lazy qualified as T
+import Data.Text.Lazy.Encoding qualified as T
 import Data.Void
 import Org.Parser
 import Org.Printer
 import Org.Types
 import Text.Megaparsec
+import Prelude hiding (readFile)
 
 lookupProperty :: [Property] -> Text -> Maybe Text
 lookupProperty ps n = ps ^? traverse . filtered (\x -> x ^. name == n) . value
@@ -30,15 +35,43 @@ property n =
 entryId :: Traversal' Entry Text
 entryId = property "ID"
 
-_orgFile :: FilePath -> Config -> Prism' Text OrgFile
-_orgFile path cfg =
+readOrgFile_ :: Config -> FilePath -> Text -> Either String OrgFile
+readOrgFile_ cfg path content =
+  left
+    errorBundlePretty
+    (runReader (runParserT parseOrgFile path content) cfg)
+
+readOrgFile :: (MonadIO m) => Config -> FilePath -> ExceptT String m OrgFile
+readOrgFile cfg path = do
+  content <- lift (readFile path)
+  liftEither $ readOrgFile_ cfg path content
+
+_orgFile :: Config -> FilePath -> Prism' Text OrgFile
+_orgFile cfg path =
   prism
-    (T.concat . showOrgFile (cfg ^. propertyColumn) (cfg ^. tagsColumn))
-    ( \content ->
-        left
-          (T.pack . errorBundlePretty)
-          (runReader (runParserT parseOrgFile path content) cfg)
+    ( T.intercalate "\n"
+        . showOrgFile (cfg ^. propertyColumn) (cfg ^. tagsColumn)
     )
+    (left T.pack . readOrgFile_ cfg path)
+
+readStdin :: (MonadIO m) => m Text
+readStdin = T.decodeUtf8 <$> liftIO B.getContents
+
+readFile :: (MonadIO m) => FilePath -> m Text
+readFile path = T.decodeUtf8 <$> liftIO (B.readFile path)
+
+readLines :: (MonadIO m) => FilePath -> m [Text]
+readLines path = T.lines <$> readFile path
+
+readOrgData ::
+  Config ->
+  [(FilePath, Text)] ->
+  Either String OrgData
+readOrgData cfg paths = OrgData . M.fromList <$> mapM go paths
+  where
+    go (path, content) = do
+      org <- readOrgFile_ cfg path content
+      pure (path, org)
 
 _orgTime :: Prism' Text Time
 _orgTime = prism' showTime (parseMaybe @Void parseTime)
@@ -86,8 +119,11 @@ traverseEntries ::
   f [a]
 traverseEntries ps f = foldEntries ps (liftA2 (:) . f) (pure [])
 
-entries :: [Property] -> Traversal' OrgData Entry
-entries ps f = orgFiles . traverse . fileEntries %%~ traverseEntries ps f
+entries :: [Property] -> Traversal' OrgFile Entry
+entries ps f = fileEntries %%~ traverseEntries ps f
+
+allEntries :: [Property] -> Traversal' OrgData Entry
+allEntries ps f = orgFiles . traverse . fileEntries %%~ traverseEntries ps f
 
 -- This is the "raw" form of the entries map, with a few invalid yet
 -- informational states:
@@ -101,7 +137,7 @@ entries ps f = orgFiles . traverse . fileEntries %%~ traverseEntries ps f
 --     no ID. This is fine except for certain cases, such as TODOs.
 entriesMap :: [Property] -> OrgData -> Map Text [Entry]
 entriesMap ps db =
-  Prelude.foldr addEntryToMap M.empty (db ^.. entries ps)
+  Prelude.foldr addEntryToMap M.empty (db ^.. allEntries ps)
 
 addEntryToMap :: Entry -> Map Text [Entry] -> Map Text [Entry]
 addEntryToMap e =

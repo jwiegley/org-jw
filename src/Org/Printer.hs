@@ -6,8 +6,8 @@
 module Org.Printer where
 
 import Data.Maybe (maybeToList)
-import Data.Text (Text, pack)
-import Data.Text qualified as T
+import Data.Text.Lazy (Text, pack)
+import Data.Text.Lazy qualified as T
 import Data.Time
 import Org.Types hiding (propertyColumn, tagsColumn)
 
@@ -19,9 +19,8 @@ showStamp (DeadlineStamp tm) = "DEADLINE: " <> showTime tm
 showTime :: Time -> Text
 showTime ts =
   T.concat $
-    [ showTimeSingle ts
-    ]
-      ++ case _timeDayEnd ts of
+    showTimeSingle ts
+      : case _timeDayEnd ts of
         Nothing -> []
         Just end ->
           [ "--",
@@ -38,7 +37,12 @@ showTime ts =
     showTimeSingle Time {..} =
       T.concat $
         [ beg,
-          pack (formatTime defaultTimeLocale "%Y-%m-%d %a" _timeDay)
+          pack
+            ( formatTime
+                defaultTimeLocale
+                "%Y-%m-%d %a"
+                (ModifiedJulianDay _timeDay)
+            )
         ]
           ++ case _timeStart of
             Nothing -> []
@@ -47,7 +51,10 @@ showTime ts =
                   ( formatTime
                       defaultTimeLocale
                       " %H:%M"
-                      (UTCTime _timeDay start)
+                      ( UTCTime
+                          (ModifiedJulianDay _timeDay)
+                          (secondsToDiffTime start)
+                      )
                   )
               ]
           ++ case _timeEnd of
@@ -57,7 +64,10 @@ showTime ts =
                   ( formatTime
                       defaultTimeLocale
                       "-%H:%M"
-                      (UTCTime _timeDay finish)
+                      ( UTCTime
+                          (ModifiedJulianDay _timeDay)
+                          (secondsToDiffTime finish)
+                      )
                   )
               ]
           ++ case _timeSuffix of
@@ -74,6 +84,15 @@ showTime ts =
                   WeekSpan -> "w"
                   MonthSpan -> "m"
               ]
+                ++ case _suffixLargerSpan of
+                  Nothing -> []
+                  Just (num, s) ->
+                    [ pack (show num),
+                      case s of
+                        DaySpan -> "d"
+                        WeekSpan -> "w"
+                        MonthSpan -> "m"
+                    ]
           ++ [ end
              ]
       where
@@ -83,21 +102,25 @@ showTime ts =
 
 showLogEntry :: LogEntry -> [Text]
 showLogEntry (LogStateChange from to tm text) =
-  [ "- State \""
-      <> showKeyword from
-      <> "\" from \""
-      <> showKeyword to
-      <> "\" "
-      <> showTime tm
-      <> if null text then "" else " \\\\"
-  ]
-    ++ map ("  " <>) text
+  T.concat
+    ( [ "- State \"",
+        showKeyword from
+      ]
+        ++ [ "\" from \"" <> showKeyword k
+             | k <- maybeToList to
+           ]
+        ++ [ "\" ",
+             showTime tm,
+             if null text then "" else " \\\\"
+           ]
+    )
+    : map ("  " <>) text
 showLogEntry (LogNote tm text) =
-  [ "- Note taken on "
+  ( "- Note taken on "
       <> showTime tm
       <> if null text then "" else " \\\\"
-  ]
-    ++ map ("  " <>) text
+  )
+    : map ("  " <>) text
 
 showKeyword :: Keyword -> Text
 showKeyword (OpenKeyword n) = n
@@ -118,12 +141,15 @@ showEntry propertyColumn tagsColumn Entry {..} =
       where
         spacer
           | width < 2 = "  "
-          | otherwise = T.replicate width " "
+          | otherwise = T.replicate (fromIntegral width) " "
           where
-            width = tagsColumn - T.length prefix - T.length suffix
+            width =
+              tagsColumn
+                - fromIntegral (T.length prefix)
+                - fromIntegral (T.length suffix)
         prefix =
           T.concat $
-            [T.replicate _entryDepth "*"]
+            [T.replicate (fromIntegral _entryDepth) "*"]
               ++ [" "]
               ++ [showKeyword kw <> " " | kw <- maybeToList _entryKeyword]
               ++ [ "(" <> c <> ") "
@@ -136,12 +162,12 @@ showEntry propertyColumn tagsColumn Entry {..} =
         suffix
           | not (null _entryTags) =
               T.concat $
-                [":"]
-                  ++ [ case tag of
-                         SpecialTag t -> t <> ":"
-                         PlainTag t -> t <> ":"
-                       | tag <- _entryTags
-                     ]
+                ":"
+                  : [ case tag of
+                        SpecialTag t -> t <> ":"
+                        PlainTag t -> t <> ":"
+                      | tag <- _entryTags
+                    ]
           | otherwise = ""
     timestamps
       | null _entryStamps = []
@@ -183,9 +209,9 @@ showProperties propertyColumn ps =
       where
         spacer
           | width < 1 = " "
-          | otherwise = T.replicate width " "
+          | otherwise = T.replicate (fromIntegral width) " "
           where
-            width = propertyColumn - T.length prefix
+            width = propertyColumn - fromIntegral (T.length prefix)
         prefix = T.concat [":" <> _name <> ":"]
         suffix = _value
 
@@ -197,11 +223,13 @@ showFileProperties ps =
 
 summarizeEntry :: Entry -> [Text]
 summarizeEntry Entry {..} =
-  [T.replicate _entryDepth "*" <> " " <> _entryTitle]
+  [T.replicate (fromIntegral _entryDepth) "*" <> " " <> _entryTitle]
     ++ showProperties
       0
       ( _entryProperties
-          ++ [Property False "ORIGIN" (T.pack (show _entryPos))]
+          ++ [Property False "FILE" (T.pack _entryFile)]
+          ++ [Property False "LINE" (T.pack (show _entryLine))]
+          ++ [Property False "COLUMN" (T.pack (show _entryColumn))]
           ++ [ Property False "KEYWORD" (T.pack (show x))
                | x <- maybeToList _entryKeyword
              ]
@@ -224,12 +252,12 @@ summarizeEntry Entry {..} =
                   False
                   "TAGS"
                   ( T.concat $
-                      [":"]
-                        ++ [ case tag of
-                               SpecialTag t -> t <> ":"
-                               PlainTag t -> t <> ":"
-                             | tag <- _entryTags
-                           ]
+                      ":"
+                        : [ case tag of
+                              SpecialTag t -> t <> ":"
+                              PlainTag t -> t <> ":"
+                            | tag <- _entryTags
+                          ]
                   )
               ]
           ++ map

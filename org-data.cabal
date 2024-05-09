@@ -36,6 +36,7 @@ library
     , containers
     , data-default
     , free
+    , hashable
     , lens
     , megaparsec
     , mtl
@@ -70,6 +71,7 @@ executable org-data
     , containers
     , data-default
     , free
+    , hashable
     , lens
     , megaparsec
     , mtl
@@ -108,6 +110,7 @@ test-suite org-data-tests
     , containers
     , data-default
     , free
+    , hashable
     , hedgehog
     , here
     , lens

@@ -25,16 +25,25 @@ tradeJournalSummary =
     ++ " John Wiegley"
 
 data Command
-  = Parse !FilePath
-  | Print !FilePath
-  | Dump !FilePath
-  | Outline !FilePath
+  = Parse
+  | Print
+  | Dump
+  | Outline
+  | Stats
   deriving (Data, Show, Eq, Typeable, Generic)
 
 makeLenses ''Command
 
+data InputFiles
+  = FileFromStdin
+  | ListFromStdin
+  | SingleFile FilePath
+  | FilesFromFile FilePath
+  deriving (Data, Show, Eq, Typeable, Generic)
+
 data Options = Options
   { _verbose :: !Bool,
+    _paths :: !InputFiles,
     _command :: !Command
   }
   deriving (Data, Show, Eq, Typeable, Generic)
@@ -49,11 +58,35 @@ tradeJournalOpts =
           <> long "verbose"
           <> help "Report progress verbosely"
       )
+    <*> ( ( ( \x ->
+                if x == "-"
+                  then FileFromStdin
+                  else SingleFile x
+            )
+              <$> strOption
+                ( short 'f'
+                    <> long "file"
+                    <> help "Single file to process"
+                )
+          )
+            <|> ( ( \x ->
+                      if x == "-"
+                        then ListFromStdin
+                        else FilesFromFile x
+                  )
+                    <$> strOption
+                      ( short 'F'
+                          <> long "files"
+                          <> help "List of files to process"
+                      )
+                )
+        )
     <*> hsubparser
       ( parseCommand
           <> printCommand
           <> dumpCommand
           <> outlineCommand
+          <> statsCommand
       )
   where
     parseCommand :: Mod CommandFields Command
@@ -64,8 +97,7 @@ tradeJournalOpts =
       where
         parseOptions :: Parser Command
         parseOptions =
-          Parse
-            <$> strArgument (metavar "FILE" <> help "Org-mode file to read")
+          pure Parse
 
     printCommand :: Mod CommandFields Command
     printCommand =
@@ -75,8 +107,7 @@ tradeJournalOpts =
       where
         printOptions :: Parser Command
         printOptions =
-          Print
-            <$> strArgument (metavar "FILE" <> help "Org-mode file to read")
+          pure Print
 
     dumpCommand :: Mod CommandFields Command
     dumpCommand =
@@ -86,8 +117,7 @@ tradeJournalOpts =
       where
         dumpOptions :: Parser Command
         dumpOptions =
-          Dump
-            <$> strArgument (metavar "FILE" <> help "Org-mode file to read")
+          pure Dump
 
     outlineCommand :: Mod CommandFields Command
     outlineCommand =
@@ -97,8 +127,17 @@ tradeJournalOpts =
       where
         outlineOptions :: Parser Command
         outlineOptions =
-          Outline
-            <$> strArgument (metavar "FILE" <> help "Org-mode file to read")
+          pure Outline
+
+    statsCommand :: Mod CommandFields Command
+    statsCommand =
+      OA.command
+        "stats"
+        (info statsOptions (progDesc "Stats Org-mode file"))
+      where
+        statsOptions :: Parser Command
+        statsOptions =
+          pure Stats
 
 optionsDefinition :: ParserInfo Options
 optionsDefinition =

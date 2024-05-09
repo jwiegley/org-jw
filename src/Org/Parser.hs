@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Org.Parser (parseOrgFile, parseTime, parseTimeSingle) where
 
@@ -14,8 +15,8 @@ import Control.Monad.Reader
 import Data.Char (isPrint, isSpace)
 import Data.Maybe (isJust, maybeToList)
 import Data.String
-import Data.Text (Text, pack)
-import Data.Text qualified as T
+import Data.Text.Lazy (Text, pack)
+import Data.Text.Lazy qualified as T
 import Data.Time
 import Org.Types
 import Text.Megaparsec hiding (many, some)
@@ -30,11 +31,17 @@ singleSpace = char ' '
 trailingSpace :: Parser ()
 trailingSpace = skipManyTill singleSpace (void newline)
 
+anyChar :: Parser Char
+anyChar = satisfy $ \c -> c /= '\n'
+
+newlineOrEof :: Parser ()
+newlineOrEof = void newline <|> eof
+
 line :: Parser Text
-line = pack <$> manyTill (printChar <|> singleSpace) newline
+line = pack <$> manyTill anyChar newlineOrEof
 
 restOfLine :: Parser Text
-restOfLine = pack <$> someTill (printChar <|> singleSpace) newline
+restOfLine = pack <$> someTill anyChar newline
 
 identifier :: Parser Text
 identifier = pack <$> many (alphaNumChar <|> char '_')
@@ -57,8 +64,7 @@ parseProperties = do
 
 parseHeader :: Parser Header
 parseHeader =
-  Header
-    <$> (join . maybeToList <$> optional (try parseProperties))
+  (Header . join . maybeToList <$> optional (try parseProperties))
     <*> many parseFileProperty
     <*> parseEntryText
 
@@ -84,17 +90,17 @@ parseKeyword = do
 
 parseEntry :: Int -> Parser Entry
 parseEntry parseAtDepth = do
-  _entryPos <- getSourcePos
+  SourcePos _entryFile (unPos -> _entryLine) (unPos -> _entryColumn) <-
+    getSourcePos
   _entryDepth <- try $ do
     depth <- parseHeaderStars
     guard $ depth == parseAtDepth
     pure depth
   _entryKeyword <- optional (try parseKeyword <* some singleSpace)
-  _entryPriority <- optional $ parseEntryPriority
+  _entryPriority <- optional parseEntryPriority
   _entryContext <- optional parseEntryContext
   (_entryTitle, (_entryLocator, _entryTags)) <-
-    first pack
-      <$> manyTill_ (printChar <|> singleSpace) (try parseTitleSuffix)
+    first pack <$> manyTill_ anyChar (try parseTitleSuffix)
   _entryStamps <-
     join . maybeToList
       <$> try (optional (parseStamps <* trailingSpace))
@@ -103,10 +109,6 @@ parseEntry parseAtDepth = do
       <$> try (optional parseProperties)
   _entryLogEntries <- many parseLogEntry
   _entryText <- parseEntryText
-  forM_ _entryText $ \txt ->
-    when (":PROPERTIES:" `T.isInfixOf` txt) $
-      fail $
-        "Floating properties drawer in: " ++ show txt
   _entryItems <- many (parseEntry (succ _entryDepth))
   pure Entry {..}
 
@@ -215,7 +217,7 @@ parseTimeSingle = do
   _ <- char '-'
   day <- count 2 numberChar
   _timeDay <- case fromGregorianValid (read year) (read month) (read day) of
-    Just d -> pure d
+    Just d -> pure $ fromInteger $ toModifiedJulianDay d
     Nothing ->
       fail $
         "Could not parse gregorian date: "
@@ -232,14 +234,14 @@ parseTimeSingle = do
     hour <- count 2 numberChar
     _ <- char ':'
     minute <- count 2 numberChar
-    pure $ secondsToDiffTime (read hour * 60 + read minute)
+    pure $ read hour * 60 + read minute
   _timeEnd <- optional $ do
     guard $ isJust _timeStart
     _ <- char '-'
     hour <- count 2 numberChar
     _ <- char ':'
     minute <- count 2 numberChar
-    pure $ secondsToDiffTime (read hour * 60 + read minute)
+    pure $ read hour * 60 + read minute
   _timeSuffix <- optional $ do
     _ <- char ' '
     repeatDotted <- isJust <$> optional (char '.')
@@ -255,6 +257,14 @@ parseTimeSingle = do
       MonthSpan <$ char 'm'
         <|> DaySpan <$ char 'd'
         <|> WeekSpan <$ char 'w'
+    _suffixLargerSpan <- optional $ try $ do
+      _ <- char '/'
+      num <- read <$> some digitChar
+      s <-
+        MonthSpan <$ char 'm'
+          <|> DaySpan <$ char 'd'
+          <|> WeekSpan <$ char 'w'
+      pure (num, s)
     pure TimeSuffix {..}
   _ <- case _timeKind of
     ActiveTime -> char '>'
@@ -268,9 +278,11 @@ parseLogEntry = parseStateChange <|> parseNote
       _ <- string "- State \""
       fromKeyword <- parseKeyword
       _ <- char '"'
-      skipManyTill singleSpace (void (string "from \""))
-      toKeyword <- parseKeyword
-      _ <- char '"'
+      toKeyword <- optional $ try $ do
+        skipManyTill singleSpace (void (string "from \""))
+        kw <- parseKeyword
+        _ <- char '"'
+        pure kw
       skipSome singleSpace
       logTime <- parseTimeSingle
       logNote <-

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ImportQualifiedPost #-}
@@ -11,9 +12,10 @@ module Org.Types where
 import Control.Lens
 import Control.Monad.Reader
 import Data.Data
+import Data.Hashable
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
+import Data.Text.Lazy (Text)
 import Data.Time
 import Data.Void
 import GHC.Generics
@@ -40,7 +42,7 @@ data Property = Property
     _name :: Text,
     _value :: Text
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 makeLenses ''Property
 
@@ -49,21 +51,21 @@ data Header = Header
     _headerFileProperties :: [Property],
     _headerPreamble :: [Text]
   }
-  deriving (Show, Eq, Generic, Data, Typeable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 makeClassy ''Header
 
 data Keyword
   = OpenKeyword Text
   | ClosedKeyword Text
-  deriving (Show, Eq, Ord, Generic, Data, Typeable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 makePrisms ''Keyword
 
 data Tag
   = SpecialTag Text
   | PlainTag Text
-  deriving (Show, Eq, Ord, Generic, Data, Typeable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 makePrisms ''Tag
 
@@ -71,14 +73,14 @@ data TimeSpan
   = DaySpan
   | WeekSpan
   | MonthSpan
-  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable)
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable, Hashable)
 
 makePrisms ''TimeSpan
 
 data TimeKind
   = ActiveTime
   | InactiveTime
-  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable)
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable, Hashable)
 
 makePrisms ''TimeKind
 
@@ -86,28 +88,29 @@ data TimeSuffixKind
   = TimeRepeat
   | TimeDottedRepeat
   | TimeWithin
-  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable)
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable, Hashable)
 
 makePrisms ''TimeSuffixKind
 
 data TimeSuffix = TimeSuffix
   { _suffixKind :: TimeSuffixKind,
-    _suffixNum :: Int,
-    _suffixSpan :: TimeSpan
+    _suffixNum :: Integer,
+    _suffixSpan :: TimeSpan,
+    _suffixLargerSpan :: Maybe (Integer, TimeSpan)
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 makeLenses ''TimeSuffix
 
 data Time = Time
   { _timeKind :: TimeKind,
-    _timeDay :: Day,
-    _timeDayEnd :: Maybe Day,
-    _timeStart :: Maybe DiffTime,
-    _timeEnd :: Maybe DiffTime,
+    _timeDay :: Integer,
+    _timeDayEnd :: Maybe Integer,
+    _timeStart :: Maybe Integer,
+    _timeEnd :: Maybe Integer,
     _timeSuffix :: Maybe TimeSuffix
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 makeClassy ''Time
 
@@ -115,29 +118,35 @@ data Stamp
   = ClosedStamp Time
   | ScheduledStamp Time
   | DeadlineStamp Time
-  deriving (Show, Eq, Ord, Generic, Data, Typeable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 makePrisms ''Stamp
 
 timeStartToUTCTime :: Time -> UTCTime
 timeStartToUTCTime Time {..} =
-  UTCTime _timeDay (fromMaybe (secondsToDiffTime 0) _timeStart)
+  UTCTime
+    (ModifiedJulianDay _timeDay)
+    (secondsToDiffTime $ fromMaybe 0 _timeStart)
 
 timeEndToUTCTime :: Time -> Maybe UTCTime
-timeEndToUTCTime Time {..} =
-  UTCTime
-    <$> _timeDayEnd
-    <*> Just (fromMaybe (secondsToDiffTime 0) _timeEnd)
+timeEndToUTCTime Time {..} = do
+  day <- _timeDayEnd
+  pure $
+    UTCTime
+      (ModifiedJulianDay day)
+      (secondsToDiffTime $ fromMaybe 0 _timeEnd)
 
 data LogEntry
-  = LogStateChange Keyword Keyword Time [Text]
+  = LogStateChange Keyword (Maybe Keyword) Time [Text]
   | LogNote Time [Text]
-  deriving (Show, Eq, Ord, Generic, Data, Typeable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 makePrisms ''LogEntry
 
 data Entry = Entry
-  { _entryPos :: SourcePos,
+  { _entryFile :: FilePath,
+    _entryLine :: Int,
+    _entryColumn :: Int,
     _entryDepth :: Int,
     _entryKeyword :: Maybe Keyword,
     _entryPriority :: Maybe Text,
@@ -151,7 +160,7 @@ data Entry = Entry
     _entryText :: [Text],
     _entryItems :: [Entry]
   }
-  deriving (Show, Eq, Generic, Data, Typeable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 makeClassy ''Entry
 
@@ -159,7 +168,7 @@ data OrgFile = OrgFile
   { _fileHeader :: Header,
     _fileEntries :: [Entry]
   }
-  deriving (Show, Eq, Generic, Data, Typeable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 makeClassy ''OrgFile
 

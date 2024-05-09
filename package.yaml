@@ -19,6 +19,7 @@ dependencies:
   - containers
   - data-default
   - free
+  - hashable
   - lens
   - megaparsec
   - mtl

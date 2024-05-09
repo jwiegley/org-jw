@@ -5,8 +5,8 @@
 
 module Org.Lint where
 
--- import Data.Text (Text, pack)
--- import Data.Text qualified as T
+-- import Data.Text.Lazy (Text, pack)
+-- import Data.Text.Lazy qualified as T
 -- import Data.Time
 -- import Org.Types
 
@@ -14,7 +14,8 @@ module Org.Lint where
 
 Linting rules:
 
-- All TODO entries have ID and CREATED properties.
+- All TODO entries have ID properties, anything recent also has a CREATED
+  property.
 
 - No CREATED date lies in the future.
 
@@ -24,11 +25,19 @@ Linting rules:
 
 - No title has internal whitespace other than single spaces.
 
-- Trailing whitespace is consistent for log entries.
+- No title has special characters without escaping.
 
-- If an entry's body text has trailing whitespace, it has the same leading
-  whitespace.
+- Leading and trailing whitespace is consistent within log entries.
+
+- There is no whitespace preceding the event log.
+
+- There is no whitespace after the PROPERTY block (and/or event log) when
+  there is no whitespace at the end of the entry.
+
+- If an entry has trailing whitespace, it's siblings have the same whitespace.
 
 - Property blocks are never empty.
+
+- Only TODO items have SCHEDULED/DEADLINE/CLOSED timestamps.
 
 -}
