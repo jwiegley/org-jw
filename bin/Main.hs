@@ -48,10 +48,11 @@ main = do
       let keywordMap =
             foldr
               ( \e ->
-                  case e ^. entryKeyword of
-                    Nothing -> at "<plain>" %~ Just . maybe (0 :: Int) succ
-                    Just (OpenKeyword k) -> at k %~ Just . maybe 0 succ
-                    Just (ClosedKeyword k) -> at k %~ Just . maybe 0 succ
+                  let kw = case e ^. entryKeyword of
+                        Nothing -> "<plain>"
+                        Just (OpenKeyword k) -> k
+                        Just (ClosedKeyword k) -> k
+                   in at kw %~ Just . maybe (0 :: Int) succ
               )
               M.empty
               (org ^.. allEntries [])
