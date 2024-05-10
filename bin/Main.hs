@@ -45,18 +45,13 @@ main = do
         "There are a total of "
           ++ show (length (org ^.. allEntries []))
           ++ " entries"
-      let keywordMap =
-            foldr
-              ( \e ->
-                  let kw = case e ^. entryKeyword of
-                        Nothing -> "<plain>"
-                        Just (OpenKeyword k) -> k
-                        Just (ClosedKeyword k) -> k
-                   in at kw %~ Just . maybe (0 :: Int) succ
-              )
-              M.empty
-              (org ^.. allEntries [])
-      pPrint keywordMap
+      pPrint $ count org $ \e m k ->
+        k m $ case e ^. entryKeyword of
+          Nothing -> "<plain>"
+          Just (OpenKeyword kw) -> kw
+          Just (ClosedKeyword kw) -> kw
+      pPrint $ count org $ \e m k ->
+        foldr (flip k) m (e ^. entryTags)
       void $ flip M.traverseWithKey (org ^. orgFiles) $ \path o -> do
         putStrLn $
           path ++ ": " ++ show (length (o ^.. entries [])) ++ " entries"
@@ -110,6 +105,12 @@ main = do
         (mapM_ T.putStrLn . concatMap summarizeEntry . _fileEntries)
         (_orgFiles org)
   where
+    count org f =
+      foldr
+        (\e m -> f e m $ \m' r -> m' & at r %~ Just . maybe (1 :: Int) succ)
+        M.empty
+        (org ^.. allEntries [])
+
     _openKeywords =
       [ "TODO",
         "CATEGORY",
