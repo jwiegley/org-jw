@@ -45,6 +45,17 @@ main = do
         "There are a total of "
           ++ show (length (org ^.. allEntries []))
           ++ " entries"
+      let keywordMap =
+            foldr
+              ( \e ->
+                  case e ^. entryKeyword of
+                    Nothing -> at "<plain>" %~ Just . maybe (0 :: Int) succ
+                    Just (OpenKeyword k) -> at k %~ Just . maybe 0 succ
+                    Just (ClosedKeyword k) -> at k %~ Just . maybe 0 succ
+              )
+              M.empty
+              (org ^.. allEntries [])
+      pPrint keywordMap
       void $ flip M.traverseWithKey (org ^. orgFiles) $ \path o -> do
         putStrLn $
           path ++ ": " ++ show (length (o ^.. entries [])) ++ " entries"
