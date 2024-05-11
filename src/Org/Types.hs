@@ -114,6 +114,17 @@ data Time = Time
 
 makeClassy ''Time
 
+data Duration = Duration
+  { _hours :: Integer,
+    _mins :: Integer
+  }
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+
+makeClassy ''Duration
+
+_duration :: Traversal' Time Duration
+_duration f tm = undefined
+
 data Stamp
   = ClosedStamp Time
   | ScheduledStamp Time
@@ -137,8 +148,9 @@ timeEndToUTCTime Time {..} = do
       (secondsToDiffTime $ fromMaybe 0 _timeEnd)
 
 data LogEntry
-  = LogStateChange Keyword (Maybe Keyword) Time [Text]
+  = LogState Keyword (Maybe Keyword) Time [Text]
   | LogNote Time [Text]
+  | LogBook [(Time, Duration)]
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 makePrisms ''LogEntry

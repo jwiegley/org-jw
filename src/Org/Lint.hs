@@ -14,8 +14,10 @@ import Data.Data
 import Data.Hashable
 import Data.List (nub)
 import Data.Text.Lazy qualified as T
+import Debug.Trace
 import GHC.Generics
 import Org.Types
+import Text.Show.Pretty
 
 data LintMessageKind = LintError | LintWarning | LintInfo
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
@@ -23,6 +25,7 @@ data LintMessageKind = LintError | LintWarning | LintInfo
 data LintMessageCode
   = MisplacedProperty
   | MisplacedTimestamp
+  | MisplacedLogEntry
   | DuplicatedProperty
   | TitleWithExcessiveWhitespace
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
@@ -100,6 +103,14 @@ lintOrgEntry e = do
             || "CLOSED:" `T.isInfixOf` t
       )
       (e ^. entryText)
+  checkFor LintError MisplacedLogEntry $
+    any
+      ( \t ->
+          "- State" `T.isInfixOf` t
+            || "- Note taken" `T.isInfixOf` t
+            || ":LOGBOOK:" `T.isInfixOf` t
+      )
+      (e ^. entryText)
   checkFor LintWarning TitleWithExcessiveWhitespace $
     "  " `T.isInfixOf` (e ^. entryTitle)
   checkFor LintError DuplicatedProperty $
@@ -112,7 +123,8 @@ lintOrgEntry e = do
       Bool ->
       Writer [LintMessage] ()
     checkFor kind code b =
-      when b $
+      when b $ do
+        traceM $ "entry: " ++ ppShow e
         tell
           [ LintMessage
               kind
@@ -143,6 +155,8 @@ showLintOrg (LintMessage kind code file line col) =
         "Misplaced :PROPERTY: block"
       MisplacedTimestamp ->
         "Misplaced timestamp (SCHEDULED, DEADLINE or CLOSED)"
+      MisplacedLogEntry ->
+        "Misplaced state change, note or LOGBOOK"
       TitleWithExcessiveWhitespace ->
         "Title with excessive whitespace"
       DuplicatedProperty ->

@@ -17,18 +17,18 @@ showStamp (ScheduledStamp tm) = "SCHEDULED: " <> showTime tm
 showStamp (DeadlineStamp tm) = "DEADLINE: " <> showTime tm
 
 showTime :: Time -> Text
-showTime ts =
+showTime tm =
   T.concat $
-    showTimeSingle ts
-      : case _timeDayEnd ts of
+    showTimeSingle tm
+      : case _timeDayEnd tm of
         Nothing -> []
         Just end ->
           [ "--",
             showTimeSingle
-              ts
+              tm
                 { _timeDay = end,
                   _timeDayEnd = Nothing,
-                  _timeStart = _timeEnd ts,
+                  _timeStart = _timeEnd tm,
                   _timeEnd = Nothing
                 }
           ]
@@ -100,8 +100,11 @@ showTime ts =
           ActiveTime -> ("<", ">")
           InactiveTime -> ("[", "]")
 
+showDuration :: Duration -> Text
+showDuration tm = undefined
+
 showLogEntry :: LogEntry -> [Text]
-showLogEntry (LogStateChange from to tm text) =
+showLogEntry (LogState from to tm text) =
   T.concat
     ( [ "- State \"",
         showKeyword from
@@ -121,6 +124,11 @@ showLogEntry (LogNote tm text) =
       <> if null text then "" else " \\\\"
   )
     : map ("  " <>) text
+showLogEntry (LogBook tms) =
+  ":LOGBOOK:" : map logEntry tms ++ [":END:"]
+  where
+    logEntry (tm, dur) =
+      "CLOCK: " <> showTime tm <> " => " <> showDuration dur
 
 showKeyword :: Keyword -> Text
 showKeyword (OpenKeyword n) = n

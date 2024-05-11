@@ -28,6 +28,9 @@ oneOfList = foldr (\x rest -> string x <|> rest) mzero
 singleSpace :: Parser Char
 singleSpace = char ' '
 
+spaces_ :: Parser ()
+spaces_ = skipSome singleSpace
+
 trailingSpace :: Parser ()
 trailingSpace = skipManyTill singleSpace (void newline)
 
@@ -116,7 +119,7 @@ parseEntryPriority :: Parser Text
 parseEntryPriority = do
   Config {..} <- ask
   prio <- string "[#" *> oneOfList _priorities <* char ']'
-  skipSome singleSpace
+  spaces_
   pure prio
 
 parseEntryContext :: Parser Text
@@ -126,12 +129,12 @@ parseEntryContext = do
       (char '(')
       (char ')')
       (pack <$> some (satisfy (\c -> c /= ')' && (isPrint c || c == ' '))))
-  skipSome singleSpace
+  spaces_
   pure context
 
 parseTitleSuffix :: Parser (Maybe Text, [Tag])
 parseTitleSuffix =
-  ((Nothing, []) <$ try (skipManyTill singleSpace newline))
+  ((Nothing, []) <$ try trailingSpace)
     <|> do
       _ <- some singleSpace
       location <- optional (try parseLocation)
@@ -183,6 +186,13 @@ parseStamp =
       *> string ": "
       *> (DeadlineStamp <$> parseTimeSingle)
 
+blendTimes :: Time -> Time -> Time
+blendTimes start Time {..} =
+  start
+    { _timeDayEnd = Just _timeDay,
+      _timeEnd = _timeStart
+    }
+
 parseTime ::
   (MonadParsec e s m, Token s ~ Char, IsString (Tokens s), MonadFail m) =>
   m Time
@@ -191,18 +201,14 @@ parseTime = do
   mend <- optional $ string "--" *> parseTimeSingle
   case mend of
     Nothing -> pure start
-    Just ts@Time {..} -> do
+    Just tm@Time {..} -> do
       forM_ _timeDayEnd $ \_ ->
-        fail $ "Invalid org time: " ++ show ts
+        fail $ "Invalid org time: " ++ show tm
       forM_ _timeEnd $ \_ ->
-        fail $ "Invalid org time: " ++ show ts
+        fail $ "Invalid org time: " ++ show tm
       forM_ _timeSuffix $ \_ ->
-        fail $ "Invalid org time: " ++ show ts
-      pure
-        start
-          { _timeDayEnd = Just _timeDay,
-            _timeEnd = _timeStart
-          }
+        fail $ "Invalid org time: " ++ show tm
+      pure $ blendTimes start tm
 
 parseTimeSingle ::
   (MonadParsec e s m, Token s ~ Char, IsString (Tokens s), MonadFail m) =>
@@ -272,31 +278,52 @@ parseTimeSingle = do
   pure Time {..}
 
 parseLogEntry :: Parser LogEntry
-parseLogEntry = parseStateChange <|> parseNote
+parseLogEntry = parseStateChange <|> parseNote <|> parseLogBook
   where
+    trailingNote =
+      ([] <$ try (skipSome trailingSpace))
+        <|> spaces_
+          *> string "\\\\"
+          *> trailingSpace
+          *> parseNoteText
+
     parseStateChange = do
-      _ <- string "- State \""
-      fromKeyword <- parseKeyword
-      _ <- char '"'
-      toKeyword <- optional $ try $ do
-        skipManyTill singleSpace (void (string "from \""))
-        kw <- parseKeyword
-        _ <- char '"'
-        pure kw
-      skipSome singleSpace
-      logTime <- parseTimeSingle
-      logNote <-
-        [] <$ try newline
-          <|> skipSome singleSpace *> string "\\\\" *> newline *> parseNoteText
-      pure $ LogStateChange fromKeyword toKeyword logTime logNote
+      fromKeyword <-
+        try (string "- State \"")
+          *> parseKeyword
+          <* char '"'
+          <* spaces_
+      toKeyword <-
+        optional $
+          try $
+            string "from"
+              *> spaces_
+              *> char '"'
+              *> parseKeyword
+              <* char '"'
+              <* spaces_
+      LogState fromKeyword toKeyword <$> parseTimeSingle <*> trailingNote
 
     parseNote = do
-      _ <- string "- Note take on "
-      logTime <- parseTimeSingle
-      logNote <-
-        [] <$ newline
-          <|> skipSome singleSpace *> string "\\\\" *> newline *> parseNoteText
-      pure $ LogNote logTime logNote
+      _ <- try (string "- Note taken on" <* spaces_) --
+      LogNote <$> parseTimeSingle <*> trailingNote
+
+    parseLogBook = do
+      _ <- try (string ":LOGBOOK:") <* trailingSpace
+      book <- many $ do
+        _ <- string "CLOCK:" <* spaces_
+        start <- parseTimeSingle
+        _ <- string "--"
+        end <- parseTimeSingle
+        let tm = blendTimes start end
+        _ <- spaces_ *> string "=>" *> spaces_
+        _hours <- read <$> some digitChar
+        _ <- char ':'
+        _mins <- read <$> some digitChar
+        trailingSpace
+        pure (tm, Duration {..})
+      string ":END:" *> trailingSpace
+      return $ LogBook book
 
 parseNoteText :: Parser [Text]
 parseNoteText = do
@@ -309,5 +336,5 @@ parseNoteText = do
   let leaders = filter (\x -> x /= "  " && x /= "") $ map (T.take 2) xs
   unless (null leaders) $
     fail $
-      "Unexpected log entry: " ++ show xs
+      "Unexpected log entry: " ++ show xs ++ ", leaders: " ++ show leaders
   pure $ map (T.drop 2) xs
