@@ -30,6 +30,7 @@ data Command
   | Dump
   | Outline
   | Stats
+  | Lint
   deriving (Data, Show, Eq, Typeable, Generic)
 
 makeLenses ''Command
@@ -87,6 +88,7 @@ tradeJournalOpts =
           <> dumpCommand
           <> outlineCommand
           <> statsCommand
+          <> lintCommand
       )
   where
     parseCommand :: Mod CommandFields Command
@@ -138,6 +140,16 @@ tradeJournalOpts =
         statsOptions :: Parser Command
         statsOptions =
           pure Stats
+
+    lintCommand :: Mod CommandFields Command
+    lintCommand =
+      OA.command
+        "lint"
+        (info lintOptions (progDesc "Lint Org-mode file"))
+      where
+        lintOptions :: Parser Command
+        lintOptions =
+          pure Lint
 
 optionsDefinition :: ParserInfo Options
 optionsDefinition =

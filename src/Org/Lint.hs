@@ -1,18 +1,60 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module Org.Lint where
 
--- import Data.Text.Lazy (Text, pack)
--- import Data.Text.Lazy qualified as T
--- import Data.Time
--- import Org.Types
+import Control.Lens
+import Control.Monad (when)
+import Control.Monad.Writer
+import Data.Data
+import Data.Hashable
+import Data.Text.Lazy qualified as T
+import GHC.Generics
+import Org.Types
+
+data LintMessageKind = LintError | LintWarning | LintInfo
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+
+data LintMessageCode
+  = MisplacedProperty
+  | MisplacedTimestamp
+  | TitleWithExcessiveWhitespace
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+
+data LintMessage = LintMessage
+  { lintMsgKind :: LintMessageKind,
+    lintMsgCode :: LintMessageCode,
+    lintMsgFile :: FilePath,
+    lintMsgLine :: Int,
+    lintMsgColumn :: Int
+  }
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 {-
 
-Linting rules:
+Linting rules for org file collections:
+
+-}
+
+lintOrgData :: OrgData -> [LintMessage]
+lintOrgData org = snd . runWriter $ mapM_ lintOrgFile (org ^. orgFiles)
+
+{-
+
+Linting rules for org files:
+
+-}
+
+lintOrgFile :: OrgFile -> Writer [LintMessage] ()
+lintOrgFile org = mapM_ lintOrgEntry (org ^. fileEntries)
+
+{-
+
+Linting rules for org file entries:
 
 - All TODO entries have ID properties, anything recent also has a CREATED
   property.
@@ -40,4 +82,61 @@ Linting rules:
 
 - Only TODO items have SCHEDULED/DEADLINE/CLOSED timestamps.
 
+- Don't use :SCRIPT:, use org-babel
+
 -}
+
+lintOrgEntry :: Entry -> Writer [LintMessage] ()
+lintOrgEntry e = do
+  checkFor LintError MisplacedProperty $
+    any (":PROPERTIES:" `T.isInfixOf`) (e ^. entryText)
+  checkFor LintError MisplacedTimestamp $
+    any
+      ( \t ->
+          "SCHEDULED:" `T.isInfixOf` t
+            || "DEADLINE:" `T.isInfixOf` t
+            || "CLOSED:" `T.isInfixOf` t
+      )
+      (e ^. entryText)
+  checkFor LintWarning TitleWithExcessiveWhitespace $
+    "  " `T.isInfixOf` (e ^. entryTitle)
+  where
+    checkFor ::
+      LintMessageKind ->
+      LintMessageCode ->
+      Bool ->
+      Writer [LintMessage] ()
+    checkFor kind code b =
+      when b $
+        tell
+          [ LintMessage
+              kind
+              code
+              (e ^. entryFile)
+              (e ^. entryLine)
+              (e ^. entryColumn)
+          ]
+
+showLintOrg :: LintMessage -> String
+showLintOrg (LintMessage kind code file line col) =
+  file
+    ++ ":"
+    ++ show line
+    ++ ":"
+    ++ show col
+    ++ ": "
+    ++ renderKind kind
+    ++ " "
+    ++ renderCode code
+  where
+    renderKind = \case
+      LintError -> "ERROR"
+      LintWarning -> "WARN"
+      LintInfo -> "INFO"
+    renderCode = \case
+      MisplacedProperty ->
+        "Misplaced :PROPERTY: block"
+      MisplacedTimestamp ->
+        "Misplaced timestamp (SCHEDULED, DEADLINE or CLOSED)"
+      TitleWithExcessiveWhitespace ->
+        "Title with excessive whitespace"

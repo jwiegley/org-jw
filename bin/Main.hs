@@ -1,20 +1,18 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Main where
 
 import Control.Lens
 import Control.Monad (void)
 import Data.Map qualified as M
--- import Data.Set qualified as S
 import Data.Text.Lazy qualified as T
 import Data.Text.Lazy.IO qualified as T
 import Options qualified
 import Org.Data
+import Org.Lint
 import Org.Printer
 import Org.Types
 import Text.Show.Pretty
@@ -45,51 +43,15 @@ main = do
         "There are a total of "
           ++ show (length (org ^.. allEntries []))
           ++ " entries"
-      pPrint $ count org $ \e m k ->
+      pPrint $ countEntries org $ \e m k ->
         k m $ case e ^. entryKeyword of
           Nothing -> "<plain>"
           Just (OpenKeyword kw) -> kw
           Just (ClosedKeyword kw) -> kw
-      pPrint $ count org $ \e m k ->
-        foldr (flip k) m (e ^. entryTags)
+      pPrint $ countEntries org $ \e m k -> foldr (flip k) m (e ^. entryTags)
       void $ flip M.traverseWithKey (org ^. orgFiles) $ \path o -> do
         putStrLn $
           path ++ ": " ++ show (length (o ^.. entries [])) ++ " entries"
-    {-
-            putStrLn "Tags found:"
-            mapM_
-              ( \case
-                  PlainTag tag -> T.putStrLn $ "  " <> tag
-                  SpecialTag tag -> T.putStrLn $ "  [" <> tag <> "]"
-              )
-              ( foldr
-                  S.insert
-                  mempty
-                  (concatMap _entryTags (_fileEntries o))
-              )
-            putStrLn "Contexts found:"
-            mapM_
-              ( \case
-                  Nothing -> pure ()
-                  Just x -> T.putStrLn $ "  " <> x
-              )
-              (foldr (S.insert . _entryContext) mempty (_fileEntries o))
-            putStrLn "Locators found:"
-            mapM_
-              ( \case
-                  Nothing -> pure ()
-                  Just x -> T.putStrLn $ "  " <> x
-              )
-              (foldr (S.insert . _entryLocator) mempty (_fileEntries o))
-            mapM_
-              ( \title -> case parseMaybe
-                  (count 4 upperChar :: BasicParser String)
-                  title of
-                  Nothing -> pure ()
-                  Just _ -> T.putStrLn $ "Fishy title: " <> title
-              )
-              (foldr (S.insert . _entryTitle) mempty (_fileEntries o))
-    -}
     Options.Print ->
       void $ flip M.traverseWithKey (org ^. orgFiles) $ \path o ->
         T.putStrLn $ _orgFile Config {..} path # o
@@ -104,13 +66,42 @@ main = do
       mapM_
         (mapM_ T.putStrLn . concatMap summarizeEntry . _fileEntries)
         (_orgFiles org)
+    Options.Lint -> do
+      putStrLn $
+        "Linting "
+          ++ show (length (org ^.. allEntries []))
+          ++ " entries ("
+          ++ show
+            ( length
+                ( filter
+                    (\e -> maybe False isTodo (e ^? keyword))
+                    (org ^.. allEntries [])
+                )
+            )
+          ++ " todo entries) across "
+          ++ show (length (org ^. orgFiles))
+          ++ " files"
+      case lintOrgData org of
+        [] -> putStrLn "Pass."
+        xs -> mapM_ (putStrLn . showLintOrg) xs
   where
-    count org f =
-      foldr
-        (\e m -> f e m $ \m' r -> m' & at r %~ Just . maybe (1 :: Int) succ)
-        M.empty
-        (org ^.. allEntries [])
+    isTodo kw =
+      kw
+        `elem` [ "TODO",
+                 "CATEGORY",
+                 "PROJECT",
+                 "STARTED",
+                 "WAITING",
+                 "DEFERRED",
+                 "SOMEDAY",
+                 "DELEGATED",
+                 "APPT",
+                 "DONE",
+                 "CANCELED"
+               ]
 
+    -- jww (2024-05-10): These details need to be read from a file, or from
+    -- command-line options.
     _openKeywords =
       [ "TODO",
         "CATEGORY",

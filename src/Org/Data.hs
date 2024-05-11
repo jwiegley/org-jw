@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Org.Data where
 
@@ -31,6 +32,9 @@ lookupProperty ps n = ps ^? traverse . filtered (\x -> x ^. name == n) . value
 property :: Text -> Traversal' Entry Text
 property n =
   entryProperties . traverse . filtered (\x -> x ^. name == n) . value
+
+keyword :: Traversal' Entry Text
+keyword f = entryKeyword . _Just . failing _OpenKeyword _ClosedKeyword %%~ f
 
 entryId :: Traversal' Entry Text
 entryId = property "ID"
@@ -154,3 +158,21 @@ addRefToMap ident =
     %~ Just . \case
       Nothing -> []
       Just es -> es
+
+foldAllEntries :: OrgData -> b -> (Entry -> b -> b) -> b
+foldAllEntries org z f = Prelude.foldr f z (org ^.. allEntries [])
+
+tallyEntry ::
+  (IxValue b1 ~ Int, At b1) =>
+  (t1 -> t2 -> (b1 -> Index b1 -> b1) -> b2) ->
+  t1 ->
+  t2 ->
+  b2
+tallyEntry f e m = f e m $ \m' r -> m' & at r %~ Just . maybe (1 :: Int) succ
+
+countEntries ::
+  (IxValue b1 ~ Int, At b1) =>
+  OrgData ->
+  (Entry -> Map k a -> (b1 -> Index b1 -> b1) -> Map k a) ->
+  Map k a
+countEntries org = foldAllEntries org M.empty . tallyEntry
