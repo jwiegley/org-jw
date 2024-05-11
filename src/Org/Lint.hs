@@ -12,6 +12,7 @@ import Control.Monad (when)
 import Control.Monad.Writer
 import Data.Data
 import Data.Hashable
+import Data.List (nub)
 import Data.Text.Lazy qualified as T
 import GHC.Generics
 import Org.Types
@@ -22,6 +23,7 @@ data LintMessageKind = LintError | LintWarning | LintInfo
 data LintMessageCode
   = MisplacedProperty
   | MisplacedTimestamp
+  | DuplicatedProperty
   | TitleWithExcessiveWhitespace
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
@@ -100,6 +102,9 @@ lintOrgEntry e = do
       (e ^. entryText)
   checkFor LintWarning TitleWithExcessiveWhitespace $
     "  " `T.isInfixOf` (e ^. entryTitle)
+  checkFor LintError DuplicatedProperty $
+    (e ^.. entryProperties . traverse . name)
+      /= nub (e ^.. entryProperties . traverse . name)
   where
     checkFor ::
       LintMessageKind ->
@@ -140,3 +145,5 @@ showLintOrg (LintMessage kind code file line col) =
         "Misplaced timestamp (SCHEDULED, DEADLINE or CLOSED)"
       TitleWithExcessiveWhitespace ->
         "Title with excessive whitespace"
+      DuplicatedProperty ->
+        "Duplicated property"
