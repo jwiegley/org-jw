@@ -14,10 +14,12 @@ import Data.Data
 import Data.Hashable
 import Data.List (nub)
 import Data.Text.Lazy qualified as T
-import Debug.Trace
+-- import Debug.Trace
 import GHC.Generics
+import Org.Data
 import Org.Types
-import Text.Show.Pretty
+
+-- import Text.Show.Pretty
 
 data LintMessageKind = LintError | LintWarning | LintInfo
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
@@ -28,6 +30,7 @@ data LintMessageCode
   | MisplacedLogEntry
   | DuplicatedProperty
   | TitleWithExcessiveWhitespace
+  | TimestampsOnNonTodo
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 data LintMessage = LintMessage
@@ -116,6 +119,11 @@ lintOrgEntry e = do
   checkFor LintError DuplicatedProperty $
     (e ^.. entryProperties . traverse . name)
       /= nub (e ^.. entryProperties . traverse . name)
+  checkFor LintWarning TimestampsOnNonTodo $
+    not (null (e ^. entryStamps))
+      && case e ^? keyword of
+        Nothing -> True
+        Just kw -> not (isTodo kw)
   where
     checkFor ::
       LintMessageKind ->
@@ -124,7 +132,7 @@ lintOrgEntry e = do
       Writer [LintMessage] ()
     checkFor kind code b =
       when b $ do
-        traceM $ "entry: " ++ ppShow e
+        -- traceM $ "entry: " ++ ppShow e
         tell
           [ LintMessage
               kind
@@ -161,3 +169,5 @@ showLintOrg (LintMessage kind code file line col) =
         "Title with excessive whitespace"
       DuplicatedProperty ->
         "Duplicated property"
+      TimestampsOnNonTodo ->
+        "Timestamps found on non-todo entry"

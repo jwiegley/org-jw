@@ -101,7 +101,11 @@ showTime tm =
           InactiveTime -> ("[", "]")
 
 showDuration :: Duration -> Text
-showDuration tm = undefined
+showDuration Duration {..} =
+  T.pack (pad ' ' (show _hours)) <> T.pack (pad '0' (show _mins))
+  where
+    pad c [x] = [c, x]
+    pad _ xs = xs
 
 showLogEntry :: LogEntry -> [Text]
 showLogEntry (LogState from to tm text) =

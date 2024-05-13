@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Org.Parser (parseOrgFile, parseTime, parseTimeSingle) where
+module Org.Parser where
 
 import Control.Applicative
 import Control.Arrow (first)
@@ -46,7 +46,7 @@ line = pack <$> manyTill anyChar newlineOrEof
 restOfLine :: Parser Text
 restOfLine = pack <$> someTill anyChar newline
 
-identifier :: Parser Text
+identifier :: (MonadParsec e s m, Token s ~ Char) => m Text
 identifier = pack <$> many (alphaNumChar <|> char '_')
 
 parseOrgFile :: Parser OrgFile

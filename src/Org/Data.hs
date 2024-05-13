@@ -19,6 +19,7 @@ import Data.Maybe (fromMaybe, maybeToList)
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy qualified as T
 import Data.Text.Lazy.Encoding qualified as T
+import Data.Text.Lens
 import Data.Void
 import Org.Parser
 import Org.Printer
@@ -29,9 +30,38 @@ import Prelude hiding (readFile)
 lookupProperty :: [Property] -> Text -> Maybe Text
 lookupProperty ps n = ps ^? traverse . filtered (\x -> x ^. name == n) . value
 
+shown :: (Show a, Read a) => Traversal' a String
+shown f a = read <$> f (show a)
+
+lined :: Traversal' [Text] Text
+lined f a = T.lines <$> f (T.unlines a)
+
+-- A property for an entry is either:
+--
+--   - A property explicit defined by the entry, in its PROPERTIES drawer.
+--
+--   - A property implicitly inherited from its file or outline context.
+--
+--   - A virtual property used as an alternate way to access details about the
+--     entry.
 property :: Text -> Traversal' Entry Text
 property n =
-  entryProperties . traverse . filtered (\x -> x ^. name == n) . value
+  failing
+    (entryProperties . traverse . filtered (\x -> x ^. name == n) . value)
+    ( case n of
+        "FILE" -> entryFile . packed
+        "LINE" -> entryLine . shown . packed
+        "COLUMN" -> entryColumn . shown . packed
+        "DEPTH" -> entryDepth . shown . packed
+        "KEYWORD" -> entryKeyword . _Just . failing _OpenKeyword _ClosedKeyword
+        "PRIORITY" -> entryPriority . _Just
+        "TITLE" -> entryTitle
+        "CONTEXT" -> entryContext . _Just
+        "LOCATOR" -> entryLocator . _Just
+        "TAGS" -> entryTitle
+        "BODY" -> entryText . Org.Data.lined
+        _ -> const pure
+    )
 
 keyword :: Traversal' Entry Text
 keyword f = entryKeyword . _Just . failing _OpenKeyword _ClosedKeyword %%~ f
@@ -50,8 +80,8 @@ readOrgFile cfg path = do
   content <- lift (readFile path)
   liftEither $ readOrgFile_ cfg path content
 
-_orgFile :: Config -> FilePath -> Prism' Text OrgFile
-_orgFile cfg path =
+_OrgFile :: Config -> FilePath -> Prism' Text OrgFile
+_OrgFile cfg path =
   prism
     ( T.intercalate "\n"
         . showOrgFile (cfg ^. propertyColumn) (cfg ^. tagsColumn)
@@ -176,3 +206,20 @@ countEntries ::
   (Entry -> Map k a -> (b1 -> Index b1 -> b1) -> Map k a) ->
   Map k a
 countEntries org = foldAllEntries org M.empty . tallyEntry
+
+-- jww (2024-05-12): This should be driven by a configuration file
+isTodo :: Text -> Bool
+isTodo kw =
+  kw
+    `elem` [ "TODO",
+             "CATEGORY",
+             "PROJECT",
+             "STARTED",
+             "WAITING",
+             "DEFERRED",
+             "SOMEDAY",
+             "DELEGATED",
+             "APPT",
+             "DONE",
+             "CANCELED"
+           ]

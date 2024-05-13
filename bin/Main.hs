@@ -8,10 +8,12 @@ module Main where
 import Control.Lens
 import Control.Monad (void)
 import Data.Map qualified as M
+import Data.Text.Lazy (Text)
 import Data.Text.Lazy qualified as T
 import Data.Text.Lazy.IO qualified as T
 import Options qualified
 import Org.Data
+import Org.Expr
 import Org.Lint
 import Org.Printer
 import Org.Types
@@ -54,7 +56,7 @@ main = do
           path ++ ": " ++ show (length (o ^.. entries [])) ++ " entries"
     Options.Print ->
       void $ flip M.traverseWithKey (org ^. orgFiles) $ \path o ->
-        T.putStrLn $ _orgFile Config {..} path # o
+        T.putStrLn $ _OrgFile Config {..} path # o
     Options.Dump -> do
       pPrint org
       pPrint $ entriesMap [] org
@@ -67,6 +69,17 @@ main = do
         (mapM_ T.putStrLn . concatMap summarizeEntry . _fileEntries)
         (_orgFiles org)
     Options.Lint -> do
+      case org ^.. allEntries [] of
+        [] -> pure ()
+        e : _ -> do
+          pPrint $ e ^? property "ID"
+          pPrint $ e ^? property "CATEGORY"
+          pPrint $ e ^? property "TITLE"
+          pPrint $ e ^? property "FOOBAR"
+          pPrint $ expr "$TITLE"
+          pPrint $ case expr "$TITLE" of
+            Left _ -> pure ""
+            Right x -> evalExpr x e :: Either String Text
       putStrLn $
         "Linting "
           ++ show (length (org ^.. allEntries []))
@@ -85,21 +98,6 @@ main = do
         [] -> putStrLn "Pass."
         xs -> mapM_ (putStrLn . showLintOrg) xs
   where
-    isTodo kw =
-      kw
-        `elem` [ "TODO",
-                 "CATEGORY",
-                 "PROJECT",
-                 "STARTED",
-                 "WAITING",
-                 "DEFERRED",
-                 "SOMEDAY",
-                 "DELEGATED",
-                 "APPT",
-                 "DONE",
-                 "CANCELED"
-               ]
-
     -- jww (2024-05-10): These details need to be read from a file, or from
     -- command-line options.
     _openKeywords =

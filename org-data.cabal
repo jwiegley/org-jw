@@ -15,6 +15,7 @@ build-type:     Simple
 
 library
   exposed-modules:
+      Org.Expr
       Org.Printer
       Org.Parser
       Org.Types

@@ -10,6 +10,7 @@
 module Org.Types where
 
 import Control.Lens
+import Control.Monad (when)
 import Control.Monad.Reader
 import Data.Data
 import Data.Hashable
@@ -123,7 +124,27 @@ data Duration = Duration
 makeClassy ''Duration
 
 _duration :: Traversal' Time Duration
-_duration f tm = undefined
+_duration f tm@Time {..} = do
+  case mdur of
+    Nothing -> pure tm
+    Just dur -> tm <$ f dur
+  where
+    mdur = do
+      let startDay = _timeDay
+      startTime <- _timeStart
+      endDay <- _timeDayEnd
+      endTime <- _timeEnd
+      when (startDay > endDay) $
+        error $
+          "Invalid time (end before start): " ++ show tm
+      let days = endDay - startDay
+          secs = endTime - startTime
+      if days > 0
+        then
+          if secs < 0
+            then undefined
+            else undefined
+        else pure $ Duration (secs `div` 60) (secs `mod` 60)
 
 data Stamp
   = ClosedStamp Time
