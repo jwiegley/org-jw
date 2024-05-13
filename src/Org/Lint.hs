@@ -11,10 +11,14 @@ import Control.Lens
 import Control.Monad (when)
 import Control.Monad.Writer
 import Data.Data
+-- import Debug.Trace
+
+import Data.Foldable (forM_)
 import Data.Hashable
 import Data.List (nub)
+import Data.Map qualified as M
+import Data.Text.Lazy (Text)
 import Data.Text.Lazy qualified as T
--- import Debug.Trace
 import GHC.Generics
 import Org.Data
 import Org.Types
@@ -25,22 +29,32 @@ data LintMessageKind = LintError | LintWarning | LintInfo
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 data LintMessageCode
-  = MisplacedProperty
-  | MisplacedTimestamp
-  | MisplacedLogEntry
-  | DuplicatedProperty
-  | TitleWithExcessiveWhitespace
-  | TimestampsOnNonTodo
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  = MisplacedProperty Entry
+  | MisplacedTimestamp Entry
+  | MisplacedLogEntry Entry
+  | DuplicatedProperties Entry
+  | DuplicatedIdentifier Text [Entry]
+  | TitleWithExcessiveWhitespace Entry
+  | TimestampsOnNonTodo Entry
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 data LintMessage = LintMessage
   { lintMsgKind :: LintMessageKind,
-    lintMsgCode :: LintMessageCode,
-    lintMsgFile :: FilePath,
-    lintMsgLine :: Int,
-    lintMsgColumn :: Int
+    lintMsgCode :: LintMessageCode
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+
+lintCodeEntry :: Lens' LintMessageCode Entry
+lintCodeEntry f = \case
+  MisplacedProperty e -> MisplacedProperty <$> f e
+  MisplacedTimestamp e -> MisplacedTimestamp <$> f e
+  MisplacedLogEntry e -> MisplacedLogEntry <$> f e
+  DuplicatedProperties e -> DuplicatedProperties <$> f e
+  DuplicatedIdentifier _ [] -> error "impossible"
+  DuplicatedIdentifier ident (e : es) ->
+    DuplicatedIdentifier ident . (: es) <$> f e
+  TitleWithExcessiveWhitespace e -> TitleWithExcessiveWhitespace <$> f e
+  TimestampsOnNonTodo e -> TimestampsOnNonTodo <$> f e
 
 {-
 
@@ -49,7 +63,17 @@ Linting rules for org file collections:
 -}
 
 lintOrgData :: OrgData -> [LintMessage]
-lintOrgData org = snd . runWriter $ mapM_ lintOrgFile (org ^. orgFiles)
+lintOrgData org = snd . runWriter $ do
+  let ids = foldAllEntries org M.empty $ \e m ->
+        maybe
+          m
+          (\ident -> m & at ident %~ Just . maybe [e] (e :))
+          (e ^? entryId)
+  forM_ (M.assocs ids) $ \(k, es) ->
+    when (length es > 1) $
+      tell [LintMessage LintError (DuplicatedIdentifier k es)]
+
+  mapM_ lintOrgFile (org ^. orgFiles)
 
 {-
 
@@ -96,9 +120,9 @@ Linting rules for org file entries:
 
 lintOrgEntry :: Entry -> Writer [LintMessage] ()
 lintOrgEntry e = do
-  checkFor LintError MisplacedProperty $
+  checkFor LintError (MisplacedProperty e) $
     any (":PROPERTIES:" `T.isInfixOf`) (e ^. entryText)
-  checkFor LintError MisplacedTimestamp $
+  checkFor LintError (MisplacedTimestamp e) $
     any
       ( \t ->
           "SCHEDULED:" `T.isInfixOf` t
@@ -106,7 +130,7 @@ lintOrgEntry e = do
             || "CLOSED:" `T.isInfixOf` t
       )
       (e ^. entryText)
-  checkFor LintError MisplacedLogEntry $
+  checkFor LintError (MisplacedLogEntry e) $
     any
       ( \t ->
           "- State" `T.isInfixOf` t
@@ -114,12 +138,12 @@ lintOrgEntry e = do
             || ":LOGBOOK:" `T.isInfixOf` t
       )
       (e ^. entryText)
-  checkFor LintWarning TitleWithExcessiveWhitespace $
+  checkFor LintWarning (TitleWithExcessiveWhitespace e) $
     "  " `T.isInfixOf` (e ^. entryTitle)
-  checkFor LintError DuplicatedProperty $
+  checkFor LintError (DuplicatedProperties e) $
     (e ^.. entryProperties . traverse . name)
       /= nub (e ^.. entryProperties . traverse . name)
-  checkFor LintWarning TimestampsOnNonTodo $
+  checkFor LintWarning (TimestampsOnNonTodo e) $
     not (null (e ^. entryStamps))
       && case e ^? keyword of
         Nothing -> True
@@ -133,41 +157,39 @@ lintOrgEntry e = do
     checkFor kind code b =
       when b $ do
         -- traceM $ "entry: " ++ ppShow e
-        tell
-          [ LintMessage
-              kind
-              code
-              (e ^. entryFile)
-              (e ^. entryLine)
-              (e ^. entryColumn)
-          ]
+        tell [LintMessage kind code]
 
 showLintOrg :: LintMessage -> String
-showLintOrg (LintMessage kind code file line col) =
+showLintOrg (LintMessage kind code) =
   file
     ++ ":"
     ++ show line
     ++ ":"
     ++ show col
     ++ ": "
-    ++ renderKind kind
+    ++ renderKind
     ++ " "
-    ++ renderCode code
+    ++ renderCode
   where
-    renderKind = \case
+    (file, line, col) =
+      let e = code ^. lintCodeEntry
+       in (e ^. entryFile, e ^. entryLine, e ^. entryColumn)
+    renderKind = case kind of
       LintError -> "ERROR"
       LintWarning -> "WARN"
       LintInfo -> "INFO"
-    renderCode = \case
-      MisplacedProperty ->
+    renderCode = case code of
+      MisplacedProperty _e ->
         "Misplaced :PROPERTY: block"
-      MisplacedTimestamp ->
+      MisplacedTimestamp _e ->
         "Misplaced timestamp (SCHEDULED, DEADLINE or CLOSED)"
-      MisplacedLogEntry ->
+      MisplacedLogEntry _e ->
         "Misplaced state change, note or LOGBOOK"
-      TitleWithExcessiveWhitespace ->
+      TitleWithExcessiveWhitespace _e ->
         "Title with excessive whitespace"
-      DuplicatedProperty ->
-        "Duplicated property"
-      TimestampsOnNonTodo ->
+      DuplicatedProperties _e ->
+        "Duplicated properties"
+      DuplicatedIdentifier ident _entries ->
+        "Duplicated identifier " ++ T.unpack ident
+      TimestampsOnNonTodo _e ->
         "Timestamps found on non-todo entry"
