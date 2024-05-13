@@ -32,73 +32,73 @@ showTime tm =
                   _timeEnd = Nothing
                 }
           ]
+
+showTimeSingle :: Time -> Text
+showTimeSingle Time {..} =
+  T.concat $
+    [ beg,
+      pack
+        ( formatTime
+            defaultTimeLocale
+            "%Y-%m-%d %a"
+            (ModifiedJulianDay _timeDay)
+        )
+    ]
+      ++ case _timeStart of
+        Nothing -> []
+        Just start ->
+          [ pack
+              ( formatTime
+                  defaultTimeLocale
+                  " %H:%M"
+                  ( UTCTime
+                      (ModifiedJulianDay _timeDay)
+                      (secondsToDiffTime start)
+                  )
+              )
+          ]
+      ++ case _timeEnd of
+        Nothing -> []
+        Just finish ->
+          [ pack
+              ( formatTime
+                  defaultTimeLocale
+                  "-%H:%M"
+                  ( UTCTime
+                      (ModifiedJulianDay _timeDay)
+                      (secondsToDiffTime finish)
+                  )
+              )
+          ]
+      ++ case _timeSuffix of
+        Nothing -> []
+        Just TimeSuffix {..} ->
+          [ " ",
+            case _suffixKind of
+              TimeRepeat -> "+"
+              TimeDottedRepeat -> ".+"
+              TimeWithin -> "-",
+            pack (show _suffixNum),
+            case _suffixSpan of
+              DaySpan -> "d"
+              WeekSpan -> "w"
+              MonthSpan -> "m"
+          ]
+            ++ case _suffixLargerSpan of
+              Nothing -> []
+              Just (num, s) ->
+                [ pack (show num),
+                  case s of
+                    DaySpan -> "d"
+                    WeekSpan -> "w"
+                    MonthSpan -> "m"
+                ]
+      ++ [ end
+         ]
   where
-    showTimeSingle :: Time -> Text
-    showTimeSingle Time {..} =
-      T.concat $
-        [ beg,
-          pack
-            ( formatTime
-                defaultTimeLocale
-                "%Y-%m-%d %a"
-                (ModifiedJulianDay _timeDay)
-            )
-        ]
-          ++ case _timeStart of
-            Nothing -> []
-            Just start ->
-              [ pack
-                  ( formatTime
-                      defaultTimeLocale
-                      " %H:%M"
-                      ( UTCTime
-                          (ModifiedJulianDay _timeDay)
-                          (secondsToDiffTime start)
-                      )
-                  )
-              ]
-          ++ case _timeEnd of
-            Nothing -> []
-            Just finish ->
-              [ pack
-                  ( formatTime
-                      defaultTimeLocale
-                      "-%H:%M"
-                      ( UTCTime
-                          (ModifiedJulianDay _timeDay)
-                          (secondsToDiffTime finish)
-                      )
-                  )
-              ]
-          ++ case _timeSuffix of
-            Nothing -> []
-            Just TimeSuffix {..} ->
-              [ " ",
-                case _suffixKind of
-                  TimeRepeat -> "+"
-                  TimeDottedRepeat -> ".+"
-                  TimeWithin -> "-",
-                pack (show _suffixNum),
-                case _suffixSpan of
-                  DaySpan -> "d"
-                  WeekSpan -> "w"
-                  MonthSpan -> "m"
-              ]
-                ++ case _suffixLargerSpan of
-                  Nothing -> []
-                  Just (num, s) ->
-                    [ pack (show num),
-                      case s of
-                        DaySpan -> "d"
-                        WeekSpan -> "w"
-                        MonthSpan -> "m"
-                    ]
-          ++ [ end
-             ]
-      where
-        (beg, end) = case _timeKind of
-          ActiveTime -> ("<", ">")
-          InactiveTime -> ("[", "]")
+    (beg, end) = case _timeKind of
+      ActiveTime -> ("<", ">")
+      InactiveTime -> ("[", "]")
 
 showDuration :: Duration -> Text
 showDuration Duration {..} =
@@ -131,7 +131,9 @@ showLogEntry (LogNote tm text) =
 showLogEntry (LogBook tms) =
   ":LOGBOOK:" : map logEntry tms ++ [":END:"]
   where
-    logEntry (tm, dur) =
+    logEntry (tm, Nothing) =
+      "CLOCK: " <> showTimeSingle tm
+    logEntry (tm, Just dur) =
       "CLOCK: " <> showTime tm <> " => " <> showDuration dur
 
 showKeyword :: Keyword -> Text

@@ -40,8 +40,11 @@ expr str =
 
 evalExpr :: (MonadError String m) => Expr -> Entry -> m Text
 evalExpr x e = case x of
+  Sym _ -> error "Sym not implemented"
   Var nm ->
-    case e ^? property nm of
+    case e ^? anyProperty nm of
       Nothing -> throwError $ T.unpack $ "Unknown property " <> nm
       Just v -> pure v
+  Path _ -> error "Path not implemented"
   Dot _sub _nm -> error "Dot not implemented"
+  Access _ _ -> error "Access not implemented"

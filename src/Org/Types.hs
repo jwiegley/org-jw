@@ -171,7 +171,7 @@ timeEndToUTCTime Time {..} = do
 data LogEntry
   = LogState Keyword (Maybe Keyword) Time [Text]
   | LogNote Time [Text]
-  | LogBook [(Time, Duration)]
+  | LogBook [(Time, Maybe Duration)]
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 makePrisms ''LogEntry
@@ -183,6 +183,7 @@ data Entry = Entry
     _entryDepth :: Int,
     _entryKeyword :: Maybe Keyword,
     _entryPriority :: Maybe Text,
+    _entryHeadline :: Text,
     _entryTitle :: Text,
     _entryContext :: Maybe Text,
     _entryLocator :: Maybe Text,

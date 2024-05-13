@@ -9,7 +9,7 @@
 module Org.Parser where
 
 import Control.Applicative
-import Control.Arrow (first)
+import Control.Arrow (first, second)
 import Control.Monad
 import Control.Monad.Reader
 import Data.Char (isPrint, isSpace)
@@ -99,6 +99,7 @@ parseEntry parseAtDepth = do
     depth <- parseHeaderStars
     guard $ depth == parseAtDepth
     pure depth
+  _entryHeadline <- lookAhead (try restOfLine)
   _entryKeyword <- optional (try parseKeyword <* some singleSpace)
   _entryPriority <- optional parseEntryPriority
   _entryContext <- optional parseEntryContext
@@ -313,15 +314,17 @@ parseLogEntry = parseStateChange <|> parseNote <|> parseLogBook
       book <- many $ do
         _ <- string "CLOCK:" <* spaces_
         start <- parseTimeSingle
-        _ <- string "--"
-        end <- parseTimeSingle
-        let tm = blendTimes start end
-        _ <- spaces_ *> string "=>" *> spaces_
-        _hours <- read <$> some digitChar
-        _ <- char ':'
-        _mins <- read <$> some digitChar
-        trailingSpace
-        pure (tm, Duration {..})
+        mend <- optional $ try $ do
+          _ <- string "--"
+          end <- parseTimeSingle
+          let tm = blendTimes start end
+          _ <- spaces_ *> string "=>" *> spaces_
+          _hours <- read <$> some digitChar
+          _ <- char ':'
+          _mins <- read <$> some digitChar
+          trailingSpace
+          pure (tm, Duration {..})
+        pure $ maybe (start, Nothing) (second Just) mend
       string ":END:" *> trailingSpace
       return $ LogBook book
 

@@ -41,27 +41,81 @@ lined f a = T.lines <$> f (T.unlines a)
 --   - A property explicit defined by the entry, in its PROPERTIES drawer.
 --
 --   - A property implicitly inherited from its file or outline context.
+property :: Text -> Traversal' Entry Text
+property n =
+  entryProperties . traverse . filtered (\x -> x ^. name == n) . value
+
+-- "Any property" for an entry includes the above, and also:
 --
 --   - A virtual property used as an alternate way to access details about the
 --     entry.
-property :: Text -> Traversal' Entry Text
-property n =
+anyProperty :: Text -> Fold Entry Text
+anyProperty n =
   failing
     (entryProperties . traverse . filtered (\x -> x ^. name == n) . value)
-    ( case n of
-        "FILE" -> entryFile . packed
-        "LINE" -> entryLine . shown . packed
-        "COLUMN" -> entryColumn . shown . packed
-        "DEPTH" -> entryDepth . shown . packed
-        "KEYWORD" -> entryKeyword . _Just . failing _OpenKeyword _ClosedKeyword
-        "PRIORITY" -> entryPriority . _Just
-        "TITLE" -> entryTitle
-        "CONTEXT" -> entryContext . _Just
-        "LOCATOR" -> entryLocator . _Just
-        "TAGS" -> entryTitle
-        "BODY" -> entryText . Org.Data.lined
-        _ -> const pure
-    )
+    (maybe ignored runFold (Prelude.lookup n specialProperties))
+
+-- jww (2024-05-13): Need to handle inherited tags
+specialProperties :: [(Text, ReifiedFold Entry Text)]
+specialProperties =
+  [ -- All tags, including inherited ones.
+    ("ALLTAGS", undefined),
+    -- t if task is currently blocked by children or siblings.
+    ("BLOCKED", undefined),
+    -- The category of an entry. jww (2024-05-13): NYI
+    ("CATEGORY", Fold (entryFile . packed)),
+    -- The sum of CLOCK intervals in the subtree. org-clock-sum must be run
+    -- first to compute the values in the current buffer.
+    ("CLOCKSUM", undefined),
+    -- The sum of CLOCK intervals in the subtree for today.
+    -- org-clock-sum-today must be run first to compute the values in the
+    -- current buffer.
+    ("CLOCKSUM_T", undefined),
+    -- When was this entry closed?
+    ("CLOSED", Fold (closedTime . re _Time)),
+    -- The deadline timestamp.
+    ("DEADLINE", Fold (deadlineTime . re _Time)),
+    -- The filename the entry is located in.
+    ("FILE", Fold (entryFile . packed)),
+    -- The headline of the entry.
+    ("ITEM", Fold entryHeadline),
+    -- The priority of the entry, a string with a single letter.
+    ("PRIORITY", Fold (entryPriority . _Just)),
+    -- The scheduling timestamp.
+    ("SCHEDULED", Fold (scheduledTime . re _Time)),
+    -- The tags defined directly in the headline.
+    ("TAGS", undefined),
+    -- The first keyword-less timestamp in the entry.
+    ("TIMESTAMP", undefined),
+    -- The first inactive timestamp in the entry.
+    ("TIMESTAMP_IA", undefined),
+    -- The TODO keyword of the entry.
+    ( "TODO",
+      Fold
+        ( entryKeyword
+            . _Just
+            . failing _OpenKeyword _ClosedKeyword
+            . filtered isTodo
+        )
+    ),
+    ------------------------------------------------------------------------
+    -- The following are not defined by Org-mode as special
+    ------------------------------------------------------------------------
+    ("LINE", Fold (entryLine . shown . packed)),
+    ("COLUMN", Fold (entryColumn . shown . packed)),
+    ("DEPTH", Fold (entryDepth . shown . packed)),
+    ( "KEYWORD",
+      Fold
+        ( entryKeyword
+            . _Just
+            . failing _OpenKeyword _ClosedKeyword
+        )
+    ),
+    ("TITLE", Fold entryTitle),
+    ("CONTEXT", Fold (entryContext . _Just)),
+    ("LOCATOR", Fold (entryLocator . _Just)),
+    ("BODY", Fold (entryText . Org.Data.lined))
+  ]
 
 keyword :: Traversal' Entry Text
 keyword f = entryKeyword . _Just . failing _OpenKeyword _ClosedKeyword %%~ f
@@ -107,11 +161,11 @@ readOrgData cfg paths = OrgData . M.fromList <$> mapM go paths
       org <- readOrgFile_ cfg path content
       pure (path, org)
 
-_orgTime :: Prism' Text Time
-_orgTime = prism' showTime (parseMaybe @Void parseTime)
+_Time :: Prism' Text Time
+_Time = prism' showTime (parseMaybe @Void parseTime)
 
 createdTime :: Traversal' Entry Time
-createdTime = property "CREATED" . _orgTime
+createdTime = property "CREATED" . _Time
 
 scheduledTime :: Traversal' Entry Time
 scheduledTime = entryStamps . traverse . _ScheduledStamp

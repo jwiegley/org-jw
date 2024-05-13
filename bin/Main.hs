@@ -72,10 +72,11 @@ main = do
       case org ^.. allEntries [] of
         [] -> pure ()
         e : _ -> do
-          pPrint $ e ^? property "ID"
-          pPrint $ e ^? property "CATEGORY"
-          pPrint $ e ^? property "TITLE"
-          pPrint $ e ^? property "FOOBAR"
+          pPrint $ e ^? anyProperty "ID"
+          pPrint $ e ^? anyProperty "CATEGORY"
+          pPrint $ e ^? anyProperty "TITLE"
+          pPrint $ e ^? anyProperty "ITEM"
+          pPrint $ e ^? anyProperty "FOOBAR"
           pPrint $ expr "$TITLE"
           pPrint $ case expr "$TITLE" of
             Left _ -> pure ""
