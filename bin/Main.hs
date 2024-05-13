@@ -17,6 +17,7 @@ import Org.Expr
 import Org.Lint
 import Org.Printer
 import Org.Types
+import System.Exit
 import Text.Show.Pretty
 import Prelude hiding (readFile)
 
@@ -96,8 +97,12 @@ main = do
           ++ show (length (org ^. orgFiles))
           ++ " files"
       case lintOrgData org of
-        [] -> putStrLn "Pass."
-        xs -> mapM_ (putStrLn . showLintOrg) xs
+        [] -> do
+          putStrLn "PASS"
+          exitSuccess
+        xs -> do
+          mapM_ (putStrLn . showLintOrg) xs
+          exitWith (ExitFailure (length xs))
   where
     -- jww (2024-05-10): These details need to be read from a file, or from
     -- command-line options.
