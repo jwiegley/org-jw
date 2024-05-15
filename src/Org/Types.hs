@@ -204,7 +204,8 @@ timeEndToUTCTime Time {..} = do
 data LogEntry
   = LogState Keyword (Maybe Keyword) Time (Maybe Body)
   | LogNote Time (Maybe Body)
-  | LogBook [(Time, Maybe Duration)]
+  | LogClock Time (Maybe Duration)
+  | LogBook [LogEntry]
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 makePrisms ''LogEntry

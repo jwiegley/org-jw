@@ -282,14 +282,15 @@ parseTimeSingle = do
   pure Time {..}
 
 parseLogEntry :: Parser LogEntry
-parseLogEntry = parseStateChange <|> parseNote <|> parseLogBook
+parseLogEntry =
+  parseStateChange <|> parseNote <|> parseClockEntry <|> parseLogBook
   where
     trailingNote =
-      (Nothing <$ try (skipSome trailingSpace))
-        <|> spaces_
-          *> string "\\\\"
-          *> trailingSpace
-          *> (Just <$> parseNoteBody)
+      try spaces_
+        *> string "\\\\"
+        *> trailingSpace
+        *> (Just <$> parseNoteBody)
+        <|> (Nothing <$ try trailingSpace)
 
     parseStateChange = do
       fromKeyword <-
@@ -312,22 +313,28 @@ parseLogEntry = parseStateChange <|> parseNote <|> parseLogBook
       _ <- try (string "- Note taken on" <* spaces_) --
       LogNote <$> parseTimeSingle <*> trailingNote
 
+    parseClockEntry = do
+      _ <- try (string "CLOCK:" <* spaces_)
+      start <- parseTimeSingle
+      mend <- optional $ try $ do
+        _ <- string "--"
+        end <- parseTimeSingle
+        let tm = blendTimes start end
+        _ <- spaces_ *> string "=>" *> spaces_
+        _hours <- read <$> some digitChar
+        _ <- char ':'
+        _mins <- read <$> some digitChar
+        trailingSpace
+        pure (tm, Duration {..})
+      pure $
+        maybe
+          (LogClock start Nothing)
+          (uncurry LogClock . second Just)
+          mend
+
     parseLogBook = do
       _ <- try (string ":LOGBOOK:") <* trailingSpace
-      book <- many $ do
-        _ <- string "CLOCK:" <* spaces_
-        start <- parseTimeSingle
-        mend <- optional $ try $ do
-          _ <- string "--"
-          end <- parseTimeSingle
-          let tm = blendTimes start end
-          _ <- spaces_ *> string "=>" *> spaces_
-          _hours <- read <$> some digitChar
-          _ <- char ':'
-          _mins <- read <$> some digitChar
-          trailingSpace
-          pure (tm, Duration {..})
-        pure $ maybe (start, Nothing) (second Just) mend
+      book <- many parseLogEntry
       string ":END:" *> trailingSpace
       return $ LogBook book
 

@@ -128,13 +128,12 @@ showLogEntry (LogNote tm text) =
       <> if null text then "" else " \\\\"
   )
     : maybe [] (showBody "  ") text
+showLogEntry (LogClock tm Nothing) =
+  ["CLOCK: " <> showTimeSingle tm]
+showLogEntry (LogClock tm (Just dur)) =
+  ["CLOCK: " <> showTime tm <> " => " <> showDuration dur]
 showLogEntry (LogBook tms) =
-  ":LOGBOOK:" : map logEntry tms ++ [":END:"]
-  where
-    logEntry (tm, Nothing) =
-      "CLOCK: " <> showTimeSingle tm
-    logEntry (tm, Just dur) =
-      "CLOCK: " <> showTime tm <> " => " <> showDuration dur
+  ":LOGBOOK:" : concatMap showLogEntry tms ++ [":END:"]
 
 showKeyword :: Keyword -> Text
 showKeyword (OpenKeyword n) = n
