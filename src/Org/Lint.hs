@@ -47,6 +47,8 @@ data LintMessageCode
   | DuplicatedFileProperties OrgFile
   | DuplicatedProperties Entry
   | DuplicatedIdentifier Text (NonEmpty Entry)
+  | MultipleLogbooks Entry
+  | MixedLogbooks Entry
   | TitleWithExcessiveWhitespace Entry
   | TimestampsOnNonTodo Entry
   | UnevenBodyWhitespace Entry
@@ -161,7 +163,9 @@ Linting rules for org file entries:
 lintOrgEntry :: Bool -> LintMessageKind -> Entry -> Writer [LintMessage] ()
 lintOrgEntry lastEntry level e = do
   checkFor LintError (MisplacedProperty e) $
-    any ((":properties:" `T.isInfixOf`) . T.toLower) bodyText
+    any
+      ((":properties:" `T.isInfixOf`) . T.toLower)
+      (bodyText (has _Paragraph))
   checkFor LintError (MisplacedTimestamp e) $
     any
       ( \t ->
@@ -169,7 +173,7 @@ lintOrgEntry lastEntry level e = do
             || "DEADLINE:" `T.isInfixOf` t
             || "CLOSED:" `T.isInfixOf` t
       )
-      bodyText
+      (bodyText (has _Paragraph))
   checkFor LintError (MisplacedLogEntry e) $
     any
       ( \t ->
@@ -177,7 +181,7 @@ lintOrgEntry lastEntry level e = do
             || "- Note taken " `T.isInfixOf` t
             || ":logbook:" `T.isInfixOf` T.toLower t
       )
-      bodyText
+      (bodyText (has _Paragraph))
   checkFor LintError (MisplacedDrawerEnd e) $
     any
       ( ( \t ->
@@ -186,7 +190,7 @@ lintOrgEntry lastEntry level e = do
         )
           . T.toLower
       )
-      bodyText
+      (bodyText (has _Paragraph))
   checkFor LintInfo (TitleWithExcessiveWhitespace e) $
     "  " `T.isInfixOf` (e ^. entryTitle)
   checkFor LintError (DuplicatedProperties e) $
@@ -195,7 +199,6 @@ lintOrgEntry lastEntry level e = do
   checkFor LintWarn (TimestampsOnNonTodo e) $
     not (null (e ^. entryStamps))
       && maybe True (not . isTodo) (e ^? keyword)
-  -- jww (2024-05-14): Need to check log entries also
   unless lastEntry $
     checkFor LintInfo (UnevenBodyWhitespace e) $
       case e ^. entryText of
@@ -206,20 +209,43 @@ lintOrgEntry lastEntry level e = do
     case e ^. entryText of
       Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
       _ -> False
-  -- jww (2024-05-14): Need to check in log entries also
   checkFor
     LintInfo
     (MultipleBlankLines e)
-    ( any ((> 1) . length . T.lines) $
-        e ^.. entryText . blocks . traverse . _Whitespace
+    (any ((> 1) . length . T.lines) (bodyText (has _Whitespace)))
+  checkFor
+    LintError
+    (MultipleLogbooks e)
+    (length (e ^.. entryLogEntries . traverse . cosmos . _LogBook) > 1)
+  checkFor
+    LintError
+    (MixedLogbooks e)
+    ( not
+        ( null
+            ( e
+                ^.. entryLogEntries
+                  . traverse
+                  . _LogBook
+                  . traverse
+                  . filtered (hasn't _LogClock)
+            )
+        )
+        && not
+          ( null
+              ( e
+                  ^.. entryLogEntries
+                    . traverse
+                    . filtered (hasn't _LogBook)
+              )
+          )
     )
   where
-    bodyText =
+    bodyText f =
       e
         ^. entryText
           . blocks
           . traverse
-          . filtered (has _Paragraph)
+          . filtered f
           . to (showBlock "")
         ++ e
           ^. entryLogEntries
@@ -228,7 +254,7 @@ lintOrgEntry lastEntry level e = do
             . _Just
             . blocks
             . traverse
-            . filtered (has _Paragraph)
+            . filtered f
             . to (showBlock "")
 
     checkFor ::
@@ -284,6 +310,10 @@ showLintOrg (LintMessage kind code) =
           ++ T.unpack ident
           ++ "\n"
           ++ intercalate "\n" (map (("  " ++) . entryLoc) es)
+      MultipleLogbooks e ->
+        prefix e ++ "Multiple logbooks found"
+      MixedLogbooks e ->
+        prefix e ++ "Log entries inside and outside of logbooks found"
       TimestampsOnNonTodo e ->
         prefix e ++ "Timestamps found on non-todo entry"
       UnevenBodyWhitespace e ->

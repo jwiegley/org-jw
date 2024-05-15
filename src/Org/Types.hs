@@ -30,7 +30,7 @@ data Config = Config
     _propertyColumn :: Int,
     _tagsColumn :: Int
   }
-  deriving (Show, Eq, Generic, Data, Typeable)
+  deriving (Show, Eq, Generic, Data, Typeable, Plated)
 
 makeClassy ''Config
 
@@ -43,7 +43,7 @@ data Property = Property
     _name :: Text,
     _value :: Text
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makeLenses ''Property
 
@@ -51,14 +51,14 @@ data Block
   = Whitespace Text
   | Paragraph [Text]
   | Drawer [Text]
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Block
 
 newtype Body = Body
   { _blocks :: [Block]
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 instance Semigroup Body where
   Body [] <> ys = ys
@@ -85,21 +85,21 @@ data Header = Header
     _headerFileProperties :: [Property],
     _headerPreamble :: Body
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
 makeClassy ''Header
 
 data Keyword
   = OpenKeyword Text
   | ClosedKeyword Text
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Keyword
 
 data Tag
   = SpecialTag Text
   | PlainTag Text
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Tag
 
@@ -107,14 +107,36 @@ data TimeSpan
   = DaySpan
   | WeekSpan
   | MonthSpan
-  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable, Hashable)
+  deriving
+    ( Show,
+      Eq,
+      Ord,
+      Enum,
+      Bounded,
+      Generic,
+      Data,
+      Typeable,
+      Hashable,
+      Plated
+    )
 
 makePrisms ''TimeSpan
 
 data TimeKind
   = ActiveTime
   | InactiveTime
-  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable, Hashable)
+  deriving
+    ( Show,
+      Eq,
+      Ord,
+      Enum,
+      Bounded,
+      Generic,
+      Data,
+      Typeable,
+      Hashable,
+      Plated
+    )
 
 makePrisms ''TimeKind
 
@@ -122,7 +144,18 @@ data TimeSuffixKind
   = TimeRepeat
   | TimeDottedRepeat
   | TimeWithin
-  deriving (Show, Eq, Ord, Enum, Bounded, Generic, Data, Typeable, Hashable)
+  deriving
+    ( Show,
+      Eq,
+      Ord,
+      Enum,
+      Bounded,
+      Generic,
+      Data,
+      Typeable,
+      Hashable,
+      Plated
+    )
 
 makePrisms ''TimeSuffixKind
 
@@ -132,7 +165,7 @@ data TimeSuffix = TimeSuffix
     _suffixSpan :: TimeSpan,
     _suffixLargerSpan :: Maybe (Integer, TimeSpan)
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makeLenses ''TimeSuffix
 
@@ -144,7 +177,7 @@ data Time = Time
     _timeEnd :: Maybe Integer,
     _timeSuffix :: Maybe TimeSuffix
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makeClassy ''Time
 
@@ -152,7 +185,7 @@ data Duration = Duration
   { _hours :: Integer,
     _mins :: Integer
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makeClassy ''Duration
 
@@ -183,7 +216,7 @@ data Stamp
   = ClosedStamp Time
   | ScheduledStamp Time
   | DeadlineStamp Time
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Stamp
 
@@ -206,7 +239,7 @@ data LogEntry
   | LogNote Time (Maybe Body)
   | LogClock Time (Maybe Duration)
   | LogBook [LogEntry]
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''LogEntry
 
@@ -228,7 +261,7 @@ data Entry = Entry
     _entryText :: Body,
     _entryItems :: [Entry]
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
 makeClassy ''Entry
 
@@ -237,13 +270,13 @@ data OrgFile = OrgFile
     _fileHeader :: Header,
     _fileEntries :: [Entry]
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
 makeClassy ''OrgFile
 
 newtype OrgData = OrgData
   { _orgFiles :: Map FilePath OrgFile
   }
-  deriving (Show, Eq, Generic, Data, Typeable)
+  deriving (Show, Eq, Generic, Data, Typeable, Plated)
 
 makeClassy ''OrgData
