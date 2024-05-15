@@ -14,8 +14,8 @@ import Control.Monad.Except
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.ByteString.Lazy qualified as B
-import Data.Map
-import Data.Map qualified as M
+import Data.Map hiding (filter)
+import Data.Map qualified as M hiding (filter)
 import Data.Maybe (fromMaybe)
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy qualified as T
@@ -209,8 +209,18 @@ traverseEntries ps f = foldEntries ps (liftA2 (:) . f) (pure [])
 entries :: [Property] -> Traversal' OrgFile Entry
 entries ps f = fileEntries %%~ traverseEntries ps f
 
-allEntries :: [Property] -> Traversal' OrgData Entry
-allEntries ps f = orgFiles . traverse . fileEntries %%~ traverseEntries ps f
+-- jww (2024-05-14): Inherited properties can be specified by the user
+allEntries :: Traversal' OrgFile Entry
+allEntries f org =
+  org
+    & entries
+      ( filter
+          (\p -> p ^. name `elem` hardCodedInheritedProperties)
+          ( org ^. fileHeader . headerPropertiesDrawer
+              ++ org ^. fileHeader . headerFileProperties
+          )
+      )
+      f
 
 -- This is the "raw" form of the entries map, with a few invalid yet
 -- informational states:
@@ -222,9 +232,9 @@ allEntries ps f = orgFiles . traverse . fileEntries %%~ traverseEntries ps f
 --
 --   - If there are values behind the empty key, then there are entries with
 --     no ID. This is fine except for certain cases, such as TODOs.
-entriesMap :: [Property] -> OrgData -> Map Text [Entry]
-entriesMap ps db =
-  Prelude.foldr addEntryToMap M.empty (db ^.. allEntries ps)
+entriesMap :: OrgData -> Map Text [Entry]
+entriesMap db =
+  Prelude.foldr addEntryToMap M.empty (db ^.. orgFiles . traverse . allEntries)
 
 addEntryToMap :: Entry -> Map Text [Entry] -> Map Text [Entry]
 addEntryToMap e =
@@ -243,7 +253,8 @@ addRefToMap ident =
       Just es -> es
 
 foldAllEntries :: OrgData -> b -> (Entry -> b -> b) -> b
-foldAllEntries org z f = Prelude.foldr f z (org ^.. allEntries [])
+foldAllEntries org z f =
+  Prelude.foldr f z (org ^.. orgFiles . traverse . allEntries)
 
 tallyEntry ::
   (IxValue b1 ~ Int, At b1) =>

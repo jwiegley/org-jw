@@ -44,7 +44,7 @@ main = do
     Options.Parse -> do
       putStrLn $
         "There are a total of "
-          ++ show (length (org ^.. allEntries []))
+          ++ show (length (org ^.. orgFiles . traverse . allEntries))
           ++ " entries"
       pPrint $ countEntries org $ \e m k ->
         k m $ case e ^. entryKeyword of
@@ -70,13 +70,13 @@ main = do
     Options.Lint level -> do
       putStrLn $
         "Linting "
-          ++ show (length (org ^.. allEntries []))
+          ++ show (length (org ^.. orgFiles . traverse . allEntries))
           ++ " entries ("
           ++ show
             ( length
                 ( filter
                     (\e -> maybe False isTodo (e ^? keyword))
-                    (org ^.. allEntries [])
+                    (org ^.. orgFiles . traverse . allEntries)
                 )
             )
           ++ " todo entries) across "
@@ -84,13 +84,13 @@ main = do
           ++ " files"
       case lintOrgData level org of
         [] -> do
-          putStrLn "PASS"
+          putStrLn "Pass."
           exitSuccess
         xs -> do
           mapM_ (putStrLn . showLintOrg) xs
           exitWith (ExitFailure (length xs))
     Options.Test -> do
-      case org ^.. allEntries [] of
+      case org ^.. orgFiles . traverse . allEntries of
         [] -> pure ()
         e : _ -> do
           pPrint $ e ^? anyProperty "ID"

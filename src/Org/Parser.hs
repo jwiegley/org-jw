@@ -54,7 +54,9 @@ identifier :: (MonadParsec e s m, Token s ~ Char) => m Text
 identifier = pack <$> many (alphaNumChar <|> char '_')
 
 parseOrgFile :: Parser OrgFile
-parseOrgFile = OrgFile <$> parseHeader <*> many (parseEntry 1)
+parseOrgFile = do
+  SourcePos path _ _ <- getSourcePos
+  OrgFile path <$> parseHeader <*> many (parseEntry 1)
 
 parseProperties :: Parser [Property]
 parseProperties = do

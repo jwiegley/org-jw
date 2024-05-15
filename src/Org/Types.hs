@@ -232,7 +232,8 @@ data Entry = Entry
 makeClassy ''Entry
 
 data OrgFile = OrgFile
-  { _fileHeader :: Header,
+  { _filePath :: FilePath,
+    _fileHeader :: Header,
     _fileEntries :: [Entry]
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)

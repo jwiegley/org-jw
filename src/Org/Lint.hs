@@ -2,34 +2,34 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Org.Lint where
 
 import Control.Applicative
 import Control.Lens
-import Control.Monad (when)
+import Control.Monad (unless, when)
 import Control.Monad.Writer
 import Data.Data
 import Data.Foldable (forM_)
 import Data.Hashable
-import Data.List (nub)
+import Data.List (intercalate, nub, sort)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as M
 import Data.Maybe (fromMaybe)
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy qualified as T
--- import Debug.Trace (traceM)
+import Debug.Trace (traceM)
 import GHC.Generics hiding (to)
 import Org.Data
 import Org.Printer
 import Org.Types
 import Text.Megaparsec (parseMaybe)
 import Text.Megaparsec.Char (string)
+import Text.Show.Pretty
 
--- import Text.Show.Pretty
-
-data LintMessageKind = LintInfo | LintWarn | LintError
+data LintMessageKind = LintDebug | LintInfo | LintWarn | LintError
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 parseLintMessageKind :: BasicParser LintMessageKind
@@ -37,17 +37,20 @@ parseLintMessageKind =
   (LintError <$ string "ERROR")
     <|> (LintWarn <$ string "WARN")
     <|> (LintInfo <$ string "INFO")
+    <|> (LintDebug <$ string "DEBUG")
 
 data LintMessageCode
   = MisplacedProperty Entry
   | MisplacedTimestamp Entry
   | MisplacedLogEntry Entry
   | MisplacedDrawerEnd Entry
+  | DuplicatedFileProperties OrgFile
   | DuplicatedProperties Entry
-  | DuplicatedIdentifier Text [Entry]
+  | DuplicatedIdentifier Text (NonEmpty Entry)
   | TitleWithExcessiveWhitespace Entry
   | TimestampsOnNonTodo Entry
   | UnevenBodyWhitespace Entry
+  | UnevenFilePreambleWhitespace OrgFile
   | EmptyBodyWhitespace Entry
   | MultipleBlankLines Entry
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
@@ -57,22 +60,6 @@ data LintMessage = LintMessage
     lintMsgCode :: LintMessageCode
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
-
-lintCodeEntry :: Lens' LintMessageCode Entry
-lintCodeEntry f = \case
-  MisplacedProperty e -> MisplacedProperty <$> f e
-  MisplacedTimestamp e -> MisplacedTimestamp <$> f e
-  MisplacedLogEntry e -> MisplacedLogEntry <$> f e
-  MisplacedDrawerEnd e -> MisplacedDrawerEnd <$> f e
-  DuplicatedProperties e -> DuplicatedProperties <$> f e
-  DuplicatedIdentifier _ [] -> error "impossible"
-  DuplicatedIdentifier ident (e : es) ->
-    DuplicatedIdentifier ident . (: es) <$> f e
-  TitleWithExcessiveWhitespace e -> TitleWithExcessiveWhitespace <$> f e
-  TimestampsOnNonTodo e -> TimestampsOnNonTodo <$> f e
-  UnevenBodyWhitespace e -> UnevenBodyWhitespace <$> f e
-  EmptyBodyWhitespace e -> EmptyBodyWhitespace <$> f e
-  MultipleBlankLines e -> MultipleBlankLines <$> f e
 
 {-
 
@@ -85,11 +72,14 @@ lintOrgData level org = snd . runWriter $ do
   let ids = foldAllEntries org M.empty $ \e m ->
         maybe
           m
-          (\ident -> m & at ident %~ Just . maybe [e] (e :))
+          ( \ident ->
+              m
+                & at ident %~ Just . maybe (NE.singleton e) (NE.cons e)
+          )
           (e ^? entryId)
 
   forM_ (M.assocs ids) $ \(k, es) ->
-    when (length es > 1) $
+    when (NE.length es > 1) $
       tell [LintMessage LintError (DuplicatedIdentifier k es)]
 
   let level' =
@@ -106,15 +96,33 @@ Linting rules for org files:
 -}
 
 lintOrgFile :: LintMessageKind -> OrgFile -> Writer [LintMessage] ()
-lintOrgFile level org =
-  mapM_
-    (lintOrgEntry level)
-    ( org
-        ^.. entries
-          ( org ^. fileHeader . headerPropertiesDrawer
-              ++ org ^. fileHeader . headerFileProperties
-          )
-    )
+lintOrgFile level org = do
+  checkFor LintError (DuplicatedFileProperties org) $
+    sort (props ^.. traverse . name)
+      /= nub (sort (props ^.. traverse . name))
+  -- checkFor LintInfo (UnevenFilePreambleWhitespace org) $
+  --   org ^? fileHeader . headerPreamble . leadSpace
+  --     /= org ^? fileHeader . headerPreamble . endSpace
+  case reverse (org ^.. allEntries) of
+    [] -> pure ()
+    e : es -> do
+      mapM_ (lintOrgEntry False level) (reverse es)
+      lintOrgEntry True level e
+  where
+    props =
+      org ^. fileHeader . headerPropertiesDrawer
+        ++ org ^. fileHeader . headerFileProperties
+    checkFor ::
+      LintMessageKind ->
+      LintMessageCode ->
+      Bool ->
+      Writer [LintMessage] ()
+    checkFor kind code b =
+      when (b && kind >= level) $ do
+        when (level == LintDebug) $
+          traceM $
+            "file: " ++ ppShow org
+        tell [LintMessage kind code]
 
 {-
 
@@ -150,8 +158,8 @@ Linting rules for org file entries:
 
 -}
 
-lintOrgEntry :: LintMessageKind -> Entry -> Writer [LintMessage] ()
-lintOrgEntry level e = do
+lintOrgEntry :: Bool -> LintMessageKind -> Entry -> Writer [LintMessage] ()
+lintOrgEntry lastEntry level e = do
   checkFor LintError (MisplacedProperty e) $
     any ((":properties:" `T.isInfixOf`) . T.toLower) bodyText
   checkFor LintError (MisplacedTimestamp e) $
@@ -179,23 +187,25 @@ lintOrgEntry level e = do
           . T.toLower
       )
       bodyText
-  checkFor LintWarn (TitleWithExcessiveWhitespace e) $
+  checkFor LintInfo (TitleWithExcessiveWhitespace e) $
     "  " `T.isInfixOf` (e ^. entryTitle)
   checkFor LintError (DuplicatedProperties e) $
-    (e ^.. entryProperties . traverse . name)
-      /= nub (e ^.. entryProperties . traverse . name)
+    sort (e ^.. entryProperties . traverse . name)
+      /= nub (sort (e ^.. entryProperties . traverse . name))
   checkFor LintWarn (TimestampsOnNonTodo e) $
     not (null (e ^. entryStamps))
-      && case e ^? keyword of
-        Nothing -> True
-        Just kw -> not (isTodo kw)
+      && maybe True (not . isTodo) (e ^? keyword)
   -- jww (2024-05-14): Need to check log entries also
-  checkFor LintInfo (UnevenBodyWhitespace e) $
-    e ^. entryText . leadSpace /= e ^. entryText . endSpace
+  unless lastEntry $
+    checkFor LintInfo (UnevenBodyWhitespace e) $
+      case e ^. entryText of
+        Body [Whitespace _] -> False
+        _ -> e ^? entryText . leadSpace /= e ^? entryText . endSpace
   -- jww (2024-05-14): Need to check log entries also
   checkFor LintInfo (EmptyBodyWhitespace e) $
-    not (null bodyText)
-      && e ^. entryText . leadSpace == T.unlines bodyText
+    case e ^. entryText of
+      Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
+      _ -> False
   -- jww (2024-05-14): Need to check in log entries also
   checkFor
     LintInfo
@@ -209,7 +219,7 @@ lintOrgEntry level e = do
         ^. entryText
           . blocks
           . traverse
-          . filtered (hasn't _Drawer)
+          . filtered (has _Paragraph)
           . to (showBlock "")
         ++ e
           ^. entryLogEntries
@@ -218,7 +228,7 @@ lintOrgEntry level e = do
             . _Just
             . blocks
             . traverse
-            . filtered (hasn't _Drawer)
+            . filtered (has _Paragraph)
             . to (showBlock "")
 
     checkFor ::
@@ -228,48 +238,61 @@ lintOrgEntry level e = do
       Writer [LintMessage] ()
     checkFor kind code b =
       when (b && kind >= level) $ do
-        -- traceM $ "entry: " ++ ppShow e
+        when (level == LintDebug) $
+          traceM $
+            "entry: " ++ ppShow e
         tell [LintMessage kind code]
 
 showLintOrg :: LintMessage -> String
 showLintOrg (LintMessage kind code) =
-  file
-    ++ ":"
-    ++ show line
-    ++ ":"
-    ++ show col
-    ++ ": "
-    ++ renderKind
-    ++ " "
-    ++ renderCode
+  renderCode
   where
-    (file, line, col) =
-      let e = code ^. lintCodeEntry
-       in (e ^. entryFile, e ^. entryLine, e ^. entryColumn)
+    entryLoc e =
+      e ^. entryFile
+        ++ ":"
+        ++ show (e ^. entryLine)
+        ++ ":"
+        ++ show (e ^. entryColumn)
     renderKind = case kind of
       LintError -> "ERROR"
       LintWarn -> "WARN"
       LintInfo -> "INFO"
+      LintDebug -> "DEBUG"
+    prefix e =
+      entryLoc e
+        ++ ": "
+        ++ renderKind
+        ++ " "
     renderCode = case code of
-      MisplacedProperty _e ->
-        "Misplaced :PROPERTIES: block"
-      MisplacedTimestamp _e ->
-        "Misplaced timestamp (SCHEDULED, DEADLINE or CLOSED)"
-      MisplacedLogEntry _e ->
-        "Misplaced state change, note or LOGBOOK"
-      MisplacedDrawerEnd _e ->
-        "Misplaced end of drawer"
-      TitleWithExcessiveWhitespace _e ->
-        "Title with excessive whitespace"
-      DuplicatedProperties _e ->
-        "Duplicated properties"
-      DuplicatedIdentifier ident _entries ->
-        "Duplicated identifier " ++ T.unpack ident
-      TimestampsOnNonTodo _e ->
-        "Timestamps found on non-todo entry"
-      UnevenBodyWhitespace _e ->
-        "Whitespace surrounding body is not even"
-      EmptyBodyWhitespace _e ->
-        "Whitespace only body"
-      MultipleBlankLines _e ->
-        "Multiple blank lines"
+      MisplacedProperty e ->
+        prefix e ++ "Misplaced :PROPERTIES: block"
+      MisplacedTimestamp e ->
+        prefix e ++ "Misplaced timestamp (SCHEDULED, DEADLINE or CLOSED)"
+      MisplacedLogEntry e ->
+        prefix e ++ "Misplaced state change, note or LOGBOOK"
+      MisplacedDrawerEnd e ->
+        prefix e ++ "Misplaced end of drawer"
+      TitleWithExcessiveWhitespace e ->
+        prefix e ++ "Title with excessive whitespace"
+      DuplicatedFileProperties f ->
+        f ^. filePath ++ ":1: " ++ "Duplicated file properties"
+      DuplicatedProperties e ->
+        prefix e ++ "Duplicated properties"
+      DuplicatedIdentifier ident (e :| es) ->
+        prefix e
+          ++ "Duplicated identifier "
+          ++ T.unpack ident
+          ++ "\n"
+          ++ intercalate "\n" (map (("  " ++) . entryLoc) es)
+      TimestampsOnNonTodo e ->
+        prefix e ++ "Timestamps found on non-todo entry"
+      UnevenBodyWhitespace e ->
+        prefix e ++ "Whitespace surrounding body is not even"
+      UnevenFilePreambleWhitespace f ->
+        f ^. filePath
+          ++ ":1: "
+          ++ "Whitespace surrounding file preamble is not even"
+      EmptyBodyWhitespace e ->
+        prefix e ++ "Whitespace only body"
+      MultipleBlankLines e ->
+        prefix e ++ "Multiple blank lines"
