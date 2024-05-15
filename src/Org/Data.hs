@@ -1,3 +1,4 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -15,7 +16,7 @@ import Control.Monad.Reader
 import Data.ByteString.Lazy qualified as B
 import Data.Map
 import Data.Map qualified as M
-import Data.Maybe (fromMaybe, maybeToList)
+import Data.Maybe (fromMaybe)
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy qualified as T
 import Data.Text.Lazy.Encoding qualified as T
@@ -29,9 +30,6 @@ import Prelude hiding (readFile)
 
 lookupProperty :: [Property] -> Text -> Maybe Text
 lookupProperty ps n = ps ^? traverse . filtered (\x -> x ^. name == n) . value
-
-shown :: (Show a, Read a) => Traversal' a String
-shown f a = read <$> f (show a)
 
 lined :: Traversal' [Text] Text
 lined f a = T.lines <$> f (T.unlines a)
@@ -101,9 +99,9 @@ specialProperties =
     ------------------------------------------------------------------------
     -- The following are not defined by Org-mode as special
     ------------------------------------------------------------------------
-    ("LINE", Fold (entryLine . shown . packed)),
-    ("COLUMN", Fold (entryColumn . shown . packed)),
-    ("DEPTH", Fold (entryDepth . shown . packed)),
+    ("LINE", Fold (entryLine . re _Show . packed)),
+    ("COLUMN", Fold (entryColumn . re _Show . packed)),
+    ("DEPTH", Fold (entryDepth . re _Show . packed)),
     ( "KEYWORD",
       Fold
         ( entryKeyword
@@ -114,7 +112,7 @@ specialProperties =
     ("TITLE", Fold entryTitle),
     ("CONTEXT", Fold (entryContext . _Just)),
     ("LOCATOR", Fold (entryLocator . _Just)),
-    ("BODY", Fold (entryText . Org.Data.lined))
+    ("BODY", Fold (entryText . to (T.unlines . showBody "")))
   ]
 
 keyword :: Traversal' Entry Text
@@ -122,6 +120,12 @@ keyword f = entryKeyword . _Just . failing _OpenKeyword _ClosedKeyword %%~ f
 
 entryId :: Traversal' Entry Text
 entryId = property "ID"
+
+leadSpace :: Traversal' Body Text
+leadSpace = blocks . _head . _Whitespace
+
+endSpace :: Traversal' Body Text
+endSpace = blocks . _last . _Whitespace
 
 readOrgFile_ :: Config -> FilePath -> Text -> Either String OrgFile
 readOrgFile_ cfg path content =
@@ -189,15 +193,10 @@ hardCodedInheritedProperties = ["COLUMNS", "CATEGORY", "ARCHIVE", "LOGGING"]
 inheritProperties :: [Property] -> Entry -> Entry
 inheritProperties [] e = e
 inheritProperties (Property _ n v : ps) e =
-  inheritProperties finalProperties finalEntry
-  where
-    finalEntry
-      | has (property n) e = e & property n .~ v
-      | otherwise = e & entryProperties <>~ [Property True n v]
-    finalProperties =
-      concatMap injectedProperty hardCodedInheritedProperties ++ ps
-    injectedProperty k =
-      [Property False k x | x <- maybeToList (e ^? property k)]
+  inheritProperties ps $
+    if has (property n) e
+      then e
+      else e & entryProperties <>~ [Property True n v]
 
 traverseEntries ::
   (Applicative f) =>

@@ -30,7 +30,8 @@ data Command
   | Dump
   | Outline
   | Stats
-  | Lint
+  | Lint String
+  | Test
   deriving (Data, Show, Eq, Typeable, Generic)
 
 makeLenses ''Command
@@ -89,6 +90,7 @@ tradeJournalOpts =
           <> outlineCommand
           <> statsCommand
           <> lintCommand
+          <> testCommand
       )
   where
     parseCommand :: Mod CommandFields Command
@@ -149,7 +151,24 @@ tradeJournalOpts =
       where
         lintOptions :: Parser Command
         lintOptions =
-          pure Lint
+          Lint
+            <$> option
+              str
+              ( short 'l'
+                  <> long "level"
+                  <> value "INFO"
+                  <> help "Log level to report"
+              )
+
+    testCommand :: Mod CommandFields Command
+    testCommand =
+      OA.command
+        "test"
+        (info testOptions (progDesc "Test Org-mode file"))
+      where
+        testOptions :: Parser Command
+        testOptions =
+          pure Test
 
 optionsDefinition :: ParserInfo Options
 optionsDefinition =

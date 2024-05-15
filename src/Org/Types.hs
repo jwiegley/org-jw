@@ -47,10 +47,43 @@ data Property = Property
 
 makeLenses ''Property
 
+data Block
+  = Whitespace Text
+  | Paragraph [Text]
+  | Drawer [Text]
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+
+makePrisms ''Block
+
+newtype Body = Body
+  { _blocks :: [Block]
+  }
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+
+instance Semigroup Body where
+  Body [] <> ys = ys
+  xs <> Body [] = xs
+  Body xs <> Body (Whitespace yw : ys)
+    | Whitespace xw : xs' <- reverse xs =
+        Body (reverse xs' ++ Whitespace (xw <> yw) : ys)
+  Body xs <> Body (Paragraph yw : ys)
+    | Paragraph xw : xs' <- reverse xs =
+        Body (reverse xs' ++ Paragraph (xw <> yw) : ys)
+  Body xs <> Body ys = Body (xs ++ ys)
+
+instance Monoid Body where
+  mempty = Body []
+  mappend = (<>)
+
+makeClassy ''Body
+
+emptyBody :: Body -> Bool
+emptyBody = (== mempty)
+
 data Header = Header
   { _headerPropertiesDrawer :: [Property],
     _headerFileProperties :: [Property],
-    _headerPreamble :: [Text]
+    _headerPreamble :: Body
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
@@ -169,8 +202,8 @@ timeEndToUTCTime Time {..} = do
       (secondsToDiffTime $ fromMaybe 0 _timeEnd)
 
 data LogEntry
-  = LogState Keyword (Maybe Keyword) Time [Text]
-  | LogNote Time [Text]
+  = LogState Keyword (Maybe Keyword) Time (Maybe Body)
+  | LogNote Time (Maybe Body)
   | LogBook [(Time, Maybe Duration)]
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
@@ -191,7 +224,7 @@ data Entry = Entry
     _entryStamps :: [Stamp],
     _entryProperties :: [Property],
     _entryLogEntries :: [LogEntry],
-    _entryText :: [Text],
+    _entryText :: Body,
     _entryItems :: [Entry]
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)

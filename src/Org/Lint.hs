@@ -7,35 +7,49 @@
 
 module Org.Lint where
 
+import Control.Applicative
 import Control.Lens
 import Control.Monad (when)
 import Control.Monad.Writer
 import Data.Data
--- import Debug.Trace
-
 import Data.Foldable (forM_)
 import Data.Hashable
 import Data.List (nub)
 import Data.Map qualified as M
+import Data.Maybe (fromMaybe)
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy qualified as T
-import GHC.Generics
+-- import Debug.Trace (traceM)
+import GHC.Generics hiding (to)
 import Org.Data
+import Org.Printer
 import Org.Types
+import Text.Megaparsec (parseMaybe)
+import Text.Megaparsec.Char (string)
 
 -- import Text.Show.Pretty
 
-data LintMessageKind = LintError | LintWarning | LintInfo
+data LintMessageKind = LintInfo | LintWarn | LintError
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+
+parseLintMessageKind :: BasicParser LintMessageKind
+parseLintMessageKind =
+  (LintError <$ string "ERROR")
+    <|> (LintWarn <$ string "WARN")
+    <|> (LintInfo <$ string "INFO")
 
 data LintMessageCode
   = MisplacedProperty Entry
   | MisplacedTimestamp Entry
   | MisplacedLogEntry Entry
+  | MisplacedDrawerEnd Entry
   | DuplicatedProperties Entry
   | DuplicatedIdentifier Text [Entry]
   | TitleWithExcessiveWhitespace Entry
   | TimestampsOnNonTodo Entry
+  | UnevenBodyWhitespace Entry
+  | EmptyBodyWhitespace Entry
+  | MultipleBlankLines Entry
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 data LintMessage = LintMessage
@@ -49,12 +63,16 @@ lintCodeEntry f = \case
   MisplacedProperty e -> MisplacedProperty <$> f e
   MisplacedTimestamp e -> MisplacedTimestamp <$> f e
   MisplacedLogEntry e -> MisplacedLogEntry <$> f e
+  MisplacedDrawerEnd e -> MisplacedDrawerEnd <$> f e
   DuplicatedProperties e -> DuplicatedProperties <$> f e
   DuplicatedIdentifier _ [] -> error "impossible"
   DuplicatedIdentifier ident (e : es) ->
     DuplicatedIdentifier ident . (: es) <$> f e
   TitleWithExcessiveWhitespace e -> TitleWithExcessiveWhitespace <$> f e
   TimestampsOnNonTodo e -> TimestampsOnNonTodo <$> f e
+  UnevenBodyWhitespace e -> UnevenBodyWhitespace <$> f e
+  EmptyBodyWhitespace e -> EmptyBodyWhitespace <$> f e
+  MultipleBlankLines e -> MultipleBlankLines <$> f e
 
 {-
 
@@ -62,18 +80,24 @@ Linting rules for org file collections:
 
 -}
 
-lintOrgData :: OrgData -> [LintMessage]
-lintOrgData org = snd . runWriter $ do
+lintOrgData :: String -> OrgData -> [LintMessage]
+lintOrgData level org = snd . runWriter $ do
   let ids = foldAllEntries org M.empty $ \e m ->
         maybe
           m
           (\ident -> m & at ident %~ Just . maybe [e] (e :))
           (e ^? entryId)
+
   forM_ (M.assocs ids) $ \(k, es) ->
     when (length es > 1) $
       tell [LintMessage LintError (DuplicatedIdentifier k es)]
 
-  mapM_ lintOrgFile (org ^. orgFiles)
+  let level' =
+        fromMaybe
+          LintInfo
+          (parseMaybe parseLintMessageKind (T.pack level))
+
+  mapM_ (lintOrgFile level') (org ^. orgFiles)
 
 {-
 
@@ -81,8 +105,16 @@ Linting rules for org files:
 
 -}
 
-lintOrgFile :: OrgFile -> Writer [LintMessage] ()
-lintOrgFile org = mapM_ lintOrgEntry (org ^. fileEntries)
+lintOrgFile :: LintMessageKind -> OrgFile -> Writer [LintMessage] ()
+lintOrgFile level org =
+  mapM_
+    (lintOrgEntry level)
+    ( org
+        ^.. entries
+          ( org ^. fileHeader . headerPropertiesDrawer
+              ++ org ^. fileHeader . headerFileProperties
+          )
+    )
 
 {-
 
@@ -118,10 +150,10 @@ Linting rules for org file entries:
 
 -}
 
-lintOrgEntry :: Entry -> Writer [LintMessage] ()
-lintOrgEntry e = do
+lintOrgEntry :: LintMessageKind -> Entry -> Writer [LintMessage] ()
+lintOrgEntry level e = do
   checkFor LintError (MisplacedProperty e) $
-    any (":PROPERTIES:" `T.isInfixOf`) (e ^. entryText)
+    any ((":properties:" `T.isInfixOf`) . T.toLower) bodyText
   checkFor LintError (MisplacedTimestamp e) $
     any
       ( \t ->
@@ -129,33 +161,73 @@ lintOrgEntry e = do
             || "DEADLINE:" `T.isInfixOf` t
             || "CLOSED:" `T.isInfixOf` t
       )
-      (e ^. entryText)
+      bodyText
   checkFor LintError (MisplacedLogEntry e) $
     any
       ( \t ->
-          "- State" `T.isInfixOf` t
-            || "- Note taken" `T.isInfixOf` t
-            || ":LOGBOOK:" `T.isInfixOf` t
+          "- State " `T.isInfixOf` t
+            || "- Note taken " `T.isInfixOf` t
+            || ":logbook:" `T.isInfixOf` T.toLower t
       )
-      (e ^. entryText)
-  checkFor LintWarning (TitleWithExcessiveWhitespace e) $
+      bodyText
+  checkFor LintError (MisplacedDrawerEnd e) $
+    any
+      ( ( \t ->
+            ":end:" `T.isInfixOf` t
+              || "#+end" `T.isInfixOf` t
+        )
+          . T.toLower
+      )
+      bodyText
+  checkFor LintWarn (TitleWithExcessiveWhitespace e) $
     "  " `T.isInfixOf` (e ^. entryTitle)
   checkFor LintError (DuplicatedProperties e) $
     (e ^.. entryProperties . traverse . name)
       /= nub (e ^.. entryProperties . traverse . name)
-  checkFor LintWarning (TimestampsOnNonTodo e) $
+  checkFor LintWarn (TimestampsOnNonTodo e) $
     not (null (e ^. entryStamps))
       && case e ^? keyword of
         Nothing -> True
         Just kw -> not (isTodo kw)
+  -- jww (2024-05-14): Need to check log entries also
+  checkFor LintInfo (UnevenBodyWhitespace e) $
+    e ^. entryText . leadSpace /= e ^. entryText . endSpace
+  -- jww (2024-05-14): Need to check log entries also
+  checkFor LintInfo (EmptyBodyWhitespace e) $
+    not (null bodyText)
+      && e ^. entryText . leadSpace == T.unlines bodyText
+  -- jww (2024-05-14): Need to check in log entries also
+  checkFor
+    LintInfo
+    (MultipleBlankLines e)
+    ( any ((> 1) . length . T.lines) $
+        e ^.. entryText . blocks . traverse . _Whitespace
+    )
   where
+    bodyText =
+      e
+        ^. entryText
+          . blocks
+          . traverse
+          . filtered (hasn't _Drawer)
+          . to (showBlock "")
+        ++ e
+          ^. entryLogEntries
+            . traverse
+            . failing (_LogState . _4) (_LogNote . _2)
+            . _Just
+            . blocks
+            . traverse
+            . filtered (hasn't _Drawer)
+            . to (showBlock "")
+
     checkFor ::
       LintMessageKind ->
       LintMessageCode ->
       Bool ->
       Writer [LintMessage] ()
     checkFor kind code b =
-      when b $ do
+      when (b && kind >= level) $ do
         -- traceM $ "entry: " ++ ppShow e
         tell [LintMessage kind code]
 
@@ -176,15 +248,17 @@ showLintOrg (LintMessage kind code) =
        in (e ^. entryFile, e ^. entryLine, e ^. entryColumn)
     renderKind = case kind of
       LintError -> "ERROR"
-      LintWarning -> "WARN"
+      LintWarn -> "WARN"
       LintInfo -> "INFO"
     renderCode = case code of
       MisplacedProperty _e ->
-        "Misplaced :PROPERTY: block"
+        "Misplaced :PROPERTIES: block"
       MisplacedTimestamp _e ->
         "Misplaced timestamp (SCHEDULED, DEADLINE or CLOSED)"
       MisplacedLogEntry _e ->
         "Misplaced state change, note or LOGBOOK"
+      MisplacedDrawerEnd _e ->
+        "Misplaced end of drawer"
       TitleWithExcessiveWhitespace _e ->
         "Title with excessive whitespace"
       DuplicatedProperties _e ->
@@ -193,3 +267,9 @@ showLintOrg (LintMessage kind code) =
         "Duplicated identifier " ++ T.unpack ident
       TimestampsOnNonTodo _e ->
         "Timestamps found on non-todo entry"
+      UnevenBodyWhitespace _e ->
+        "Whitespace surrounding body is not even"
+      EmptyBodyWhitespace _e ->
+        "Whitespace only body"
+      MultipleBlankLines _e ->
+        "Multiple blank lines"

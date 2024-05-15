@@ -121,13 +121,13 @@ showLogEntry (LogState from to tm text) =
              if null text then "" else " \\\\"
            ]
     )
-    : map ("  " <>) text
+    : maybe [] (showBody "  ") text
 showLogEntry (LogNote tm text) =
   ( "- Note taken on "
       <> showTime tm
       <> if null text then "" else " \\\\"
   )
-    : map ("  " <>) text
+    : maybe [] (showBody "  ") text
 showLogEntry (LogBook tms) =
   ":LOGBOOK:" : map logEntry tms ++ [":END:"]
   where
@@ -146,7 +146,7 @@ showEntry propertyColumn tagsColumn Entry {..} =
     ++ timestamps
     ++ properties
     ++ logEntries
-    ++ body
+    ++ entryLines
     ++ concatMap (showEntry propertyColumn tagsColumn) _entryItems
   where
     title
@@ -190,7 +190,19 @@ showEntry propertyColumn tagsColumn Entry {..} =
       | null _entryProperties = []
       | otherwise = showProperties propertyColumn _entryProperties
     logEntries = concatMap showLogEntry _entryLogEntries
-    body = _entryText
+    entryLines = showBody "" _entryText
+
+showBody :: Text -> Body -> [Text]
+showBody leader (Body b) = concatMap (showBlock leader) b
+
+showBlock :: Text -> Block -> [Text]
+showBlock _leader (Whitespace txt) = T.lines txt
+showBlock leader (Paragraph xs) = map (leader <>) xs
+showBlock leader (Drawer xs) = map (leader <>) xs
+
+bodyLength :: Body -> Int
+bodyLength =
+  sum . Prelude.map (fromIntegral . T.length) . showBody ""
 
 showOrgFile :: Int -> Int -> OrgFile -> [Text]
 showOrgFile propertyColumn tagsColumn OrgFile {..} =
@@ -209,7 +221,7 @@ showHeader propertyColumn Header {..} =
     fileProperties
       | null _headerFileProperties = []
       | otherwise = showFileProperties _headerFileProperties
-    preamble = _headerPreamble
+    preamble = showBody "" _headerPreamble
 
 showProperties :: Int -> [Property] -> [Text]
 showProperties propertyColumn ps =
@@ -252,12 +264,12 @@ summarizeEntry Entry {..} =
           ++ [Property False "LOCATOR" x | x <- maybeToList _entryLocator]
           ++ [ Property
                  False
-                 "LOG_LEN"
+                 "LOG_ENTRIES"
                  (T.pack (show (length _entryLogEntries)))
                | not (null _entryLogEntries)
              ]
-          ++ [ Property False "BODY_LEN" (T.pack (show (length _entryText)))
-               | not (null _entryText)
+          ++ [ Property False "BODY_LEN" (T.pack (show (bodyLength _entryText)))
+               | not (emptyBody _entryText)
              ]
           ++ case _entryTags of
             [] -> []

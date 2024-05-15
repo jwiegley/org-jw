@@ -58,9 +58,7 @@ main = do
     Options.Print ->
       void $ flip M.traverseWithKey (org ^. orgFiles) $ \path o ->
         T.putStrLn $ _OrgFile Config {..} path # o
-    Options.Dump -> do
-      pPrint org
-      pPrint $ entriesMap [] org
+    Options.Dump -> pPrint org
     Options.Outline ->
       mapM_
         (mapM_ T.putStrLn . concatMap summarizeEntry . _fileEntries)
@@ -69,19 +67,7 @@ main = do
       mapM_
         (mapM_ T.putStrLn . concatMap summarizeEntry . _fileEntries)
         (_orgFiles org)
-    Options.Lint -> do
-      case org ^.. allEntries [] of
-        [] -> pure ()
-        e : _ -> do
-          pPrint $ e ^? anyProperty "ID"
-          pPrint $ e ^? anyProperty "CATEGORY"
-          pPrint $ e ^? anyProperty "TITLE"
-          pPrint $ e ^? anyProperty "ITEM"
-          pPrint $ e ^? anyProperty "FOOBAR"
-          pPrint $ expr "$TITLE"
-          pPrint $ case expr "$TITLE" of
-            Left _ -> pure ""
-            Right x -> evalExpr x e :: Either String Text
+    Options.Lint level -> do
       putStrLn $
         "Linting "
           ++ show (length (org ^.. allEntries []))
@@ -96,13 +82,31 @@ main = do
           ++ " todo entries) across "
           ++ show (length (org ^. orgFiles))
           ++ " files"
-      case lintOrgData org of
+      case lintOrgData level org of
         [] -> do
           putStrLn "PASS"
           exitSuccess
         xs -> do
           mapM_ (putStrLn . showLintOrg) xs
           exitWith (ExitFailure (length xs))
+    Options.Test -> do
+      case org ^.. allEntries [] of
+        [] -> pure ()
+        e : _ -> do
+          pPrint $ e ^? anyProperty "ID"
+          pPrint $ e ^? anyProperty "CATEGORY"
+          pPrint $ e ^? anyProperty "TITLE"
+          pPrint $ e ^? anyProperty "ITEM"
+          pPrint $ e ^? anyProperty "FOOBAR"
+          putStrLn $ "Entry text: " ++ ppShow (e ^. entryText)
+          putStrLn $ "Lead space: " ++ ppShow (e ^. entryText . leadSpace)
+          putStrLn $ " End space: " ++ ppShow (e ^. entryText . endSpace)
+          let e' = e & entryText . endSpace .~ ""
+          putStrLn $ "Entry text': " ++ ppShow (e' ^. entryText)
+          pPrint $ expr "$TITLE"
+          pPrint $ case expr "$TITLE" of
+            Left _ -> pure ""
+            Right x -> evalExpr x e :: Either String Text
   where
     -- jww (2024-05-10): These details need to be read from a file, or from
     -- command-line options.

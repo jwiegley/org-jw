@@ -18,6 +18,7 @@ import Data.String
 import Data.Text.Lazy (Text, pack)
 import Data.Text.Lazy qualified as T
 import Data.Time
+-- import Debug.Trace
 import Org.Types
 import Text.Megaparsec hiding (many, some)
 import Text.Megaparsec.Char
@@ -40,8 +41,11 @@ anyChar = satisfy $ \c -> c /= '\n'
 newlineOrEof :: Parser ()
 newlineOrEof = void newline <|> eof
 
+lineOrEof :: Parser Text
+lineOrEof = pack <$> manyTill anyChar newlineOrEof
+
 line :: Parser Text
-line = pack <$> manyTill anyChar newlineOrEof
+line = pack <$> manyTill anyChar newline
 
 restOfLine :: Parser Text
 restOfLine = pack <$> someTill anyChar newline
@@ -69,7 +73,10 @@ parseHeader :: Parser Header
 parseHeader =
   (Header . join . maybeToList <$> optional (try parseProperties))
     <*> many parseFileProperty
-    <*> parseEntryText
+    <*> parseEntryBody
+
+parseHeaderStars :: Parser Int
+parseHeaderStars = length <$> someTill (char '*') (some singleSpace)
 
 parseFileProperty :: Parser Property
 parseFileProperty = do
@@ -78,12 +85,6 @@ parseFileProperty = do
   _value <- restOfLine
   let _inherited = False
   pure Property {..}
-
-parseHeaderStars :: Parser Int
-parseHeaderStars = length <$> someTill (char '*') (some singleSpace)
-
-parseEntryText :: Parser [Text]
-parseEntryText = manyTill line (try (void (lookAhead parseHeaderStars)) <|> eof)
 
 parseKeyword :: Parser Keyword
 parseKeyword = do
@@ -112,7 +113,7 @@ parseEntry parseAtDepth = do
     join . maybeToList
       <$> try (optional parseProperties)
   _entryLogEntries <- many parseLogEntry
-  _entryText <- parseEntryText
+  _entryText <- parseEntryBody
   _entryItems <- many (parseEntry (succ _entryDepth))
   pure Entry {..}
 
@@ -282,11 +283,11 @@ parseLogEntry :: Parser LogEntry
 parseLogEntry = parseStateChange <|> parseNote <|> parseLogBook
   where
     trailingNote =
-      ([] <$ try (skipSome trailingSpace))
+      (Nothing <$ try (skipSome trailingSpace))
         <|> spaces_
           *> string "\\\\"
           *> trailingSpace
-          *> parseNoteText
+          *> (Just <$> parseNoteBody)
 
     parseStateChange = do
       fromKeyword <-
@@ -328,16 +329,85 @@ parseLogEntry = parseStateChange <|> parseNote <|> parseLogBook
       string ":END:" *> trailingSpace
       return $ LogBook book
 
-parseNoteText :: Parser [Text]
-parseNoteText = do
-  xs <-
-    manyTill
-      line
-      ( try (void (lookAhead (satisfy (not . isSpace))))
-          <|> eof
-      )
-  let leaders = filter (\x -> x /= "  " && x /= "") $ map (T.take 2) xs
-  unless (null leaders) $
-    fail $
-      "Unexpected log entry: " ++ show xs ++ ", leaders: " ++ show leaders
-  pure $ map (T.drop 2) xs
+parseEntryBody :: Parser Body
+parseEntryBody = parseBody (pure ()) parseHeaderStars
+
+parseNoteBody :: Parser Body
+parseNoteBody =
+  parseBody
+    (try (void (string "  ")) <|> lookAhead (void newline))
+    (satisfy (not . isSpace))
+
+parseBody :: Parser a -> Parser b -> Parser Body
+parseBody leader terminus =
+  mconcat
+    <$> manyTill
+      (Body . (: []) <$> parseBlock leader)
+      (try (void (lookAhead terminus)) <|> eof)
+
+parseBlock :: Parser a -> Parser Block
+parseBlock leader = do
+  (Whitespace . T.pack <$> try (manyTill singleSpace newline))
+    <|> Drawer <$> try (leader *> parseDrawer leader)
+    <|> Paragraph . (: []) <$> (leader *> lineOrEof)
+
+parseDrawer :: Parser a -> Parser [Text]
+parseDrawer leader = parseDrawerBlock <|> parseBeginBlock
+  where
+    parseDrawerBlock = do
+      txt <- try $ do
+        prefix <- T.pack <$> many singleSpace
+        _ <- char ':'
+        ident <- identifier
+        _ <- char ':'
+        trailingSpace
+        pure $ prefix <> ":" <> ident <> ":"
+      content <-
+        manyTill
+          (leader *> restOfLine <|> T.singleton <$> newline)
+          ( lookAhead
+              ( try
+                  ( void
+                      ( leader
+                          *> skipMany singleSpace
+                          *> string' ":end:"
+                      )
+                  )
+                  <|> eof
+              )
+          )
+      endLine <- do
+        _ <- leader
+        prefix <- T.pack <$> many singleSpace
+        ending <- string' ":end:"
+        trailingSpace
+        pure $ prefix <> ending
+      pure $ txt : content ++ [endLine]
+
+    parseBeginBlock = do
+      txt <- try $ do
+        prefix <- T.pack <$> many singleSpace
+        begin <- string' "#+begin"
+        suffix <- line
+        pure $ prefix <> begin <> suffix
+      content <-
+        manyTill
+          (leader *> restOfLine <|> T.singleton <$> newline)
+          ( lookAhead
+              ( try
+                  ( void
+                      ( leader
+                          *> skipMany singleSpace
+                          *> string' "#+end"
+                      )
+                  )
+                  <|> eof
+              )
+          )
+      endLine <- do
+        _ <- leader
+        prefix <- T.pack <$> many singleSpace
+        ending <- string' "#+end"
+        suffix <- line
+        pure $ prefix <> ending <> suffix
+      pure $ txt : content ++ [endLine]
