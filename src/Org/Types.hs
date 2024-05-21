@@ -235,13 +235,32 @@ timeEndToUTCTime Time {..} = do
       (secondsToDiffTime $ fromMaybe 0 _timeEnd)
 
 data LogEntry
-  = LogState Keyword (Maybe Keyword) Time (Maybe Body)
+  = LogClosing Time (Maybe Body)
+  | LogState Keyword (Maybe Keyword) Time (Maybe Body)
   | LogNote Time (Maybe Body)
+  | LogRescheduled Time Time (Maybe Body)
+  | LogNotScheduled Time Time (Maybe Body)
+  | LogDeadline Time Time (Maybe Body)
+  | LogNoDeadline Time Time (Maybe Body)
+  | LogRefiling Time (Maybe Body)
   | LogClock Time (Maybe Duration)
   | LogBook [LogEntry]
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''LogEntry
+
+_LogBody :: Traversal' LogEntry Body
+_LogBody f e = case e of
+  LogClosing t mbody -> LogClosing t <$> traverse f mbody
+  LogState k mk t mbody -> LogState k mk t <$> traverse f mbody
+  LogNote t mbody -> LogNote t <$> traverse f mbody
+  LogRescheduled t1 t2 mbody -> LogRescheduled t1 t2 <$> traverse f mbody
+  LogNotScheduled t1 t2 mbody -> LogNotScheduled t1 t2 <$> traverse f mbody
+  LogDeadline t1 t2 mbody -> LogDeadline t1 t2 <$> traverse f mbody
+  LogNoDeadline t1 t2 mbody -> LogNoDeadline t1 t2 <$> traverse f mbody
+  LogRefiling t mbody -> LogRefiling t <$> traverse f mbody
+  LogClock _ _ -> pure e
+  LogBook _ -> pure e
 
 data Entry = Entry
   { _entryFile :: FilePath,

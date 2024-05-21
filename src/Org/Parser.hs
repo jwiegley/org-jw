@@ -281,18 +281,22 @@ parseTimeSingle = do
     InactiveTime -> char ']'
   pure Time {..}
 
-parseLogEntry :: Parser LogEntry
-parseLogEntry =
-  parseStateChange <|> parseNote <|> parseClockEntry <|> parseLogBook
+parseLogHeading :: Parser (Maybe Body -> LogEntry)
+parseLogHeading =
+  parseClosing
+    <|> parseState
+    <|> parseNote
+    <|> parseRescheduled
+    <|> parseNotScheduled
+    <|> parseDeadline
+    <|> parseNoDeadline
+    <|> parseRefiling
   where
-    trailingNote =
-      try spaces_
-        *> string "\\\\"
-        *> trailingSpace
-        *> (Just <$> parseNoteBody)
-        <|> (Nothing <$ try trailingSpace)
+    parseClosing = do
+      _ <- try (string "- CLOSING NOTE ")
+      LogClosing <$> parseTimeSingle
 
-    parseStateChange = do
+    parseState = do
       fromKeyword <-
         try (string "- State \"")
           *> parseKeyword
@@ -307,11 +311,52 @@ parseLogEntry =
               *> parseKeyword
               <* char '"'
               <* spaces_
-      LogState fromKeyword toKeyword <$> parseTimeSingle <*> trailingNote
+      LogState fromKeyword toKeyword <$> parseTimeSingle
 
     parseNote = do
       _ <- try (string "- Note taken on" <* spaces_) --
-      LogNote <$> parseTimeSingle <*> trailingNote
+      LogNote <$> parseTimeSingle
+
+    parseRescheduled = do
+      _ <- try (string "- Rescheduled from \"")
+      origTime <- parseTimeSingle
+      _ <- string "\" on" <* spaces_
+      LogRescheduled origTime <$> parseTimeSingle
+
+    parseNotScheduled = do
+      _ <- try (string "- Not scheduled, was \"")
+      origTime <- parseTimeSingle
+      _ <- string "\" on" <* spaces_
+      LogNotScheduled origTime <$> parseTimeSingle
+
+    parseDeadline = do
+      _ <- try (string "- New deadline from \"")
+      origTime <- parseTimeSingle
+      _ <- string "\" on" <* spaces_
+      LogDeadline origTime <$> parseTimeSingle
+
+    parseNoDeadline = do
+      _ <- try (string "- Removed deadline, was \"")
+      origTime <- parseTimeSingle
+      _ <- string "\" on" <* spaces_
+      LogNoDeadline origTime <$> parseTimeSingle
+
+    parseRefiling = do
+      _ <- try (string "- Refiled on" <* spaces_)
+      LogRefiling <$> parseTimeSingle
+
+parseLogEntry :: Parser LogEntry
+parseLogEntry =
+  (parseLogHeading >>= (<$> trailingNote))
+    <|> parseClockEntry
+    <|> parseLogBook
+  where
+    trailingNote =
+      try spaces_
+        *> string "\\\\"
+        *> trailingSpace
+        *> (Just <$> parseNoteBody)
+        <|> (Nothing <$ try trailingSpace)
 
     parseClockEntry = do
       _ <- try (string "CLOCK:" <* spaces_)

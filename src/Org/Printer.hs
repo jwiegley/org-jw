@@ -108,6 +108,12 @@ showDuration Duration {..} =
     pad _ xs = xs
 
 showLogEntry :: LogEntry -> [Text]
+showLogEntry (LogClosing tm text) =
+  ( "- CLOSING NOTE"
+      <> showTime tm
+      <> if null text then "" else " \\\\"
+  )
+    : maybe [] (showBody "  ") text
 showLogEntry (LogState from to tm text) =
   T.concat
     ( [ "- State \"",
@@ -124,6 +130,44 @@ showLogEntry (LogState from to tm text) =
     : maybe [] (showBody "  ") text
 showLogEntry (LogNote tm text) =
   ( "- Note taken on "
+      <> showTime tm
+      <> if null text then "" else " \\\\"
+  )
+    : maybe [] (showBody "  ") text
+showLogEntry (LogRescheduled tm1 tm2 text) =
+  ( "- Rescheduled from \""
+      <> showTime tm1
+      <> "\" on "
+      <> showTime tm2
+      <> if null text then "" else " \\\\"
+  )
+    : maybe [] (showBody "  ") text
+showLogEntry (LogNotScheduled tm1 tm2 text) =
+  ( "- Not scheduled, was \""
+      <> showTime tm1
+      <> "\" on "
+      <> showTime tm2
+      <> if null text then "" else " \\\\"
+  )
+    : maybe [] (showBody "  ") text
+showLogEntry (LogDeadline tm1 tm2 text) =
+  ( "- New deadline from \""
+      <> showTime tm1
+      <> "\" on "
+      <> showTime tm2
+      <> if null text then "" else " \\\\"
+  )
+    : maybe [] (showBody "  ") text
+showLogEntry (LogNoDeadline tm1 tm2 text) =
+  ( "- Removed deadline, was \""
+      <> showTime tm1
+      <> "\" on "
+      <> showTime tm2
+      <> if null text then "" else " \\\\"
+  )
+    : maybe [] (showBody "  ") text
+showLogEntry (LogRefiling tm text) =
+  ( "- Refiled on "
       <> showTime tm
       <> if null text then "" else " \\\\"
   )
