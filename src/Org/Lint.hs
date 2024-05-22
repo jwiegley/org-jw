@@ -177,8 +177,14 @@ lintOrgEntry lastEntry level e = do
   checkFor LintError (MisplacedLogEntry e) $
     any
       ( \t ->
-          "- State " `T.isInfixOf` t
-            || "- Note taken " `T.isInfixOf` t
+          "- CLOSING NOTE " `T.isInfixOf` t
+            || "- State " `T.isInfixOf` t
+            || "- Note taken on " `T.isInfixOf` t
+            || "- Rescheduled from " `T.isInfixOf` t
+            || "- Not scheduled, was " `T.isInfixOf` t
+            || "- New deadline from " `T.isInfixOf` t
+            || "- Removed deadline, was " `T.isInfixOf` t
+            || "- Refiled on " `T.isInfixOf` t
             || ":logbook:" `T.isInfixOf` T.toLower t
       )
       (bodyText (has _Paragraph))

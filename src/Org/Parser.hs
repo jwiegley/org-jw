@@ -293,7 +293,7 @@ parseLogHeading =
     <|> parseRefiling
   where
     parseClosing = do
-      _ <- try (string "- CLOSING NOTE ")
+      _ <- try (string "- CLOSING NOTE" <* spaces_)
       LogClosing <$> parseTimeSingle
 
     parseState = do
