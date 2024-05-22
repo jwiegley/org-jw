@@ -1,12 +1,13 @@
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TupleSections #-}
 
 module Main where
 
 import Control.Lens
 import Control.Monad (void)
+import Control.Monad.Except
 import Data.Map qualified as M
 import Data.Text.Lazy qualified as T
 import Data.Text.Lazy.IO qualified as T
@@ -23,20 +24,22 @@ main :: IO ()
 main = do
   opts <- Options.getOptions
 
-  texts <- case opts ^. Options.paths of
+  paths <- case opts ^. Options.paths of
     Options.FileFromStdin ->
-      (: []) . ("<stdin>",) <$> readStdin
+      pure ["<stdin>"]
     Options.SingleFile path ->
-      (: []) . (path,) <$> readFile path
+      pure [path]
     Options.ListFromStdin ->
-      (mapM ((\p -> (p,) <$> readFile p) . T.unpack) . T.lines) =<< readStdin
+      map T.unpack . T.lines <$> readStdin
     Options.FilesFromFile path ->
-      mapM ((\p -> (p,) <$> readFile p) . T.unpack) =<< readLines path
+      map T.unpack <$> readLines path
 
-  let org = case readOrgData Config {..} texts of
-        Left err ->
-          error $ "Cannot parse: " ++ err
-        Right x -> x
+  org <-
+    runExceptT (readOrgData Config {..} paths) >>= \case
+      Left err -> do
+        putStrLn $ "Cannot parse: " ++ err
+        exitWith (ExitFailure 1)
+      Right x -> pure x
 
   case opts ^. Options.command of
     Options.Parse -> do

@@ -20,11 +20,13 @@ import Data.Maybe (fromMaybe)
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy qualified as T
 import Data.Text.Lazy.Encoding qualified as T
+import Data.Text.Lazy.IO qualified as T
 import Data.Text.Lens
 import Data.Void
 import Org.Parser
 import Org.Printer
 import Org.Types
+import System.IO (IOMode (..), withFile)
 import Text.Megaparsec
 import Prelude hiding (readFile)
 
@@ -135,8 +137,10 @@ readOrgFile_ cfg path content =
 
 readOrgFile :: (MonadIO m) => Config -> FilePath -> ExceptT String m OrgFile
 readOrgFile cfg path = do
-  content <- lift (readFile path)
-  liftEither $ readOrgFile_ cfg path content
+  org <- liftIO $ withFile path ReadMode $ \h -> do
+    content <- T.hGetContents h
+    pure $ readOrgFile_ cfg path content
+  liftEither org
 
 _OrgFile :: Config -> FilePath -> Prism' Text OrgFile
 _OrgFile cfg path =
@@ -156,13 +160,14 @@ readLines :: (MonadIO m) => FilePath -> m [Text]
 readLines path = T.lines <$> readFile path
 
 readOrgData ::
+  (MonadIO m) =>
   Config ->
-  [(FilePath, Text)] ->
-  Either String OrgData
+  [FilePath] ->
+  ExceptT String m OrgData
 readOrgData cfg paths = OrgData . M.fromList <$> mapM go paths
   where
-    go (path, content) = do
-      org <- readOrgFile_ cfg path content
+    go path = do
+      org <- readOrgFile cfg path
       pure (path, org)
 
 _Time :: Prism' Text Time
