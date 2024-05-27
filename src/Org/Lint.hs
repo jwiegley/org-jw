@@ -8,7 +8,7 @@ module Org.Lint where
 
 import Control.Applicative
 import Control.Lens
-import Control.Monad (unless, when)
+import Control.Monad (foldM_, unless, when)
 import Control.Monad.Writer
 import Data.Data
 import Data.Foldable (forM_)
@@ -47,6 +47,8 @@ data LintMessageCode
   | DuplicatedFileProperties OrgFile
   | DuplicatedProperties Entry
   | DuplicatedIdentifier Text (NonEmpty Entry)
+  | InvalidStateChangeTransitionNotAllowed Text (Maybe Text) Text [Text] Entry
+  | InvalidStateChangeInvalidTransition Text (Maybe Text) Text Entry
   | MultipleLogbooks Entry
   | MixedLogbooks Entry
   | TitleWithExcessiveWhitespace Entry
@@ -69,8 +71,8 @@ Linting rules for org file collections:
 
 -}
 
-lintOrgData :: String -> OrgData -> [LintMessage]
-lintOrgData level org = snd . runWriter $ do
+lintOrgData :: Config -> String -> OrgData -> [LintMessage]
+lintOrgData cfg level org = snd . runWriter $ do
   let ids = foldAllEntries org M.empty $ \e m ->
         maybe
           m
@@ -89,7 +91,7 @@ lintOrgData level org = snd . runWriter $ do
           LintInfo
           (parseMaybe parseLintMessageKind (T.pack level))
 
-  mapM_ (lintOrgFile level') (org ^. orgFiles)
+  mapM_ (lintOrgFile cfg level') (org ^. orgFiles)
 
 {-
 
@@ -97,8 +99,8 @@ Linting rules for org files:
 
 -}
 
-lintOrgFile :: LintMessageKind -> OrgFile -> Writer [LintMessage] ()
-lintOrgFile level org = do
+lintOrgFile :: Config -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
+lintOrgFile cfg level org = do
   checkFor LintError (DuplicatedFileProperties org) $
     sort (props ^.. traverse . name)
       /= nub (sort (props ^.. traverse . name))
@@ -108,8 +110,8 @@ lintOrgFile level org = do
   case reverse (org ^.. allEntries) of
     [] -> pure ()
     e : es -> do
-      mapM_ (lintOrgEntry False level) (reverse es)
-      lintOrgEntry True level e
+      mapM_ (lintOrgEntry cfg False level) (reverse es)
+      lintOrgEntry cfg True level e
   where
     props =
       org ^. fileHeader . headerPropertiesDrawer
@@ -158,10 +160,17 @@ Linting rules for org file entries:
 
 - Don't use :SCRIPT:, use org-babel
 
+- jww (2024-05-27): No open keywords in archives
+
 -}
 
-lintOrgEntry :: Bool -> LintMessageKind -> Entry -> Writer [LintMessage] ()
-lintOrgEntry lastEntry level e = do
+lintOrgEntry ::
+  Config ->
+  Bool ->
+  LintMessageKind ->
+  Entry ->
+  Writer [LintMessage] ()
+lintOrgEntry cfg lastEntry level e = do
   checkFor LintError (MisplacedProperty e) $
     any
       ((":properties:" `T.isInfixOf`) . T.toLower)
@@ -202,6 +211,32 @@ lintOrgEntry lastEntry level e = do
   checkFor LintError (DuplicatedProperties e) $
     sort (e ^.. entryProperties . traverse . name)
       /= nub (sort (e ^.. entryProperties . traverse . name))
+  ( \f ->
+      foldM_
+        f
+        ( case e ^? keyword of
+            Just "APPT" -> "APPT"
+            _ -> "TODO"
+        )
+        (reverse (e ^.. entryStateHistory))
+    )
+    $ \prev (kw, mkw, _tm) -> do
+      let kwt = kw ^. keywordText
+          mkwf = fmap (^. keywordText) mkw
+          mallowed = transitionsOf cfg <$> mkwf
+      forM_ mkwf $ \kwf ->
+        unless (prev == kwf) $
+          checkFor
+            LintWarn
+            (InvalidStateChangeInvalidTransition kwt mkwf prev e)
+            True
+      forM_ mallowed $ \allowed ->
+        unless (kwt `elem` allowed) $
+          checkFor
+            LintWarn
+            (InvalidStateChangeTransitionNotAllowed kwt mkwf prev allowed e)
+            True
+      pure kwt
   checkFor LintWarn (TimestampsOnNonTodo e) $
     not (null (e ^. entryStamps))
       && maybe True (not . isTodo) (e ^? keyword)
@@ -308,6 +343,8 @@ showLintOrg (LintMessage kind code) =
         prefix e ++ "Title with excessive whitespace"
       DuplicatedFileProperties f ->
         f ^. filePath ++ ":1: " ++ "Duplicated file properties"
+      -- jww (2024-05-27): This should be 'DuplicatedProperty', and should
+      -- indicate which property in the entry was duplicated.
       DuplicatedProperties e ->
         prefix e ++ "Duplicated properties"
       DuplicatedIdentifier ident (e :| es) ->
@@ -316,6 +353,25 @@ showLintOrg (LintMessage kind code) =
           ++ T.unpack ident
           ++ "\n"
           ++ intercalate "\n" (map (("  " ++) . entryLoc) es)
+      InvalidStateChangeTransitionNotAllowed kwt mkwf prev allowed e ->
+        prefix e
+          ++ "Transition not allowed to "
+          ++ show kwt
+          ++ " from "
+          ++ show mkwf
+          ++ " (should be "
+          ++ show prev
+          ++ "), allowed: "
+          ++ show allowed
+      InvalidStateChangeInvalidTransition kwt mkwf prev e ->
+        prefix e
+          ++ "Invalid state transition to "
+          ++ show kwt
+          ++ " from "
+          ++ show mkwf
+          ++ " (should be "
+          ++ show prev
+          ++ ")"
       MultipleLogbooks e ->
         prefix e ++ "Multiple logbooks found"
       MixedLogbooks e ->

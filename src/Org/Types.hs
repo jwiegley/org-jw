@@ -25,6 +25,7 @@ import Text.Megaparsec hiding (many, some)
 data Config = Config
   { _openKeywords :: [Text],
     _closedKeywords :: [Text],
+    _keywordTransitions :: [(Text, [Text])],
     _priorities :: [Text],
     _specialTags :: [Text],
     _propertyColumn :: Int,

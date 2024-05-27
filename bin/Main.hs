@@ -83,7 +83,7 @@ main = do
           ++ " todo entries) across "
           ++ show (length (org ^. orgFiles))
           ++ " files"
-      case lintOrgData level org of
+      case lintOrgData Config {..} level org of
         [] -> do
           putStrLn "Pass."
           exitSuccess
@@ -104,6 +104,7 @@ main = do
           putStrLn $ " End space: " ++ ppShow (e ^. entryText . endSpace)
           let e' = e & entryText . endSpace .~ ""
           putStrLn $ "Entry text': " ++ ppShow (e' ^. entryText)
+          putStrLn $ "State history': " ++ ppShow (e' ^.. entryStateHistory)
   where
     -- jww (2024-05-10): These details need to be read from a file, or from
     -- command-line options.
@@ -122,6 +123,17 @@ main = do
         "CANCELED",
         "NOTE",
         "LINK"
+      ]
+    _keywordTransitions =
+      [ ("TODO", ["DOING", "WAIT", "DEFER", "DELEGATED", "CANCELED", "DONE"]),
+        ("PROJECT", ["DONE"]),
+        ("DOING", ["DONE", "CANCELED"]),
+        ("WAIT", ["DOING", "TODO", "DEFER", "DELEGATED", "CANCELED", "DONE"]),
+        ("DEFER", ["DOING", "WAIT", "TODO", "DELEGATED", "CANCELED", "DONE"]),
+        ("DELEGATED", ["DOING", "WAIT", "DEFER", "TODO", "CANCELED", "DONE"]),
+        ("APPT", ["DOING", "CANCELED", "DONE"]),
+        ("DONE", ["TODO"]),
+        ("CANCELED", ["DOING", "WAIT", "DEFER", "DELEGATED", "TODO", "DONE"])
       ]
     _priorities =
       ["A", "B", "C"]

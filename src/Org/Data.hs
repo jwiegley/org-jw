@@ -91,35 +91,25 @@ specialProperties =
     -- The first inactive timestamp in the entry.
     ("TIMESTAMP_IA", undefined),
     -- The TODO keyword of the entry.
-    ( "TODO",
-      Fold
-        ( entryKeyword
-            . _Just
-            . failing _OpenKeyword _ClosedKeyword
-            . filtered isTodo
-        )
-    ),
+    ("TODO", Fold (entryKeyword . _Just . keywordText . filtered isTodo)),
     ------------------------------------------------------------------------
     -- The following are not defined by Org-mode as special
     ------------------------------------------------------------------------
     ("LINE", Fold (entryLine . re _Show . packed)),
     ("COLUMN", Fold (entryColumn . re _Show . packed)),
     ("DEPTH", Fold (entryDepth . re _Show . packed)),
-    ( "KEYWORD",
-      Fold
-        ( entryKeyword
-            . _Just
-            . failing _OpenKeyword _ClosedKeyword
-        )
-    ),
+    ("KEYWORD", Fold (entryKeyword . _Just . keywordText)),
     ("TITLE", Fold entryTitle),
     ("CONTEXT", Fold (entryContext . _Just)),
     ("LOCATOR", Fold (entryLocator . _Just)),
     ("BODY", Fold (entryText . to (T.unlines . showBody "")))
   ]
 
+keywordText :: Traversal' Keyword Text
+keywordText = failing _OpenKeyword _ClosedKeyword
+
 keyword :: Traversal' Entry Text
-keyword f = entryKeyword . _Just . failing _OpenKeyword _ClosedKeyword %%~ f
+keyword = entryKeyword . _Just . keywordText
 
 entryId :: Traversal' Entry Text
 entryId = property "ID"
@@ -290,3 +280,13 @@ isTodo kw =
              "DONE",
              "CANCELED"
            ]
+
+entryStateHistory :: Traversal' Entry (Keyword, Maybe Keyword, Time)
+entryStateHistory f e =
+  e
+    & entryLogEntries . traverse . _LogState %%~ \(t, mf, tm, mbody) ->
+      (\(t', mf', tm') -> (t', mf', tm', mbody)) <$> f (t, mf, tm)
+
+transitionsOf :: Config -> Text -> [Text]
+transitionsOf cfg kw =
+  fromMaybe [] (Prelude.lookup kw (cfg ^. keywordTransitions))
