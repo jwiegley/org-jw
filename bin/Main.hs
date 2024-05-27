@@ -9,8 +9,8 @@ import Control.Lens
 import Control.Monad (void)
 import Control.Monad.Except
 import Data.Map qualified as M
-import Data.Text.Lazy qualified as T
-import Data.Text.Lazy.IO qualified as T
+import Data.Text qualified as T
+import Data.Text.IO qualified as T
 import Options qualified
 import Org.Data
 import Org.Lint
@@ -111,10 +111,9 @@ main = do
       [ "TODO",
         "CATEGORY",
         "PROJECT",
-        "STARTED",
-        "WAITING",
-        "DEFERRED",
-        "SOMEDAY",
+        "DOING",
+        "WAIT",
+        "DEFER",
         "DELEGATED",
         "APPT"
       ]

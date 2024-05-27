@@ -18,8 +18,8 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as M
 import Data.Maybe (fromMaybe)
-import Data.Text.Lazy (Text)
-import Data.Text.Lazy qualified as T
+import Data.Text (Text)
+import Data.Text qualified as T
 import Debug.Trace (traceM)
 import GHC.Generics hiding (to)
 import Org.Data

@@ -1,5 +1,5 @@
 {
-  description = "Trade journal software";
+  description = "Org data tools";
 
   inputs = {
     nixpkgs.follows = "haskellNix/nixpkgs-unstable";
@@ -22,7 +22,7 @@
             final.haskell-nix.project' {
               src = ./.;
               supportHpack = true;
-              compiler-nix-name = "ghc96";
+              compiler-nix-name = "ghc98";
               shell.tools = {
                 cabal = {};
                 haskell-language-server = {};

@@ -15,8 +15,8 @@ import Control.Monad.Reader
 import Data.Char (isPrint, isSpace)
 import Data.Maybe (isJust, maybeToList)
 import Data.String
-import Data.Text.Lazy (Text, pack)
-import Data.Text.Lazy qualified as T
+import Data.Text (Text, pack)
+import Data.Text qualified as T
 import Data.Time
 -- import Debug.Trace
 import Org.Types

@@ -16,7 +16,7 @@ import Data.Data
 import Data.Hashable
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
-import Data.Text.Lazy (Text)
+import Data.Text (Text)
 import Data.Time
 import Data.Void
 import GHC.Generics

@@ -6,8 +6,8 @@
 module Org.Printer where
 
 import Data.Maybe (maybeToList)
-import Data.Text.Lazy (Text, pack)
-import Data.Text.Lazy qualified as T
+import Data.Text (Text, pack)
+import Data.Text qualified as T
 import Data.Time
 import Org.Types hiding (propertyColumn, tagsColumn)
 

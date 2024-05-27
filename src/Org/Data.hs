@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -13,14 +14,14 @@ import Control.Lens
 import Control.Monad.Except
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Data.ByteString.Lazy qualified as B
+import Data.ByteString qualified as B
 import Data.Map hiding (filter)
 import Data.Map qualified as M hiding (filter)
 import Data.Maybe (fromMaybe)
-import Data.Text.Lazy (Text)
-import Data.Text.Lazy qualified as T
-import Data.Text.Lazy.Encoding qualified as T
-import Data.Text.Lazy.IO qualified as T
+import Data.Text (Text)
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
+import Data.Text.IO qualified as T
 import Data.Text.Lens
 import Data.Void
 import Org.Parser
@@ -166,9 +167,7 @@ readOrgData ::
   ExceptT String m OrgData
 readOrgData cfg paths = OrgData . M.fromList <$> mapM go paths
   where
-    go path = do
-      org <- readOrgFile cfg path
-      pure (path, org)
+    go path = (path,) <$> readOrgFile cfg path
 
 _Time :: Prism' Text Time
 _Time = prism' showTime (parseMaybe @Void parseTime)
@@ -283,10 +282,9 @@ isTodo kw =
     `elem` [ "TODO",
              "CATEGORY",
              "PROJECT",
-             "STARTED",
-             "WAITING",
-             "DEFERRED",
-             "SOMEDAY",
+             "DOING",
+             "WAIT",
+             "DEFER",
              "DELEGATED",
              "APPT",
              "DONE",
