@@ -58,7 +58,7 @@ data LintMessageCode
   | MixedLogbooks Entry
   | TitleWithExcessiveWhitespace Entry
   | TimestampsOnNonTodo Entry
-  | UnevenBodyWhitespace Entry
+  | UnevenWhitespace Entry
   | UnevenFilePreambleWhitespace OrgFile
   | EmptyBodyWhitespace Entry
   | MultipleBlankLines Entry
@@ -127,182 +127,230 @@ lintOrgEntry ::
   Entry ->
   Writer [LintMessage] ()
 lintOrgEntry cfg lastEntry level e = do
+  -- jww (2024-05-28): NYI
+  -- RULE: No open keywords in archives
+  -- RULE: No CREATED date lies in the future
+  -- RULE: No title has special characters without escaping
+  -- RULE: Leading and trailing whitespace is consistent within log entries
+  -- RULE: There is no whitespace preceding the event log
+  -- RULE: There is no whitespace after the PROPERTY block (and/or event
+  --       log) when there is no whitespace at the end of the entry
+  -- RULE: If an entry has trailing whitespace, it's siblings have the same
+  --       whitespace
+  -- RULE: Don't use :SCRIPT:, use org-babel
+  -- RULE: Unecessary leading or trailing whitespace
+  --
   -- RULE: All TODO entries have ID and CREATED properties
-  let mkw = e ^? entryKeyword . _Just . keywordText
-  when (isJust mkw || isJust (e ^? entryCategory)) $ do
-    when (isNothing (e ^? entryId)) $
-      report LintError (TodoMissingProperty "ID" e)
-    when (isNothing (e ^? entryCreated)) $
-      report LintError (TodoMissingProperty "CREATED" e)
-  forM_ (e ^? entryCategory) $ \cat ->
-    when (T.length cat > 10) $
-      report LintWarn (CategoryTooLong cat e)
-  -- jww (2024-05-28): RULE: Only TODO items have SCHEDULED/DEADLINE/CLOSED
-  --   timestamps
-  -- jww (2024-05-27): RULE: No open keywords in archives
-  -- jww (2024-05-28): RULE: No CREATED date lies in the future
-  -- jww (2024-05-28): RULE: No title has special characters without escaping
-
-  -- jww (2024-05-28): RULE: Leading and trailing whitespace is consistent
-  --   within log entries
-
-  -- jww (2024-05-28): RULE: There is no whitespace preceding the event log
-
-  -- jww (2024-05-28): RULE: There is no whitespace after the PROPERTY block
-  --   (and/or event log) when there is no whitespace at the end of the entry
-
-  -- jww (2024-05-28): RULE: If an entry has trailing whitespace, it's
-  --   siblings have the same whitespace
-
-  -- jww (2024-05-28): RULE: Property blocks are never empty
-
-  -- jww (2024-05-28): RULE: Don't use :SCRIPT:, use org-babel
-
-  when
-    ( any
-        ((":properties:" `T.isInfixOf`) . T.toLower)
-        (bodyText (has _Paragraph))
-    )
-    $ report LintError (MisplacedProperty e)
-  when
-    ( any
-        ( \t ->
-            "SCHEDULED:" `T.isInfixOf` t
-              || "DEADLINE:" `T.isInfixOf` t
-              || "CLOSED:" `T.isInfixOf` t
-        )
-        (bodyText (has _Paragraph))
-    )
-    $ report LintError (MisplacedTimestamp e)
-  when
-    ( any
-        ( \t ->
-            "- CLOSING NOTE " `T.isInfixOf` t
-              || "- State " `T.isInfixOf` t
-              || "- Note taken on " `T.isInfixOf` t
-              || "- Rescheduled from " `T.isInfixOf` t
-              || "- Not scheduled, was " `T.isInfixOf` t
-              || "- New deadline from " `T.isInfixOf` t
-              || "- Removed deadline, was " `T.isInfixOf` t
-              || "- Refiled on " `T.isInfixOf` t
-              || ":logbook:" `T.isInfixOf` T.toLower t
-        )
-        (bodyText (has _Paragraph))
-    )
-    $ report LintError (MisplacedLogEntry e)
-  when
-    ( any
-        ( ( \t ->
-              ":end:" `T.isInfixOf` t
-                || "#+end" `T.isInfixOf` t
-          )
-            . T.toLower
-        )
-        (bodyText (has _Paragraph))
-    )
-    $ report LintError (MisplacedDrawerEnd e)
-  -- RULE: No title has internal whitespace other than single spaces.
-  when ("  " `T.isInfixOf` (e ^. entryTitle)) $
-    report LintInfo (TitleWithExcessiveWhitespace e)
-  -- RULE: No tag is duplicated.
-  forM_ (findDuplicates (e ^.. entryTags . traverse . tagText)) $ \nm ->
-    report LintError (DuplicateTag nm e)
+  ruleTodoMustHaveIdAndCreated
+  -- RULE: Category name should be no longer than 10 characters
+  ruleCategoryNameCannotBeTooLong
+  -- RULE: PROPERTIES drawer must be at start of entry
+  rulePropertiesDrawerNeverInBody
+  -- RULE: SCHEDULED, DEADLINE and other timestamps must be at start
+  ruleTimestampsNeverInBody
+  -- RULE: Log entries must occur before the entry body
+  ruleLogEntriesNeverInBody
+  -- RULE: Drawer end marker should always properly end a drawer
+  ruleMisplacedDrawerEnd
+  -- RULE: No title has internal whitespace other than single spaces
+  ruleNoExtraSpacesInTitle
+  -- RULE: No tag is duplicated
+  ruleNoDuplicateTags
   -- RULE: No property is duplicated
-  forM_ (findDuplicates (e ^.. entryProperties . traverse . name)) $ \nm ->
-    report LintError (DuplicateProperty nm e)
-  (mfinalKeyword, _mfinalTime) <-
-    ( \f ->
-        foldM
-          f
-          ( Nothing,
-            Nothing
-          )
-          -- jww (2024-05-28): Only reverse here if the configuration indicates
-          -- that state entries are from most recent to least recent.
-          (reverse (e ^.. entryStateHistory))
-      )
-      $ \(mprev, mprevTm) (kw', mkw', tm) -> do
-        forM_ mprevTm $ \prevTm ->
-          when (tm < prevTm) $
-            report LintWarn (InvalidStateChangeWrongTimeOrder tm prevTm e)
-        let kwt = kw' ^. keywordText
-            mkwf = fmap (^. keywordText) mkw'
-            mallowed = transitionsOf cfg <$> mkwf
-        forM_ mkwf $ \kwf ->
-          case mprev of
-            Nothing ->
-              unless (kwf `elem` ["TODO", "APPT", "PROJECT"]) $
-                report
-                  LintInfo
-                  (InvalidStateChangeInvalidTransition kwf "TODO" e)
-            Just prev ->
-              unless (prev == kwf) $
-                report
-                  LintInfo
-                  (InvalidStateChangeInvalidTransition kwf prev e)
-        if mkwf == Just kwt
-          then report LintWarn (InvalidStateChangeIdempotent kwt e)
-          else forM_ mallowed $ \allowed ->
-            unless (kwt `elem` allowed) $
-              report
-                LintWarn
-                (InvalidStateChangeTransitionNotAllowed kwt mkwf allowed e)
-        pure (Just kwt, Just tm)
-  forM_ ((,) <$> mkw <*> mfinalKeyword) $ \(kw, finalKeyword) ->
-    unless (kw == finalKeyword) $
-      report
-        LintInfo
-        (InvalidStateChangeInvalidTransition kw finalKeyword e)
-  when
-    ( not (null (e ^. entryStamps))
-        && maybe True (not . isTodo) (e ^? keyword)
-    )
-    $ report LintWarn (TimestampsOnNonTodo e)
-  when
-    ( not lastEntry && case e ^. entryText of
-        Body [Whitespace _] -> False
-        _ -> e ^? entryText . leadSpace /= e ^? entryText . endSpace
-    )
-    $ report LintInfo (UnevenBodyWhitespace e)
-  forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
-    when
-      ( case b of
-          Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
-          _ -> False
-      )
-      $ report LintInfo (EmptyBodyWhitespace e)
-  when
-    ( case e ^. entryText of
-        Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
-        _ -> False
-    )
-    $ report LintInfo (EmptyBodyWhitespace e)
-  when (any ((> 1) . length . T.lines) (bodyText (has _Whitespace))) $
-    report LintInfo (MultipleBlankLines e)
-  when (length (e ^.. entryLogEntries . traverse . cosmos . _LogBook) > 1) $
-    report LintError (MultipleLogbooks e)
-  when
-    ( not
-        ( null
-            ( e
-                ^.. entryLogEntries
-                  . traverse
-                  . _LogBook
-                  . traverse
-                  . filtered (hasn't _LogClock)
-            )
-        )
-        && not
-          ( null
-              ( e
-                  ^.. entryLogEntries
-                    . traverse
-                    . filtered (hasn't _LogBook)
-              )
-          )
-    )
-    $ report LintError (MixedLogbooks e)
+  ruleNoDuplicateProperties
+  -- RULE: All state changes are well ordered and flow correctly
+  ruleNoInvalidStateChanges
+  -- RULE: Only TODO items have SCHEDULED/DEADLINE/CLOSED timestamps
+  ruleNoTimestampsOnNonTodos
+  -- RULE: Whitespace before and after body and log entries should match
+  ruleNoUnevenWhitespace
+  -- RULE: Body and log entry text should never contain only whitespace
+  ruleNoEmptyBodyWhitespace
+  -- RULE: There should never be multiple blank lines
+  ruleNoMultipleBlankLines
+  -- RULE: There should be at most one logbook
+  ruleAtMostOneLogBook
+  -- RULE: If there is a logbook, it should contain all CLOCK entries
+  ruleConsistentLogBook
   where
+    ruleTodoMustHaveIdAndCreated = do
+      let mkw = e ^? entryKeyword . _Just . keywordText
+      when (isJust mkw || isJust (e ^? entryCategory)) $ do
+        when (isNothing (e ^? entryId)) $
+          report LintError (TodoMissingProperty "ID" e)
+        when (isNothing (e ^? entryCreated)) $
+          report LintError (TodoMissingProperty "CREATED" e)
+
+    ruleCategoryNameCannotBeTooLong =
+      forM_ (e ^? entryCategory) $ \cat ->
+        when (T.length cat > 10) $
+          report LintWarn (CategoryTooLong cat e)
+
+    rulePropertiesDrawerNeverInBody =
+      when
+        ( any
+            ((":properties:" `T.isInfixOf`) . T.toLower)
+            (bodyText (has _Paragraph))
+        )
+        $ report LintError (MisplacedProperty e)
+    ruleTimestampsNeverInBody =
+      when
+        ( any
+            ( \t ->
+                "SCHEDULED:" `T.isInfixOf` t
+                  || "DEADLINE:" `T.isInfixOf` t
+                  || "CLOSED:" `T.isInfixOf` t
+            )
+            (bodyText (has _Paragraph))
+        )
+        $ report LintError (MisplacedTimestamp e)
+    ruleLogEntriesNeverInBody =
+      when
+        ( any
+            ( \t ->
+                "- CLOSING NOTE " `T.isInfixOf` t
+                  || "- State " `T.isInfixOf` t
+                  || "- Note taken on " `T.isInfixOf` t
+                  || "- Rescheduled from " `T.isInfixOf` t
+                  || "- Not scheduled, was " `T.isInfixOf` t
+                  || "- New deadline from " `T.isInfixOf` t
+                  || "- Removed deadline, was " `T.isInfixOf` t
+                  || "- Refiled on " `T.isInfixOf` t
+                  || ":logbook:" `T.isInfixOf` T.toLower t
+            )
+            (bodyText (has _Paragraph))
+        )
+        $ report LintError (MisplacedLogEntry e)
+    ruleMisplacedDrawerEnd =
+      when
+        ( any
+            ( ( \t ->
+                  ":end:" `T.isInfixOf` t
+                    || "#+end" `T.isInfixOf` t
+              )
+                . T.toLower
+            )
+            (bodyText (has _Paragraph))
+        )
+        $ report LintError (MisplacedDrawerEnd e)
+    ruleNoExtraSpacesInTitle =
+      when ("  " `T.isInfixOf` (e ^. entryTitle)) $
+        report LintInfo (TitleWithExcessiveWhitespace e)
+    ruleNoDuplicateTags =
+      forM_ (findDuplicates (e ^.. entryTags . traverse . tagText)) $ \nm ->
+        report LintError (DuplicateTag nm e)
+    ruleNoDuplicateProperties =
+      forM_ (findDuplicates (e ^.. entryProperties . traverse . name)) $ \nm ->
+        report LintError (DuplicateProperty nm e)
+    ruleNoInvalidStateChanges = do
+      (mfinalKeyword, _mfinalTime) <-
+        ( \f ->
+            foldM
+              f
+              ( Nothing,
+                Nothing
+              )
+              -- jww (2024-05-28): Only reverse here if the configuration
+              -- indicates that state entries are from most recent to least
+              -- recent.
+              (reverse (e ^.. entryStateHistory))
+          )
+          $ \(mprev, mprevTm) (kw', mkw', tm) -> do
+            forM_ mprevTm $ \prevTm ->
+              when (tm < prevTm) $
+                report LintWarn (InvalidStateChangeWrongTimeOrder tm prevTm e)
+            let kwt = kw' ^. keywordText
+                mkwf = fmap (^. keywordText) mkw'
+                mallowed = transitionsOf cfg <$> mkwf
+            forM_ mkwf $ \kwf ->
+              case mprev of
+                Nothing ->
+                  unless (kwf `elem` ["TODO", "APPT", "PROJECT"]) $
+                    report
+                      LintInfo
+                      (InvalidStateChangeInvalidTransition kwf "TODO" e)
+                Just prev ->
+                  unless (prev == kwf) $
+                    report
+                      LintInfo
+                      (InvalidStateChangeInvalidTransition kwf prev e)
+            if mkwf == Just kwt
+              then report LintWarn (InvalidStateChangeIdempotent kwt e)
+              else forM_ mallowed $ \allowed ->
+                unless (kwt `elem` allowed) $
+                  report
+                    LintWarn
+                    (InvalidStateChangeTransitionNotAllowed kwt mkwf allowed e)
+            pure (Just kwt, Just tm)
+      let mkw = e ^? entryKeyword . _Just . keywordText
+      forM_ ((,) <$> mkw <*> mfinalKeyword) $ \(kw, finalKeyword) ->
+        unless (kw == finalKeyword) $
+          report
+            LintInfo
+            (InvalidStateChangeInvalidTransition kw finalKeyword e)
+    ruleNoTimestampsOnNonTodos =
+      when
+        ( not (null (e ^. entryStamps))
+            && maybe True (not . isTodo) (e ^? keyword)
+        )
+        $ report LintWarn (TimestampsOnNonTodo e)
+    ruleNoUnevenWhitespace = do
+      forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
+        when
+          ( case b of
+              Body [Whitespace _] -> False
+              _ -> b ^? leadSpace /= b ^? endSpace
+          )
+          $ report LintInfo (EmptyBodyWhitespace e)
+      when
+        ( not lastEntry && case e ^. entryText of
+            Body [Whitespace _] -> False
+            b -> b ^? leadSpace /= b ^? endSpace
+        )
+        $ report LintInfo (UnevenWhitespace e)
+    ruleNoEmptyBodyWhitespace = do
+      forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
+        when
+          ( case b of
+              Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
+              _ -> False
+          )
+          $ report LintInfo (EmptyBodyWhitespace e)
+      when
+        ( case e ^. entryText of
+            Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
+            _ -> False
+        )
+        $ report LintInfo (EmptyBodyWhitespace e)
+    ruleNoMultipleBlankLines =
+      when (any ((> 1) . length . T.lines) (bodyText (has _Whitespace))) $
+        report LintInfo (MultipleBlankLines e)
+    ruleAtMostOneLogBook =
+      when (length (e ^.. entryLogEntries . traverse . cosmos . _LogBook) > 1) $
+        report LintError (MultipleLogbooks e)
+    ruleConsistentLogBook =
+      when
+        ( not
+            ( null
+                ( e
+                    ^.. entryLogEntries
+                      . traverse
+                      . _LogBook
+                      . traverse
+                      . filtered (hasn't _LogClock)
+                )
+            )
+            && not
+              ( null
+                  ( e
+                      ^.. entryLogEntries
+                        . traverse
+                        . filtered (hasn't _LogBook)
+                  )
+              )
+        )
+        $ report LintError (MixedLogbooks e)
+
     bodyText f =
       e
         ^. entryText
@@ -401,7 +449,7 @@ showLintOrg (LintMessage kind code) =
         prefix e ++ "Log entries inside and outside of logbooks found"
       TimestampsOnNonTodo e ->
         prefix e ++ "Timestamps found on non-todo entry"
-      UnevenBodyWhitespace e ->
+      UnevenWhitespace e ->
         prefix e ++ "Whitespace surrounding body is not even"
       UnevenFilePreambleWhitespace f ->
         f ^. filePath

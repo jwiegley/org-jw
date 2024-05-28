@@ -61,6 +61,7 @@ parseOrgFile = do
 parseProperties :: Parser [Property]
 parseProperties = do
   string ":PROPERTIES:" *> trailingSpace
+  -- RULE: Property blocks are never empty
   props <- some $ try $ do
     _name <- between (char ':') (char ':') identifier
     guard $ _name /= "END"

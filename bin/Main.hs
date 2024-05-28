@@ -126,7 +126,7 @@ main = do
     _keywordTransitions =
       [ ("TODO", ["DOING", "WAIT", "DEFER", "DELEGATED", "CANCELED", "DONE"]),
         ("PROJECT", ["CANCELED", "DONE"]),
-        ("DOING", ["WAIT", "DEFER", "DELEGATED", "CANCELED", "DONE"]),
+        ("DOING", ["TODO", "WAIT", "DEFER", "DELEGATED", "CANCELED", "DONE"]),
         ("WAIT", ["DOING", "TODO", "DEFER", "DELEGATED", "CANCELED", "DONE"]),
         ("DEFER", ["DOING", "WAIT", "TODO", "DELEGATED", "CANCELED", "DONE"]),
         ("DELEGATED", ["DOING", "WAIT", "DEFER", "TODO", "CANCELED", "DONE"]),
