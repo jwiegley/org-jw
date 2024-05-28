@@ -16,7 +16,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.ByteString qualified as B
 import Data.Map hiding (filter)
-import Data.Map qualified as M hiding (filter)
+import Data.Map qualified as M
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -108,11 +108,20 @@ specialProperties =
 keywordText :: Traversal' Keyword Text
 keywordText = failing _OpenKeyword _ClosedKeyword
 
+tagText :: Traversal' Tag Text
+tagText = failing _SpecialTag _PlainTag
+
 keyword :: Traversal' Entry Text
 keyword = entryKeyword . _Just . keywordText
 
 entryId :: Traversal' Entry Text
 entryId = property "ID"
+
+entryCreated :: Traversal' Entry Text
+entryCreated = property "CREATED"
+
+entryCategory :: Traversal' Entry Text
+entryCategory = property "CATEGORY"
 
 leadSpace :: Traversal' Body Text
 leadSpace = blocks . _head . _Whitespace
@@ -163,7 +172,7 @@ _Time :: Prism' Text Time
 _Time = prism' showTime (parseMaybe @Void parseTime)
 
 createdTime :: Traversal' Entry Time
-createdTime = property "CREATED" . _Time
+createdTime = entryCreated . _Time
 
 scheduledTime :: Traversal' Entry Time
 scheduledTime = entryStamps . traverse . _ScheduledStamp
@@ -250,6 +259,11 @@ foldAllEntries :: OrgData -> b -> (Entry -> b -> b) -> b
 foldAllEntries org z f =
   Prelude.foldr f z (org ^.. orgFiles . traverse . allEntries)
 
+findDuplicates :: (Ord a) => [a] -> [a]
+findDuplicates = M.keys . M.filter (> 1) . Prelude.foldr go M.empty
+  where
+    go x = at x %~ Just . maybe (1 :: Int) succ
+
 tallyEntry ::
   (IxValue b1 ~ Int, At b1) =>
   (t1 -> t2 -> (b1 -> Index b1 -> b1) -> b2) ->
@@ -270,7 +284,6 @@ isTodo :: Text -> Bool
 isTodo kw =
   kw
     `elem` [ "TODO",
-             "CATEGORY",
              "PROJECT",
              "DOING",
              "WAIT",
