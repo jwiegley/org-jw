@@ -15,6 +15,7 @@ showStamp :: Stamp -> Text
 showStamp (ClosedStamp tm) = "CLOSED: " <> showTime tm
 showStamp (ScheduledStamp tm) = "SCHEDULED: " <> showTime tm
 showStamp (DeadlineStamp tm) = "DEADLINE: " <> showTime tm
+showStamp x = error $ "showStamp not support for " ++ show x
 
 showTime :: Time -> Text
 showTime tm =
@@ -228,7 +229,11 @@ showEntry propertyColumn tagsColumn Entry {..} =
           | otherwise = ""
     timestamps
       | null _entryStamps = []
-      | otherwise = [T.intercalate " " (map showStamp _entryStamps)]
+      | otherwise =
+          [ T.intercalate
+              " "
+              (map showStamp (filter isLeadingStamp _entryStamps))
+          ]
     properties
       | null _entryProperties = []
       | otherwise = showProperties propertyColumn _entryProperties
@@ -334,6 +339,10 @@ summarizeEntry Entry {..} =
                 ClosedStamp tm -> Property False "CLOSED" (showTime tm)
                 ScheduledStamp tm -> Property False "SCHEDULED" (showTime tm)
                 DeadlineStamp tm -> Property False "DEADLINE" (showTime tm)
+                CreatedStamp tm -> Property False "CREATED" (showTime tm)
+                EditedStamp tm -> Property False "EDITED" (showTime tm)
+                DateStamp tm -> Property False "DATE" (showTime tm)
+                ActiveStamp tm -> Property False "ACTIVE" (showTime tm)
             )
             _entryStamps
       )

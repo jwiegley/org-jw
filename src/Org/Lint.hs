@@ -27,9 +27,25 @@ import GHC.Generics hiding (to)
 import Org.Data
 import Org.Printer
 import Org.Types
+-- import System.Directory (getModificationTime)
+-- import System.IO.Unsafe (unsafePerformIO)
 import Text.Megaparsec (parseMaybe)
 import Text.Megaparsec.Char (string)
+import Text.Regex.TDFA
+import Text.Regex.TDFA.Text
 import Text.Show.Pretty
+
+-- (=~) ::
+--   ( TDFA.RegexMaker
+--       TDFA.Regex
+--       TDFA.CompOption
+--       TDFA.ExecOption
+--       a
+--   ) =>
+--   Text ->
+--   a ->
+--   Bool
+-- (=~) = (TDFA.=~)
 
 data LintMessageKind = LintDebug | LintInfo | LintWarn | LintError
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
@@ -72,6 +88,8 @@ data LintMessageCode
   | EmptyBodyWhitespace Entry
   | MultipleBlankLines Entry
   | CategoryTooLong Text Entry
+  | FileCreatedTimeMismatch Time Time OrgFile
+  | TitlePropertyNotLast OrgFile
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 data LintMessage = LintMessage
@@ -104,8 +122,11 @@ lintOrgData cfg level org = snd . runWriter $ do
 
 lintOrgFile :: Config -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
 lintOrgFile cfg level org = do
-  -- jww (2024-05-28): RULE: filenames with dates should have matching CREATED
-  -- property
+  -- RULE: Filenames with dates should have matching CREATED
+  -- ruleCreationTimeMatchesCreated
+  -- RULE: Title file property is always last. This is needed for the sake of
+  --       xeft and how it displays entry text.
+  ruleTitleProperyAlwaysLast
   forM_ (findDuplicates (props ^.. traverse . name)) $ \nm ->
     report LintError (DuplicateFileProperty nm org)
   -- checkFor LintInfo (UnevenFilePreambleWhitespace org) $
@@ -117,6 +138,26 @@ lintOrgFile cfg level org = do
       mapM_ (lintOrgEntry cfg inArchive False level) (reverse es)
       lintOrgEntry cfg inArchive True level e
   where
+    -- ruleCreationTimeMatchesCreated = do
+    --   let modTime = unsafePerformIO $ getModificationTime (org ^. filePath)
+    --       created = utcTimeToTime InactiveTime modTime
+    --   forM_ (org ^? fileCreatedTime) $ \created' -> do
+    --     let modTime' = timeStartToUTCTime created'
+    --     unless (modTime == modTime') $
+    --       report LintWarn (FileCreatedTimeMismatch created created' org)
+
+    ruleTitleProperyAlwaysLast =
+      forM_
+        ( org
+            ^? fileHeader
+              . headerFileProperties
+              . _last
+              . name
+        )
+        $ \lastProp ->
+          unless (T.toLower lastProp == "title") $
+            report LintWarn (TitlePropertyNotLast org)
+
     inArchive = isArchive org
     props =
       org ^. fileHeader . headerPropertiesDrawer
@@ -129,6 +170,16 @@ lintOrgFile cfg level org = do
               "file: " ++ ppShow org
           tell [LintMessage kind code]
       | otherwise = pure ()
+
+timestampRe :: Regex
+timestampRe =
+  case compile
+    defaultCompOpt
+    defaultExecOpt
+    "(SCHEDULED|DEADLINE|CLOSED):" of
+    Left err -> error err
+    Right x -> x
+{-# NOINLINE timestampRe #-}
 
 lintOrgEntry ::
   Config ->
@@ -192,7 +243,7 @@ lintOrgEntry cfg inArchive lastEntry level e = do
       when (isJust mkw || isJust (e ^? entryCategory)) $ do
         when (isNothing (e ^? entryId)) $
           report LintError (TodoMissingProperty "ID" e)
-        when (isNothing (e ^? entryCreated)) $
+        when (isNothing (e ^? createdTime)) $
           report LintError (TodoMissingProperty "CREATED" e)
 
     ruleCategoryNameCannotBeTooLong =
@@ -208,16 +259,8 @@ lintOrgEntry cfg inArchive lastEntry level e = do
         )
         $ report LintError (MisplacedProperty e)
     ruleTimestampsNeverInBody =
-      when
-        ( any
-            ( \t ->
-                "SCHEDULED:" `T.isInfixOf` t
-                  || "DEADLINE:" `T.isInfixOf` t
-                  || "CLOSED:" `T.isInfixOf` t
-            )
-            (bodyText (has _Paragraph))
-        )
-        $ report LintError (MisplacedTimestamp e)
+      when (any (matchTest timestampRe) (bodyText (has _Paragraph))) $
+        report LintError (MisplacedTimestamp e)
     ruleLogEntriesNeverInBody =
       when
         ( any
@@ -290,7 +333,7 @@ lintOrgEntry cfg inArchive lastEntry level e = do
                   Nothing ->
                     unless (kwf `elem` ["TODO", "APPT", "PROJECT"]) $
                       report
-                        LintInfo
+                        LintWarn
                         ( InvalidStateChangeInvalidTransition
                             FirstTransition
                             kwf
@@ -303,7 +346,7 @@ lintOrgEntry cfg inArchive lastEntry level e = do
                           || isJust (e ^? property "LAST_REPEAT")
                       )
                       $ report
-                        LintInfo
+                        LintWarn
                         ( InvalidStateChangeInvalidTransition
                             IntermediateTransition
                             kwf
@@ -323,7 +366,7 @@ lintOrgEntry cfg inArchive lastEntry level e = do
         forM_ ((,) <$> mkw <*> mfinalKeyword) $ \(kw, finalKeyword) ->
           unless (kw == finalKeyword) $
             report
-              LintInfo
+              LintWarn
               ( InvalidStateChangeInvalidTransition
                   LastTransition
                   kw
@@ -332,7 +375,7 @@ lintOrgEntry cfg inArchive lastEntry level e = do
               )
     ruleNoTimestampsOnNonTodos =
       when
-        ( not (null (e ^. entryStamps))
+        ( any isLeadingStamp (e ^. entryStamps)
             && maybe True (not . isTodo) (e ^? keyword)
         )
         $ report LintWarn (TimestampsOnNonTodo e)
@@ -501,12 +544,12 @@ showLintOrg (LintMessage kind code) =
           ++ show kwf
           ++ " -> "
           ++ show kwt
-      InvalidStateChangeWrongTimeOrder after before e ->
+      InvalidStateChangeWrongTimeOrder a b e ->
         prefix e
           ++ "Wrong time order in state transition "
-          ++ show (showTime before)
+          ++ show (showTime b)
           ++ " > "
-          ++ show (showTime after)
+          ++ show (showTime a)
       InvalidStateChangeIdempotent kw e ->
         prefix e ++ "Idempotent state transition " ++ show kw
       MultipleLogbooks e ->
@@ -529,3 +572,13 @@ showLintOrg (LintMessage kind code) =
         prefix e ++ "Multiple blank lines"
       CategoryTooLong cat e ->
         prefix e ++ "Category name is too long: " ++ show cat
+      FileCreatedTimeMismatch t1 t2 f ->
+        f ^. filePath
+          ++ ":1: "
+          ++ "Created time does not match file: "
+          ++ show (showTime t1)
+          ++ " != "
+          ++ show (showTime t2)
+      TitlePropertyNotLast f ->
+        f ^. filePath
+          ++ ":1: Title is not the last file property"

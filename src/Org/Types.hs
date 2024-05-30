@@ -101,24 +101,6 @@ data Tag
 
 makePrisms ''Tag
 
-data Header = Header
-  { _headerPropertiesDrawer :: [Property],
-    _headerFileProperties :: [Property],
-    _headerTitle :: Maybe Text,
-    _headerTags :: [Tag],
-    _headerPreamble :: Body
-  }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
-
-makeClassy ''Header
-
-data Keyword
-  = OpenKeyword Text
-  | ClosedKeyword Text
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
-
-makePrisms ''Keyword
-
 data TimeSpan
   = DaySpan
   | WeekSpan
@@ -228,14 +210,6 @@ _duration f tm@Time {..} = do
             else undefined
         else pure $ Duration (secs `div` 60) (secs `mod` 60)
 
-data Stamp
-  = ClosedStamp Time
-  | ScheduledStamp Time
-  | DeadlineStamp Time
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
-
-makePrisms ''Stamp
-
 timeStartToUTCTime :: Time -> UTCTime
 timeStartToUTCTime Time {..} =
   UTCTime
@@ -248,7 +222,55 @@ timeEndToUTCTime Time {..} = do
   pure $
     UTCTime
       (ModifiedJulianDay day)
-      (secondsToDiffTime $ fromMaybe 0 _timeEnd)
+      (secondsToDiffTime (fromMaybe 0 _timeEnd))
+
+utcTimeToTime :: TimeKind -> UTCTime -> Time
+utcTimeToTime kind (UTCTime (ModifiedJulianDay day) diff) =
+  Time
+    { _timeKind = kind,
+      _timeDay = day,
+      _timeDayEnd = Nothing,
+      _timeStart = Just (diffTimeToPicoseconds diff `div` (10 ^ 12)),
+      _timeEnd = Nothing,
+      _timeSuffix = Nothing
+    }
+
+data Stamp
+  = ClosedStamp Time
+  | ScheduledStamp Time
+  | DeadlineStamp Time
+  | ActiveStamp Time
+  | CreatedStamp Time
+  | EditedStamp Time
+  | DateStamp Time
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
+
+makePrisms ''Stamp
+
+isLeadingStamp :: Stamp -> Bool
+isLeadingStamp (ClosedStamp _) = True
+isLeadingStamp (ScheduledStamp _) = True
+isLeadingStamp (DeadlineStamp _) = True
+isLeadingStamp _ = False
+
+data Header = Header
+  { _headerPropertiesDrawer :: [Property],
+    _headerFileProperties :: [Property],
+    _headerTitle :: Maybe Text,
+    _headerTags :: [Tag],
+    _headerStamps :: [Stamp],
+    _headerPreamble :: Body
+  }
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+
+makeClassy ''Header
+
+data Keyword
+  = OpenKeyword Text
+  | ClosedKeyword Text
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
+
+makePrisms ''Keyword
 
 data LogEntry
   = LogClosing Time (Maybe Body)

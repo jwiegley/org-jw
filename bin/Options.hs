@@ -26,6 +26,8 @@ tradeJournalSummary =
 
 data Command
   = Parse
+  | Tags
+  | Categories
   | Print
   | Dump
   | Outline
@@ -85,6 +87,8 @@ tradeJournalOpts =
         )
     <*> hsubparser
       ( parseCommand
+          <> tagsCommand
+          <> categoriesCommand
           <> printCommand
           <> dumpCommand
           <> outlineCommand
@@ -100,8 +104,25 @@ tradeJournalOpts =
         (info parseOptions (progDesc "Parse Org-mode file"))
       where
         parseOptions :: Parser Command
-        parseOptions =
-          pure Parse
+        parseOptions = pure Parse
+
+    tagsCommand :: Mod CommandFields Command
+    tagsCommand =
+      OA.command
+        "tags"
+        (info tagsOptions (progDesc "Org-mode file tags"))
+      where
+        tagsOptions :: Parser Command
+        tagsOptions = pure Tags
+
+    categoriesCommand :: Mod CommandFields Command
+    categoriesCommand =
+      OA.command
+        "categories"
+        (info categoriesOptions (progDesc "Org-mode file categories"))
+      where
+        categoriesOptions :: Parser Command
+        categoriesOptions = pure Categories
 
     printCommand :: Mod CommandFields Command
     printCommand =
@@ -110,8 +131,7 @@ tradeJournalOpts =
         (info printOptions (progDesc "Print Org-mode file"))
       where
         printOptions :: Parser Command
-        printOptions =
-          pure Print
+        printOptions = pure Print
 
     dumpCommand :: Mod CommandFields Command
     dumpCommand =
@@ -120,8 +140,7 @@ tradeJournalOpts =
         (info dumpOptions (progDesc "Dump Org-mode file"))
       where
         dumpOptions :: Parser Command
-        dumpOptions =
-          pure Dump
+        dumpOptions = pure Dump
 
     outlineCommand :: Mod CommandFields Command
     outlineCommand =
@@ -130,8 +149,7 @@ tradeJournalOpts =
         (info outlineOptions (progDesc "Outline Org-mode file"))
       where
         outlineOptions :: Parser Command
-        outlineOptions =
-          pure Outline
+        outlineOptions = pure Outline
 
     statsCommand :: Mod CommandFields Command
     statsCommand =
@@ -140,8 +158,7 @@ tradeJournalOpts =
         (info statsOptions (progDesc "Stats Org-mode file"))
       where
         statsOptions :: Parser Command
-        statsOptions =
-          pure Stats
+        statsOptions = pure Stats
 
     lintCommand :: Mod CommandFields Command
     lintCommand =
@@ -167,8 +184,7 @@ tradeJournalOpts =
         (info testOptions (progDesc "Test Org-mode file"))
       where
         testOptions :: Parser Command
-        testOptions =
-          pure Test
+        testOptions = pure Test
 
 optionsDefinition :: ParserInfo Options
 optionsDefinition =

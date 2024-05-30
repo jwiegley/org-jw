@@ -35,6 +35,7 @@ library
     , constraints
     , containers
     , data-default
+    , directory
     , free
     , hashable
     , lens
@@ -43,6 +44,7 @@ library
     , pretty
     , pretty-show
     , profunctors
+    , regex-tdfa
     , row-types
     , semigroupoids
     , simple-amount >=0.2.0
@@ -70,6 +72,7 @@ executable org-data
     , constraints
     , containers
     , data-default
+    , directory
     , free
     , hashable
     , lens
@@ -80,6 +83,7 @@ executable org-data
     , pretty
     , pretty-show
     , profunctors
+    , regex-tdfa
     , row-types
     , semigroupoids
     , simple-amount >=0.2.0
@@ -109,6 +113,7 @@ test-suite org-data-tests
     , constraints
     , containers
     , data-default
+    , directory
     , free
     , hashable
     , hedgehog
@@ -120,6 +125,7 @@ test-suite org-data-tests
     , pretty
     , pretty-show
     , profunctors
+    , regex-tdfa
     , row-types
     , semigroupoids
     , simple-amount >=0.2.0

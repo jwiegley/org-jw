@@ -8,6 +8,7 @@ module Main where
 import Control.Lens
 import Control.Monad (void)
 import Control.Monad.Except
+import Data.Foldable (forM_)
 import Data.Map qualified as M
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
@@ -56,6 +57,16 @@ main = do
       void $ flip M.traverseWithKey (org ^. orgFiles) $ \path o -> do
         putStrLn $
           path ++ ": " ++ show (length (o ^.. entries [])) ++ " entries"
+    Options.Tags -> do
+      let counts = countEntries
+            org
+            $ \e m k -> foldr (flip k) m (e ^. entryTags)
+      forM_ (M.toList counts) $ \(tag, cnt) ->
+        putStrLn $ show cnt ++ " " ++ T.unpack (tag ^. tagText)
+    Options.Categories -> do
+      let counts = countEntries org $ \e m k -> k m (e ^. entryCategory)
+      forM_ (M.toList counts) $ \(cat, cnt) ->
+        putStrLn $ show cnt ++ " " ++ T.unpack cat
     Options.Print ->
       void $ flip M.traverseWithKey (org ^. orgFiles) $ \path o ->
         T.putStrLn $ _OrgFile Config {..} path # o

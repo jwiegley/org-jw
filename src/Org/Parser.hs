@@ -13,7 +13,7 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Reader
 import Data.Char (isAlphaNum, isPrint, isSpace)
-import Data.Maybe (isJust, maybeToList)
+import Data.Maybe (fromMaybe, isJust, maybeToList)
 import Data.String
 import Data.Text (Text, pack)
 import Data.Text qualified as T
@@ -71,24 +71,39 @@ parseProperties = do
   string ":END:" *> trailingSpace
   return props
 
+parseFromProperty :: Parser a -> [Property] -> Text -> Parser (Maybe a)
+parseFromProperty parser props nm =
+  case lookupProperty False props nm of
+    Nothing -> pure Nothing
+    Just filetags -> do
+      SourcePos path _ _ <- getSourcePos
+      cfg <- ask
+      case left
+        errorBundlePretty
+        (runReader (runParserT (parser <* eof) path filetags) cfg) of
+        Left err -> fail err
+        Right x -> pure $ Just x
+
+stampFromProperty :: (Time -> a) -> Text -> [Property] -> Parser [a]
+stampFromProperty f nm props =
+  maybe [] ((: []) . f)
+    <$> parseFromProperty parseTimeSingle props nm
+
 parseHeader :: Parser Header
 parseHeader = do
   _headerPropertiesDrawer <-
     join . maybeToList <$> optional (try parseProperties)
   _headerFileProperties <- many parseFileProperty
-  SourcePos path _ _ <- getSourcePos
-  cfg <- ask
   let _headerTitle =
         lookupProperty False _headerFileProperties "title"
-  _headerTags <- do
-    case lookupProperty False _headerFileProperties "filetags" of
-      Nothing -> pure []
-      Just filetags -> do
-        case left
-          errorBundlePretty
-          (runReader (runParserT (parseTags <* eof) path filetags) cfg) of
-          Left err -> fail err
-          Right x -> pure x
+  _headerTags <-
+    fromMaybe []
+      <$> parseFromProperty parseTags _headerFileProperties "filetags"
+  _headerStamps <-
+    (\x y z -> x ++ y ++ z)
+      <$> stampFromProperty CreatedStamp "created" _headerPropertiesDrawer
+      <*> stampFromProperty EditedStamp "edited" _headerPropertiesDrawer
+      <*> stampFromProperty DateStamp "date" _headerFileProperties
   _headerPreamble <- parseEntryBody
   pure Header {..}
 
@@ -123,12 +138,16 @@ parseEntry parseAtDepth = do
   _entryContext <- optional parseEntryContext
   (_entryTitle, (_entryLocator, _entryTags)) <-
     first pack <$> manyTill_ anyChar (try parseTitleSuffix)
-  _entryStamps <-
+  stamps <-
     join . maybeToList
       <$> try (optional (parseStamps <* trailingSpace))
   _entryProperties <-
     join . maybeToList
       <$> try (optional parseProperties)
+  _entryStamps <-
+    (\x y -> stamps ++ x ++ y)
+      <$> stampFromProperty CreatedStamp "created" _entryProperties
+      <*> stampFromProperty EditedStamp "edited" _entryProperties
   logEntries <- many parseLogEntry
   text <- parseEntryBody
   let (_entryLogEntries, _entryText) =
@@ -191,7 +210,7 @@ parseLocation :: Parser Text
 parseLocation = between (char '{') (char '}') identifier
 
 parseTags :: Parser [Tag]
-parseTags = colon *> sepBy1 parseTag colon
+parseTags = colon *> endBy1 parseTag colon
   where
     colon = char ':'
     tag :: (MonadParsec e s m, Token s ~ Char) => m String

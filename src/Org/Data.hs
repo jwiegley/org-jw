@@ -115,9 +115,6 @@ keyword = entryKeyword . _Just . keywordText
 entryId :: Traversal' Entry Text
 entryId = property "ID"
 
-entryCreated :: Traversal' Entry Text
-entryCreated = property "CREATED"
-
 entryCategory :: Traversal' Entry Text
 entryCategory = property "CATEGORY"
 
@@ -169,8 +166,23 @@ readOrgData cfg paths = OrgData . M.fromList <$> mapM go paths
 _Time :: Prism' Text Time
 _Time = prism' showTime (parseMaybe @Void parseTime)
 
+fileCreatedTime :: Traversal' OrgFile Time
+fileCreatedTime = fileHeader . headerStamps . traverse . _CreatedStamp
+
+fileEditedTime :: Traversal' OrgFile Time
+fileEditedTime = fileHeader . headerStamps . traverse . _EditedStamp
+
+fileDateTime :: Traversal' OrgFile Time
+fileDateTime = fileHeader . headerStamps . traverse . _DateStamp
+
 createdTime :: Traversal' Entry Time
-createdTime = entryCreated . _Time
+createdTime = entryStamps . traverse . _CreatedStamp
+
+editedTime :: Traversal' Entry Time
+editedTime = entryStamps . traverse . _EditedStamp
+
+dateTime :: Traversal' Entry Time
+dateTime = entryStamps . traverse . _DateStamp
 
 scheduledTime :: Traversal' Entry Time
 scheduledTime = entryStamps . traverse . _ScheduledStamp
