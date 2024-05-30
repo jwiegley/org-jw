@@ -17,6 +17,7 @@ import Data.Hashable
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Time
 import Data.Void
 import GHC.Generics
@@ -47,6 +48,18 @@ data Property = Property
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makeLenses ''Property
+
+lookupProperty :: Bool -> [Property] -> Text -> Maybe Text
+lookupProperty caseSensitive ps n =
+  ps
+    ^? traverse
+      . filtered
+        ( \x ->
+            if caseSensitive
+              then x ^. name == n
+              else T.toLower (x ^. name) == T.toLower n
+        )
+      . value
 
 data Block
   = Whitespace Text
@@ -81,9 +94,18 @@ makeClassy ''Body
 emptyBody :: Body -> Bool
 emptyBody = (== mempty)
 
+data Tag
+  = SpecialTag Text
+  | PlainTag Text
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
+
+makePrisms ''Tag
+
 data Header = Header
   { _headerPropertiesDrawer :: [Property],
     _headerFileProperties :: [Property],
+    _headerTitle :: Maybe Text,
+    _headerTags :: [Tag],
     _headerPreamble :: Body
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
@@ -96,13 +118,6 @@ data Keyword
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Keyword
-
-data Tag
-  = SpecialTag Text
-  | PlainTag Text
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
-
-makePrisms ''Tag
 
 data TimeSpan
   = DaySpan

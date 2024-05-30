@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Org.Lint where
 
@@ -40,6 +41,12 @@ parseLintMessageKind =
     <|> (LintInfo <$ string "INFO")
     <|> (LintDebug <$ string "DEBUG")
 
+data TransitionKind
+  = FirstTransition
+  | IntermediateTransition
+  | LastTransition
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+
 data LintMessageCode
   = TodoMissingProperty Text Entry
   | MisplacedProperty Entry
@@ -51,15 +58,17 @@ data LintMessageCode
   | DuplicateTag Text Entry
   | DuplicatedIdentifier Text (NonEmpty Entry)
   | InvalidStateChangeTransitionNotAllowed Text (Maybe Text) [Text] Entry
-  | InvalidStateChangeInvalidTransition Text Text Entry
+  | InvalidStateChangeInvalidTransition TransitionKind Text Text Entry
   | InvalidStateChangeWrongTimeOrder Time Time Entry
   | InvalidStateChangeIdempotent Text Entry
   | MultipleLogbooks Entry
   | MixedLogbooks Entry
+  | WhitespaceAtStartOfLogEntry Entry
   | TitleWithExcessiveWhitespace Entry
   | TimestampsOnNonTodo Entry
   | UnevenWhitespace Entry
   | UnevenFilePreambleWhitespace OrgFile
+  | UnnecessaryWhitespace Entry
   | EmptyBodyWhitespace Entry
   | MultipleBlankLines Entry
   | CategoryTooLong Text Entry
@@ -105,9 +114,10 @@ lintOrgFile cfg level org = do
   case reverse (org ^.. allEntries) of
     [] -> pure ()
     e : es -> do
-      mapM_ (lintOrgEntry cfg False level) (reverse es)
-      lintOrgEntry cfg True level e
+      mapM_ (lintOrgEntry cfg inArchive False level) (reverse es)
+      lintOrgEntry cfg inArchive True level e
   where
+    inArchive = isArchive org
     props =
       org ^. fileHeader . headerPropertiesDrawer
         ++ org ^. fileHeader . headerFileProperties
@@ -123,10 +133,11 @@ lintOrgFile cfg level org = do
 lintOrgEntry ::
   Config ->
   Bool ->
+  Bool ->
   LintMessageKind ->
   Entry ->
   Writer [LintMessage] ()
-lintOrgEntry cfg lastEntry level e = do
+lintOrgEntry cfg inArchive lastEntry level e = do
   -- jww (2024-05-28): NYI
   -- RULE: No open keywords in archives
   -- RULE: No CREATED date lies in the future
@@ -138,7 +149,6 @@ lintOrgEntry cfg lastEntry level e = do
   -- RULE: If an entry has trailing whitespace, it's siblings have the same
   --       whitespace
   -- RULE: Don't use :SCRIPT:, use org-babel
-  -- RULE: Unecessary leading or trailing whitespace
   --
   -- RULE: All TODO entries have ID and CREATED properties
   ruleTodoMustHaveIdAndCreated
@@ -152,6 +162,8 @@ lintOrgEntry cfg lastEntry level e = do
   ruleLogEntriesNeverInBody
   -- RULE: Drawer end marker should always properly end a drawer
   ruleMisplacedDrawerEnd
+  -- RULE: Log entries should never begin with a blank line
+  ruleNoWhitespaceAtStartOfLogEntry
   -- RULE: No title has internal whitespace other than single spaces
   ruleNoExtraSpacesInTitle
   -- RULE: No tag is duplicated
@@ -166,6 +178,8 @@ lintOrgEntry cfg lastEntry level e = do
   ruleNoUnevenWhitespace
   -- RULE: Body and log entry text should never contain only whitespace
   ruleNoEmptyBodyWhitespace
+  -- RULE: No unnecessary leading or trailing whitespace
+  ruleNoUnnecessaryWhitespace
   -- RULE: There should never be multiple blank lines
   ruleNoMultipleBlankLines
   -- RULE: There should be at most one logbook
@@ -233,6 +247,14 @@ lintOrgEntry cfg lastEntry level e = do
             (bodyText (has _Paragraph))
         )
         $ report LintError (MisplacedDrawerEnd e)
+    ruleNoWhitespaceAtStartOfLogEntry =
+      forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
+        when
+          ( case b of
+              Body (Whitespace _ : _) -> True
+              _ -> False
+          )
+          $ report LintWarn (WhitespaceAtStartOfLogEntry e)
     ruleNoExtraSpacesInTitle =
       when ("  " `T.isInfixOf` (e ^. entryTitle)) $
         report LintInfo (TitleWithExcessiveWhitespace e)
@@ -262,18 +284,32 @@ lintOrgEntry cfg lastEntry level e = do
             let kwt = kw' ^. keywordText
                 mkwf = fmap (^. keywordText) mkw'
                 mallowed = transitionsOf cfg <$> mkwf
-            forM_ mkwf $ \kwf ->
-              case mprev of
-                Nothing ->
-                  unless (kwf `elem` ["TODO", "APPT", "PROJECT"]) $
-                    report
-                      LintInfo
-                      (InvalidStateChangeInvalidTransition kwf "TODO" e)
-                Just prev ->
-                  unless (prev == kwf) $
-                    report
-                      LintInfo
-                      (InvalidStateChangeInvalidTransition kwf prev e)
+            unless inArchive $
+              forM_ mkwf $ \kwf ->
+                case mprev of
+                  Nothing ->
+                    unless (kwf `elem` ["TODO", "APPT", "PROJECT"]) $
+                      report
+                        LintInfo
+                        ( InvalidStateChangeInvalidTransition
+                            FirstTransition
+                            kwf
+                            "TODO"
+                            e
+                        )
+                  Just prev ->
+                    unless
+                      ( prev == kwf
+                          || isJust (e ^? property "LAST_REPEAT")
+                      )
+                      $ report
+                        LintInfo
+                        ( InvalidStateChangeInvalidTransition
+                            IntermediateTransition
+                            kwf
+                            prev
+                            e
+                        )
             if mkwf == Just kwt
               then report LintWarn (InvalidStateChangeIdempotent kwt e)
               else forM_ mallowed $ \allowed ->
@@ -282,12 +318,18 @@ lintOrgEntry cfg lastEntry level e = do
                     LintWarn
                     (InvalidStateChangeTransitionNotAllowed kwt mkwf allowed e)
             pure (Just kwt, Just tm)
-      let mkw = e ^? entryKeyword . _Just . keywordText
-      forM_ ((,) <$> mkw <*> mfinalKeyword) $ \(kw, finalKeyword) ->
-        unless (kw == finalKeyword) $
-          report
-            LintInfo
-            (InvalidStateChangeInvalidTransition kw finalKeyword e)
+      unless (inArchive || isJust (e ^? property "LAST_REPEAT")) $ do
+        let mkw = e ^? entryKeyword . _Just . keywordText
+        forM_ ((,) <$> mkw <*> mfinalKeyword) $ \(kw, finalKeyword) ->
+          unless (kw == finalKeyword) $
+            report
+              LintInfo
+              ( InvalidStateChangeInvalidTransition
+                  LastTransition
+                  kw
+                  finalKeyword
+                  e
+              )
     ruleNoTimestampsOnNonTodos =
       when
         ( not (null (e ^. entryStamps))
@@ -295,13 +337,16 @@ lintOrgEntry cfg lastEntry level e = do
         )
         $ report LintWarn (TimestampsOnNonTodo e)
     ruleNoUnevenWhitespace = do
-      forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
-        when
-          ( case b of
-              Body [Whitespace _] -> False
-              _ -> b ^? leadSpace /= b ^? endSpace
-          )
-          $ report LintInfo (EmptyBodyWhitespace e)
+      -- jww (2024-05-28): If the first log entry ends with a blank line, then
+      -- all of them should, except when there is no body text in which case
+      -- the last log entry should not end with whitespace.
+      -- forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
+      --   when
+      --     ( case b of
+      --         Body [Whitespace _] -> False
+      --         _ -> b ^? leadSpace /= b ^? endSpace
+      --     )
+      --     $ report LintInfo (UnevenWhitespace e)
       when
         ( not lastEntry && case e ^. entryText of
             Body [Whitespace _] -> False
@@ -322,6 +367,20 @@ lintOrgEntry cfg lastEntry level e = do
             _ -> False
         )
         $ report LintInfo (EmptyBodyWhitespace e)
+    ruleNoUnnecessaryWhitespace = do
+      forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
+        when
+          ( case b of
+              Body (Paragraph ((T.unpack -> (' ' : _)) : _) : _) -> True
+              _ -> False
+          )
+          $ report LintInfo (UnnecessaryWhitespace e)
+      when
+        ( case e ^. entryText of
+            Body (Paragraph ((T.unpack -> (' ' : _)) : _) : _) -> True
+            _ -> False
+        )
+        $ report LintInfo (UnnecessaryWhitespace e)
     ruleNoMultipleBlankLines =
       when (any ((> 1) . length . T.lines) (bodyText (has _Whitespace))) $
         report LintInfo (MultipleBlankLines e)
@@ -407,6 +466,8 @@ showLintOrg (LintMessage kind code) =
         prefix e ++ "Misplaced state change, note or LOGBOOK"
       MisplacedDrawerEnd e ->
         prefix e ++ "Misplaced end of drawer"
+      WhitespaceAtStartOfLogEntry e ->
+        prefix e ++ "Log entry begins with whitespace"
       TitleWithExcessiveWhitespace e ->
         prefix e ++ "Title with excessive whitespace"
       DuplicateFileProperty nm f ->
@@ -429,9 +490,14 @@ showLintOrg (LintMessage kind code) =
           ++ show kwt
           ++ ", allowed: "
           ++ show allowed
-      InvalidStateChangeInvalidTransition kwt kwf e ->
+      InvalidStateChangeInvalidTransition trans kwt kwf e ->
         prefix e
-          ++ "Invalid state transition "
+          ++ "Invalid "
+          ++ case trans of
+            FirstTransition -> "initial"
+            IntermediateTransition -> "intermediate"
+            LastTransition -> "final"
+          ++ " state transition "
           ++ show kwf
           ++ " -> "
           ++ show kwt
@@ -457,6 +523,8 @@ showLintOrg (LintMessage kind code) =
           ++ "Whitespace surrounding file preamble is not even"
       EmptyBodyWhitespace e ->
         prefix e ++ "Whitespace only body"
+      UnnecessaryWhitespace e ->
+        prefix e ++ "Unnecessary whitespace"
       MultipleBlankLines e ->
         prefix e ++ "Multiple blank lines"
       CategoryTooLong cat e ->

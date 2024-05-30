@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
@@ -9,16 +8,16 @@
 module Org.Parser where
 
 import Control.Applicative
-import Control.Arrow (first, second)
+import Control.Arrow (first, left, second)
+import Control.Lens
 import Control.Monad
 import Control.Monad.Reader
-import Data.Char (isPrint, isSpace)
+import Data.Char (isAlphaNum, isPrint, isSpace)
 import Data.Maybe (isJust, maybeToList)
 import Data.String
 import Data.Text (Text, pack)
 import Data.Text qualified as T
 import Data.Time
--- import Debug.Trace
 import Org.Types
 import Text.Megaparsec hiding (many, some)
 import Text.Megaparsec.Char
@@ -73,10 +72,25 @@ parseProperties = do
   return props
 
 parseHeader :: Parser Header
-parseHeader =
-  (Header . join . maybeToList <$> optional (try parseProperties))
-    <*> many parseFileProperty
-    <*> parseEntryBody
+parseHeader = do
+  _headerPropertiesDrawer <-
+    join . maybeToList <$> optional (try parseProperties)
+  _headerFileProperties <- many parseFileProperty
+  SourcePos path _ _ <- getSourcePos
+  cfg <- ask
+  let _headerTitle =
+        lookupProperty False _headerFileProperties "title"
+  _headerTags <- do
+    case lookupProperty False _headerFileProperties "filetags" of
+      Nothing -> pure []
+      Just filetags -> do
+        case left
+          errorBundlePretty
+          (runReader (runParserT (parseTags <* eof) path filetags) cfg) of
+          Left err -> fail err
+          Right x -> pure x
+  _headerPreamble <- parseEntryBody
+  pure Header {..}
 
 parseHeaderStars :: Parser Int
 parseHeaderStars = length <$> someTill (char '*') (some singleSpace)
@@ -115,8 +129,25 @@ parseEntry parseAtDepth = do
   _entryProperties <-
     join . maybeToList
       <$> try (optional parseProperties)
-  _entryLogEntries <- many parseLogEntry
-  _entryText <- parseEntryBody
+  logEntries <- many parseLogEntry
+  text <- parseEntryBody
+  let (_entryLogEntries, _entryText) =
+        let dflt = (logEntries, text)
+         in case reverse logEntries of
+              [] -> dflt
+              l : ls -> case l ^? _LogBody of
+                Nothing -> dflt
+                Just bdy -> case reverse (_blocks bdy) of
+                  (le@(Whitespace _) : les) ->
+                    case ( _blocks text,
+                           reverse (_blocks text)
+                         ) of
+                      (b : bs, Whitespace _ : _) ->
+                        ( reverse ((l & _LogBody .~ Body (reverse les)) : ls),
+                          Body (le : b : bs)
+                        )
+                      _ -> dflt
+                  _ -> dflt
   _entryItems <- many (parseEntry (succ _entryDepth))
   pure Entry {..}
 
@@ -160,16 +191,18 @@ parseLocation :: Parser Text
 parseLocation = between (char '{') (char '}') identifier
 
 parseTags :: Parser [Tag]
-parseTags =
-  filter
-    ( \case
-        PlainTag "" -> False
-        _ -> True
-    )
-    <$> (char ':' *> sepBy1 parseTag (char ':'))
+parseTags = colon *> sepBy1 parseTag colon
   where
+    colon = char ':'
+    tag :: (MonadParsec e s m, Token s ~ Char) => m String
+    tag =
+      many
+        ( satisfy $ \ch ->
+            isAlphaNum ch
+              || ch `elem` ['-', '_', '=', '/']
+        )
     parseTag = do
-      nm <- identifier
+      nm <- pack <$> tag
       Config {..} <- ask
       pure $
         if nm `elem` _specialTags

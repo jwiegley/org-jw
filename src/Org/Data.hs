@@ -15,6 +15,7 @@ import Control.Monad.Except
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.ByteString qualified as B
+import Data.List (isInfixOf)
 import Data.Map hiding (filter)
 import Data.Map qualified as M
 import Data.Maybe (fromMaybe)
@@ -30,9 +31,6 @@ import Org.Types
 import System.IO (IOMode (..), withFile)
 import Text.Megaparsec
 import Prelude hiding (readFile)
-
-lookupProperty :: [Property] -> Text -> Maybe Text
-lookupProperty ps n = ps ^? traverse . filtered (\x -> x ^. name == n) . value
 
 lined :: Traversal' [Text] Text
 lined f a = T.lines <$> f (T.unlines a)
@@ -293,6 +291,9 @@ isTodo kw =
              "DONE",
              "CANCELED"
            ]
+
+isArchive :: OrgFile -> Bool
+isArchive org = "archive" `isInfixOf` (org ^. filePath)
 
 entryStateHistory :: Traversal' Entry (Keyword, Maybe Keyword, Time)
 entryStateHistory f e =
