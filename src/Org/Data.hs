@@ -44,6 +44,14 @@ property :: Text -> Traversal' Entry Text
 property n =
   entryProperties . traverse . filtered (\x -> x ^. name == n) . value
 
+fileProperty :: Text -> Traversal' OrgFile Text
+fileProperty n =
+  fileHeader
+    . headerPropertiesDrawer
+    . traverse
+    . filtered (\x -> x ^. name == n)
+    . value
+
 -- "Any property" for an entry includes the above, and also:
 --
 --   - A virtual property used as an alternate way to access details about the

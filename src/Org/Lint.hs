@@ -65,6 +65,7 @@ data TransitionKind
 
 data LintMessageCode
   = TodoMissingProperty Text Entry
+  | FileMissingProperty Text OrgFile
   | MisplacedProperty Entry
   | MisplacedTimestamp Entry
   | MisplacedLogEntry Entry
@@ -122,22 +123,35 @@ lintOrgData cfg level org = snd . runWriter $ do
 
 lintOrgFile :: Config -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
 lintOrgFile cfg level org = do
+  -- RULE: All files must have ID and CREATED properties
+  ruleFileShouldHaveIdAndCreated
   -- RULE: Filenames with dates should have matching CREATED
   -- ruleCreationTimeMatchesCreated
   -- RULE: Title file property is always last. This is needed for the sake of
   --       xeft and how it displays entry text.
   ruleTitleProperyAlwaysLast
   forM_ (findDuplicates (props ^.. traverse . name)) $ \nm ->
-    report LintError (DuplicateFileProperty nm org)
+    unless (nm == "LINK") $
+      report LintError (DuplicateFileProperty nm org)
   -- checkFor LintInfo (UnevenFilePreambleWhitespace org) $
   --   org ^? fileHeader . headerPreamble . leadSpace
   --     /= org ^? fileHeader . headerPreamble . endSpace
   case reverse (org ^.. allEntries) of
     [] -> pure ()
     e : es -> do
-      mapM_ (lintOrgEntry cfg inArchive False level) (reverse es)
-      lintOrgEntry cfg inArchive True level e
+      mapM_
+        (lintOrgEntry cfg inArchive False ignoreWhitespace level)
+        (reverse es)
+      lintOrgEntry cfg inArchive True ignoreWhitespace level e
   where
+    ignoreWhitespace = org ^? fileProperty "WHITESPACE" == Just "ignore"
+
+    ruleFileShouldHaveIdAndCreated = do
+      when (isNothing (org ^? fileProperty "ID")) $
+        report LintInfo (FileMissingProperty "ID" org)
+      when (isNothing (org ^? fileProperty "CREATED")) $
+        report LintInfo (FileMissingProperty "CREATED" org)
+
     -- ruleCreationTimeMatchesCreated = do
     --   let modTime = unsafePerformIO $ getModificationTime (org ^. filePath)
     --       created = utcTimeToTime InactiveTime modTime
@@ -185,10 +199,11 @@ lintOrgEntry ::
   Config ->
   Bool ->
   Bool ->
+  Bool ->
   LintMessageKind ->
   Entry ->
   Writer [LintMessage] ()
-lintOrgEntry cfg inArchive lastEntry level e = do
+lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
   -- jww (2024-05-28): NYI
   -- RULE: No open keywords in archives
   -- RULE: No CREATED date lies in the future
@@ -226,7 +241,7 @@ lintOrgEntry cfg inArchive lastEntry level e = do
   -- RULE: Only TODO items have SCHEDULED/DEADLINE/CLOSED timestamps
   ruleNoTimestampsOnNonTodos
   -- RULE: Whitespace before and after body and log entries should match
-  ruleNoUnevenWhitespace
+  unless ignoreWhitespace ruleNoUnevenWhitespace
   -- RULE: Body and log entry text should never contain only whitespace
   ruleNoEmptyBodyWhitespace
   -- RULE: No unnecessary leading or trailing whitespace
@@ -242,9 +257,9 @@ lintOrgEntry cfg inArchive lastEntry level e = do
       let mkw = e ^? entryKeyword . _Just . keywordText
       when (isJust mkw || isJust (e ^? entryCategory)) $ do
         when (isNothing (e ^? entryId)) $
-          report LintError (TodoMissingProperty "ID" e)
+          report LintWarn (TodoMissingProperty "ID" e)
         when (isNothing (e ^? createdTime)) $
-          report LintError (TodoMissingProperty "CREATED" e)
+          report LintWarn (TodoMissingProperty "CREATED" e)
 
     ruleCategoryNameCannotBeTooLong =
       forM_ (e ^? entryCategory) $ \cat ->
@@ -501,6 +516,8 @@ showLintOrg (LintMessage kind code) =
     renderCode = case code of
       TodoMissingProperty nm e ->
         prefix e ++ "Open todo missing property " ++ show nm
+      FileMissingProperty nm f ->
+        f ^. filePath ++ ":1: " ++ "File missing property " ++ show nm
       MisplacedProperty e ->
         prefix e ++ "Misplaced :PROPERTIES: block"
       MisplacedTimestamp e ->
