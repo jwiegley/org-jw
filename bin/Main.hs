@@ -102,20 +102,32 @@ main = do
           mapM_ (putStrLn . showLintOrg) xs
           exitWith (ExitFailure (length xs))
     Options.Test -> do
-      case org ^.. orgFiles . traverse . allEntries of
-        [] -> pure ()
-        e : _ -> do
-          pPrint $ e ^? anyProperty "ID"
-          pPrint $ e ^? anyProperty "CATEGORY"
-          pPrint $ e ^? anyProperty "TITLE"
-          pPrint $ e ^? anyProperty "ITEM"
-          pPrint $ e ^? anyProperty "FOOBAR"
-          putStrLn $ "Entry text: " ++ ppShow (e ^. entryText)
-          putStrLn $ "Lead space: " ++ ppShow (e ^. entryText . leadSpace)
-          putStrLn $ " End space: " ++ ppShow (e ^. entryText . endSpace)
-          let e' = e & entryText . endSpace .~ ""
-          putStrLn $ "Entry text': " ++ ppShow (e' ^. entryText)
-          putStrLn $ "State history': " ++ ppShow (e' ^.. entryStateHistory)
+      forM_ (org ^. pre (orgFiles . traverse)) $ \f -> do
+        putStrLn "filePath:"
+        pPrint $ f ^. filePath
+        putStrLn "fileTitle:"
+        pPrint $ f ^. fileTitle
+        putStrLn "fileTimestamp:"
+        pPrint $ f ^? fileTimestamp . to showTime
+        putStrLn "fileCreatedTime:"
+        pPrint $ f ^? fileCreatedTime . to showTime
+      forM_ (org ^. pre (orgFiles . traverse . allEntries)) $ \e -> do
+        putStrLn "entry ID:"
+        pPrint $ e ^? anyProperty "ID"
+        putStrLn "entry CATEGORY:"
+        pPrint $ e ^? anyProperty "CATEGORY"
+        putStrLn "entry TITLE:"
+        pPrint $ e ^? anyProperty "TITLE"
+        putStrLn "entry ITEM:"
+        pPrint $ e ^? anyProperty "ITEM"
+        putStrLn "entry FOOBAR:"
+        pPrint $ e ^? anyProperty "FOOBAR"
+        putStrLn $ "Entry text: " ++ ppShow (e ^. entryText)
+        putStrLn $ "Lead space: " ++ ppShow (e ^. entryText . leadSpace)
+        putStrLn $ " End space: " ++ ppShow (e ^. entryText . endSpace)
+        let e' = e & entryText . endSpace .~ ""
+        putStrLn $ "Entry text': " ++ ppShow (e' ^. entryText)
+        putStrLn $ "State history': " ++ ppShow (e' ^.. entryStateHistory)
   where
     -- jww (2024-05-10): These details need to be read from a file, or from
     -- command-line options.

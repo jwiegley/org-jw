@@ -36,6 +36,7 @@ library
     , containers
     , data-default
     , directory
+    , filepath
     , free
     , hashable
     , lens
@@ -73,6 +74,7 @@ executable org-data
     , containers
     , data-default
     , directory
+    , filepath
     , free
     , hashable
     , lens
@@ -114,6 +116,7 @@ test-suite org-data-tests
     , containers
     , data-default
     , directory
+    , filepath
     , free
     , hashable
     , hedgehog

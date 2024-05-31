@@ -54,7 +54,7 @@ showTimeSingle Time {..} =
                   " %H:%M"
                   ( UTCTime
                       (ModifiedJulianDay _timeDay)
-                      (secondsToDiffTime start)
+                      (secondsToDiffTime (start * 60))
                   )
               )
           ]
@@ -67,7 +67,7 @@ showTimeSingle Time {..} =
                   "-%H:%M"
                   ( UTCTime
                       (ModifiedJulianDay _timeDay)
-                      (secondsToDiffTime finish)
+                      (secondsToDiffTime (finish * 60))
                   )
               )
           ]

@@ -19,6 +19,7 @@ dependencies:
   - containers
   - data-default
   - directory
+  - filepath
   - free
   - hashable
   - lens

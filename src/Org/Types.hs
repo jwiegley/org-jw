@@ -4,15 +4,17 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Org.Types where
 
 import Control.Lens
-import Control.Monad (when)
+-- import Control.Monad (when)
 import Control.Monad.Reader
 import Data.Data
+import Data.Function (on)
 import Data.Hashable
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
@@ -49,17 +51,9 @@ data Property = Property
 
 makeLenses ''Property
 
-lookupProperty :: Bool -> [Property] -> Text -> Maybe Text
-lookupProperty caseSensitive ps n =
-  ps
-    ^? traverse
-      . filtered
-        ( \x ->
-            if caseSensitive
-              then x ^. name == n
-              else T.toLower (x ^. name) == T.toLower n
-        )
-      . value
+lookupProperty :: Text -> Traversal' [Property] Text
+lookupProperty n =
+  traverse . filtered (\x -> T.toLower (x ^. name) == T.toLower n) . value
 
 data Block
   = Whitespace Text
@@ -171,13 +165,48 @@ data Time = Time
   { _timeKind :: TimeKind,
     _timeDay :: Integer,
     _timeDayEnd :: Maybe Integer,
+    -- | This is a quantity of minutes into the day.
     _timeStart :: Maybe Integer,
+    -- | This is a quantity of minutes into the day.
     _timeEnd :: Maybe Integer,
     _timeSuffix :: Maybe TimeSuffix
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
 makeClassy ''Time
+
+timeStartToUTCTime :: Time -> UTCTime
+timeStartToUTCTime Time {..} =
+  UTCTime
+    (ModifiedJulianDay _timeDay)
+    (secondsToDiffTime $ fromMaybe 0 _timeStart * 60)
+
+timeEndToUTCTime :: Time -> Maybe UTCTime
+timeEndToUTCTime Time {..} = do
+  day <- _timeDayEnd
+  pure $
+    UTCTime
+      (ModifiedJulianDay day)
+      (secondsToDiffTime (fromMaybe 0 _timeEnd * 60))
+
+utcTimeToTime :: TimeKind -> UTCTime -> Time
+utcTimeToTime kind (UTCTime (ModifiedJulianDay day) diff) =
+  Time
+    { _timeKind = kind,
+      _timeDay = day,
+      _timeDayEnd = Nothing,
+      _timeStart =
+        Just
+          ( diffTimeToPicoseconds diff
+              `div` ((10 :: Integer) ^ (12 :: Integer))
+              `div` 60
+          ),
+      _timeEnd = Nothing,
+      _timeSuffix = Nothing
+    }
+
+instance Ord Time where
+  compare = compare `on` timeStartToUTCTime
 
 data Duration = Duration
   { _hours :: Integer,
@@ -187,6 +216,7 @@ data Duration = Duration
 
 makeClassy ''Duration
 
+{-
 _duration :: Traversal' Time Duration
 _duration f tm@Time {..} = do
   case mdur of
@@ -209,31 +239,7 @@ _duration f tm@Time {..} = do
             then undefined
             else undefined
         else pure $ Duration (secs `div` 60) (secs `mod` 60)
-
-timeStartToUTCTime :: Time -> UTCTime
-timeStartToUTCTime Time {..} =
-  UTCTime
-    (ModifiedJulianDay _timeDay)
-    (secondsToDiffTime $ fromMaybe 0 _timeStart)
-
-timeEndToUTCTime :: Time -> Maybe UTCTime
-timeEndToUTCTime Time {..} = do
-  day <- _timeDayEnd
-  pure $
-    UTCTime
-      (ModifiedJulianDay day)
-      (secondsToDiffTime (fromMaybe 0 _timeEnd))
-
-utcTimeToTime :: TimeKind -> UTCTime -> Time
-utcTimeToTime kind (UTCTime (ModifiedJulianDay day) diff) =
-  Time
-    { _timeKind = kind,
-      _timeDay = day,
-      _timeDayEnd = Nothing,
-      _timeStart = Just (diffTimeToPicoseconds diff `div` (10 ^ 12)),
-      _timeEnd = Nothing,
-      _timeSuffix = Nothing
-    }
+-}
 
 data Stamp
   = ClosedStamp Time

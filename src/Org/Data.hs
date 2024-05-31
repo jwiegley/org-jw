@@ -24,10 +24,13 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Text.IO qualified as T
 import Data.Text.Lens
+import Data.Time (defaultTimeLocale)
+import Data.Time.Format (formatTime, parseTimeM)
 import Data.Void
 import Org.Parser
 import Org.Printer
 import Org.Types
+import System.FilePath.Posix
 import System.IO (IOMode (..), withFile)
 import Text.Megaparsec
 import Prelude hiding (readFile)
@@ -41,16 +44,14 @@ lined f a = T.lines <$> f (T.unlines a)
 --
 --   - A property implicitly inherited from its file or outline context.
 property :: Text -> Traversal' Entry Text
-property n =
-  entryProperties . traverse . filtered (\x -> x ^. name == n) . value
+property n = entryProperties . lookupProperty n
 
 fileProperty :: Text -> Traversal' OrgFile Text
 fileProperty n =
   fileHeader
-    . headerPropertiesDrawer
-    . traverse
-    . filtered (\x -> x ^. name == n)
-    . value
+    . failing
+      (headerPropertiesDrawer . lookupProperty n)
+      (headerFileProperties . lookupProperty n)
 
 -- "Any property" for an entry includes the above, and also:
 --
@@ -59,7 +60,7 @@ fileProperty n =
 anyProperty :: Text -> Fold Entry Text
 anyProperty n =
   failing
-    (entryProperties . traverse . filtered (\x -> x ^. name == n) . value)
+    (entryProperties . lookupProperty n)
     (maybe ignored runFold (Prelude.lookup n specialProperties))
 
 -- jww (2024-05-13): Need to handle inherited tags
@@ -174,8 +175,62 @@ readOrgData cfg paths = OrgData . M.fromList <$> mapM go paths
 _Time :: Prism' Text Time
 _Time = prism' showTime (parseMaybe @Void parseTime)
 
+fileTitle :: Traversal' OrgFile Text
+fileTitle =
+  failing
+    (fileHeader . headerTitle . _Just)
+    (fileProperty "title")
+
+data TimestampFormat
+  = HourMinSec
+  | HourMin
+  | JustDay
+
+tsFormatFmt :: TimestampFormat -> String
+tsFormatFmt HourMinSec = "%Y%m%d%H%M%S"
+tsFormatFmt HourMin = "%Y%m%d%H%M"
+tsFormatFmt JustDay = "%Y%m%d"
+
+tsFormatLen :: TimestampFormat -> Int
+tsFormatLen HourMinSec = 14
+tsFormatLen HourMin = 12
+tsFormatLen JustDay = 8
+
+stringTime :: Traversal' String Time
+stringTime f str =
+  case ptime HourMinSec <|> ptime HourMin <|> ptime JustDay of
+    Nothing -> pure str
+    Just (tf, utct) -> do
+      tm' <- f $ case tf of
+        JustDay -> tm {_timeStart = Nothing}
+        _ -> tm
+      pure $
+        formatTime
+          defaultTimeLocale
+          (tsFormatFmt tf)
+          (timeStartToUTCTime tm')
+          ++ Prelude.drop (tsFormatLen tf) str
+      where
+        tm = utcTimeToTime InactiveTime utct
+  where
+    ptime tf = (tf,) <$> parseTime' (tsFormatLen tf) (tsFormatFmt tf)
+    parseTime' n fmt =
+      parseTimeM False defaultTimeLocale fmt (Prelude.take n str)
+
+dirName :: Lens' FilePath FilePath
+dirName f path = (</> takeFileName path) <$> f (takeDirectory path)
+
+fileName :: Lens' FilePath FilePath
+fileName f path = (takeDirectory path </>) <$> f (takeFileName path)
+
+fileTimestamp :: Traversal' OrgFile Time
+fileTimestamp = filePath . fileName . stringTime
+
 fileCreatedTime :: Traversal' OrgFile Time
-fileCreatedTime = fileHeader . headerStamps . traverse . _CreatedStamp
+fileCreatedTime =
+  failing
+    (fileHeader . headerStamps . traverse . _CreatedStamp)
+    fileTimestamp
 
 fileEditedTime :: Traversal' OrgFile Time
 fileEditedTime = fileHeader . headerStamps . traverse . _EditedStamp

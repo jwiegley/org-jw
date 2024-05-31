@@ -73,7 +73,7 @@ parseProperties = do
 
 parseFromProperty :: Parser a -> [Property] -> Text -> Parser (Maybe a)
 parseFromProperty parser props nm =
-  case lookupProperty False props nm of
+  case props ^? lookupProperty nm of
     Nothing -> pure Nothing
     Just filetags -> do
       SourcePos path _ _ <- getSourcePos
@@ -94,8 +94,7 @@ parseHeader = do
   _headerPropertiesDrawer <-
     join . maybeToList <$> optional (try parseProperties)
   _headerFileProperties <- many parseFileProperty
-  let _headerTitle =
-        lookupProperty False _headerFileProperties "title"
+  let _headerTitle = _headerFileProperties ^? lookupProperty "title"
   _headerTags <-
     fromMaybe []
       <$> parseFromProperty parseTags _headerFileProperties "filetags"

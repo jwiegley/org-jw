@@ -126,12 +126,12 @@ lintOrgFile cfg level org = do
   -- RULE: All files must have ID and CREATED properties
   ruleFileShouldHaveIdAndCreated
   -- RULE: Filenames with dates should have matching CREATED
-  -- ruleCreationTimeMatchesCreated
+  ruleCreationTimeMatchesCreated
   -- RULE: Title file property is always last. This is needed for the sake of
   --       xeft and how it displays entry text.
   ruleTitleProperyAlwaysLast
-  forM_ (findDuplicates (props ^.. traverse . name)) $ \nm ->
-    unless (nm == "LINK") $
+  forM_ (findDuplicates (props ^.. traverse . name . to T.toLower)) $ \nm ->
+    unless (nm `elem` ["link", "tags"]) $
       report LintError (DuplicateFileProperty nm org)
   -- checkFor LintInfo (UnevenFilePreambleWhitespace org) $
   --   org ^? fileHeader . headerPreamble . leadSpace
@@ -150,15 +150,22 @@ lintOrgFile cfg level org = do
       when (isNothing (org ^? fileProperty "ID")) $
         report LintInfo (FileMissingProperty "ID" org)
       when (isNothing (org ^? fileProperty "CREATED")) $
-        report LintInfo (FileMissingProperty "CREATED" org)
+        report
+          ( if isNothing (org ^? fileCreatedTime)
+              then LintWarn
+              else LintInfo
+          )
+          (FileMissingProperty "CREATED" org)
 
-    -- ruleCreationTimeMatchesCreated = do
-    --   let modTime = unsafePerformIO $ getModificationTime (org ^. filePath)
-    --       created = utcTimeToTime InactiveTime modTime
-    --   forM_ (org ^? fileCreatedTime) $ \created' -> do
-    --     let modTime' = timeStartToUTCTime created'
-    --     unless (modTime == modTime') $
-    --       report LintWarn (FileCreatedTimeMismatch created created' org)
+    ruleCreationTimeMatchesCreated = do
+      forM_
+        ( (,)
+            <$> org ^? fileTimestamp
+            <*> org ^? fileCreatedTime
+        )
+        $ \(created, created') ->
+          unless (created == created') $
+            report LintWarn (FileCreatedTimeMismatch created created' org)
 
     ruleTitleProperyAlwaysLast =
       forM_
@@ -167,9 +174,10 @@ lintOrgFile cfg level org = do
               . headerFileProperties
               . _last
               . name
+              . to T.toLower
         )
         $ \lastProp ->
-          unless (T.toLower lastProp == "title") $
+          unless (lastProp == "title") $
             report LintWarn (TitlePropertyNotLast org)
 
     inArchive = isArchive org
@@ -317,11 +325,29 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
       when ("  " `T.isInfixOf` (e ^. entryTitle)) $
         report LintInfo (TitleWithExcessiveWhitespace e)
     ruleNoDuplicateTags =
-      forM_ (findDuplicates (e ^.. entryTags . traverse . tagText)) $ \nm ->
-        report LintError (DuplicateTag nm e)
+      forM_
+        ( findDuplicates
+            ( e
+                ^.. entryTags
+                  . traverse
+                  . tagText
+                  . to T.toLower
+            )
+        )
+        $ \nm ->
+          report LintError (DuplicateTag nm e)
     ruleNoDuplicateProperties =
-      forM_ (findDuplicates (e ^.. entryProperties . traverse . name)) $ \nm ->
-        report LintError (DuplicateProperty nm e)
+      forM_
+        ( findDuplicates
+            ( e
+                ^.. entryProperties
+                  . traverse
+                  . name
+                  . to T.toLower
+            )
+        )
+        $ \nm ->
+          report LintError (DuplicateProperty nm e)
     ruleNoInvalidStateChanges = do
       (mfinalKeyword, _mfinalTime) <-
         ( \f ->
