@@ -11,6 +11,7 @@ ghc-options:
 
 dependencies:
   - aeson
+  - array
   - base >= 4.5
   - bytestring
   - cassava

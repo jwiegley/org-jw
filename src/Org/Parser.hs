@@ -94,7 +94,6 @@ parseHeader = do
   _headerPropertiesDrawer <-
     join . maybeToList <$> optional (try parseProperties)
   _headerFileProperties <- many parseFileProperty
-  let _headerTitle = _headerFileProperties ^? lookupProperty "title"
   _headerTags <-
     fromMaybe []
       <$> parseFromProperty parseTags _headerFileProperties "filetags"
@@ -143,8 +142,11 @@ parseEntry parseAtDepth = do
   _entryProperties <-
     join . maybeToList
       <$> try (optional parseProperties)
+  activeStamp <- optional $ try $ do
+    _ <- lookAhead (char '<')
+    ActiveStamp <$> parseTime <* trailingSpace
   _entryStamps <-
-    (\x y -> stamps ++ x ++ y)
+    (\x y -> stamps ++ maybeToList activeStamp ++ x ++ y)
       <$> stampFromProperty CreatedStamp "created" _entryProperties
       <*> stampFromProperty EditedStamp "edited" _entryProperties
   logEntries <- many parseLogEntry

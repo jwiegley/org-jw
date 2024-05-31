@@ -5,6 +5,7 @@
 
 module Org.Printer where
 
+import Control.Lens
 import Data.Maybe (maybeToList)
 import Data.Text (Text, pack)
 import Data.Text qualified as T
@@ -115,13 +116,13 @@ showLogEntry (LogClosing tm text) =
       <> if null text then "" else " \\\\"
   )
     : maybe [] (showBody "  ") text
-showLogEntry (LogState from to tm text) =
+showLogEntry (LogState fr t tm text) =
   T.concat
     ( [ "- State \"",
-        showKeyword from
+        showKeyword fr
       ]
         ++ [ "\" from \"" <> showKeyword k
-             | k <- maybeToList to
+             | k <- maybeToList t
            ]
         ++ [ "\" ",
              showTime tm,
@@ -190,6 +191,7 @@ showEntry propertyColumn tagsColumn Entry {..} =
     ++ timestamps
     ++ properties
     ++ logEntries
+    ++ activeStamp
     ++ entryLines
     ++ concatMap (showEntry propertyColumn tagsColumn) _entryItems
   where
@@ -228,23 +230,24 @@ showEntry propertyColumn tagsColumn Entry {..} =
                     ]
           | otherwise = ""
     timestamps
-      | null _entryStamps = []
-      | otherwise =
-          [ T.intercalate
-              " "
-              (map showStamp (filter isLeadingStamp _entryStamps))
-          ]
+      | null leadingStamps = []
+      | otherwise = [T.intercalate " " (map showStamp leadingStamps)]
+      where
+        leadingStamps = filter isLeadingStamp _entryStamps
     properties
       | null _entryProperties = []
       | otherwise = showProperties propertyColumn _entryProperties
     logEntries = concatMap showLogEntry _entryLogEntries
+    activeStamp = case _entryStamps ^? traverse . _ActiveStamp of
+      Nothing -> []
+      Just stamp -> [showTime stamp]
     entryLines = showBody "" _entryText
 
 showBody :: Text -> Body -> [Text]
 showBody leader (Body b) = concatMap (showBlock leader) b
 
 showBlock :: Text -> Block -> [Text]
-showBlock _leader (Whitespace txt) = T.lines txt
+showBlock _leader (Whitespace txt) = [txt]
 showBlock leader (Paragraph xs) = map (leader <>) xs
 showBlock leader (Drawer xs) = map (leader <>) xs
 

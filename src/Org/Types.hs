@@ -262,7 +262,6 @@ isLeadingStamp _ = False
 data Header = Header
   { _headerPropertiesDrawer :: [Property],
     _headerFileProperties :: [Property],
-    _headerTitle :: Maybe Text,
     _headerTags :: [Tag],
     _headerStamps :: [Stamp],
     _headerPreamble :: Body

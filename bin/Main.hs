@@ -128,6 +128,8 @@ main = do
         let e' = e & entryText . endSpace .~ ""
         putStrLn $ "Entry text': " ++ ppShow (e' ^. entryText)
         putStrLn $ "State history': " ++ ppShow (e' ^.. entryStateHistory)
+        putStrLn "Entire entry:"
+        pPrint e
   where
     -- jww (2024-05-10): These details need to be read from a file, or from
     -- command-line options.

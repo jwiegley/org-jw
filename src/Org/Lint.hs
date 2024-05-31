@@ -436,7 +436,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             Body [Whitespace _] -> False
             b -> b ^? leadSpace /= b ^? endSpace
         )
-        $ report LintDebug (UnevenWhitespace e)
+        $ report LintInfo (UnevenWhitespace e)
     ruleNoEmptyBodyWhitespace = do
       forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
         when
@@ -444,13 +444,13 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
               Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
               _ -> False
           )
-          $ report LintDebug (EmptyBodyWhitespace e)
+          $ report LintInfo (EmptyBodyWhitespace e)
       when
         ( case e ^. entryText of
             Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
             _ -> False
         )
-        $ report LintDebug (EmptyBodyWhitespace e)
+        $ report LintInfo (EmptyBodyWhitespace e)
     ruleNoUnnecessaryWhitespace = do
       forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
         when

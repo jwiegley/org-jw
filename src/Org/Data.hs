@@ -30,9 +30,13 @@ import Data.Void
 import Org.Parser
 import Org.Printer
 import Org.Types
+import System.Directory
 import System.FilePath.Posix
 import System.IO (IOMode (..), withFile)
-import Text.Megaparsec
+import System.IO.Unsafe (unsafePerformIO)
+import Text.Megaparsec hiding (match)
+import Text.Regex.TDFA
+import Text.Regex.TDFA.Text
 import Prelude hiding (readFile)
 
 lined :: Traversal' [Text] Text
@@ -175,12 +179,6 @@ readOrgData cfg paths = OrgData . M.fromList <$> mapM go paths
 _Time :: Prism' Text Time
 _Time = prism' showTime (parseMaybe @Void parseTime)
 
-fileTitle :: Traversal' OrgFile Text
-fileTitle =
-  failing
-    (fileHeader . headerTitle . _Just)
-    (fileProperty "title")
-
 data TimestampFormat
   = HourMinSec
   | HourMin
@@ -196,6 +194,54 @@ tsFormatLen HourMinSec = 14
 tsFormatLen HourMin = 12
 tsFormatLen JustDay = 8
 
+fileNameRe :: Regex
+fileNameRe =
+  case compile
+    defaultCompOpt
+    defaultExecOpt
+    "^(:?([0-9]{8,})-)?([^.]+)(:?\\.([^.]+))?$" of
+    Left err -> error err
+    Right x -> x
+{-# NOINLINE fileNameRe #-}
+
+fileNameParts :: Traversal' FilePath (Maybe FilePath, FilePath, Maybe FilePath)
+fileNameParts f nm = do
+  case match fileNameRe nm of
+    [[_, _, stamp, slug, _, ext]] ->
+      ( \(stamp', slug', ext') ->
+          maybe "" (<> "-") stamp'
+            <> slug'
+            <> maybe "" ("." <>) ext'
+      )
+        <$> f
+          ( if Prelude.null stamp
+              then Nothing
+              else Just stamp,
+            slug,
+            if Prelude.null ext
+              then Nothing
+              else Just ext
+          )
+    res -> error $ "impossible, but got this: " ++ show res
+
+dirName :: Lens' FilePath FilePath
+dirName f path = (</> takeFileName path) <$> f (takeDirectory path)
+
+fileName :: Lens' FilePath FilePath
+fileName f path = (takeDirectory path </>) <$> f (takeFileName path)
+
+fileTitle :: Traversal' OrgFile Text
+fileTitle =
+  failing
+    (fileProperty "TITLE")
+    (filePath . fileName . fileNameParts . _2 . packed)
+
+fileSlug :: Traversal' OrgFile Text
+fileSlug =
+  failing
+    (fileProperty "SLUG")
+    (filePath . fileName . fileNameParts . _2 . packed)
+
 stringTime :: Traversal' String Time
 stringTime f str =
   case ptime HourMinSec <|> ptime HourMin <|> ptime JustDay of
@@ -209,19 +255,12 @@ stringTime f str =
           defaultTimeLocale
           (tsFormatFmt tf)
           (timeStartToUTCTime tm')
-          ++ Prelude.drop (tsFormatLen tf) str
       where
         tm = utcTimeToTime InactiveTime utct
   where
-    ptime tf = (tf,) <$> parseTime' (tsFormatLen tf) (tsFormatFmt tf)
-    parseTime' n fmt =
-      parseTimeM False defaultTimeLocale fmt (Prelude.take n str)
-
-dirName :: Lens' FilePath FilePath
-dirName f path = (</> takeFileName path) <$> f (takeDirectory path)
-
-fileName :: Lens' FilePath FilePath
-fileName f path = (takeDirectory path </>) <$> f (takeFileName path)
+    ptime tf = (tf,) <$> parseTime' (tsFormatFmt tf)
+    parseTime' fmt =
+      parseTimeM False defaultTimeLocale fmt str
 
 fileTimestamp :: Traversal' OrgFile Time
 fileTimestamp = filePath . fileName . stringTime
@@ -233,7 +272,24 @@ fileCreatedTime =
     fileTimestamp
 
 fileEditedTime :: Traversal' OrgFile Time
-fileEditedTime = fileHeader . headerStamps . traverse . _EditedStamp
+fileEditedTime =
+  failing
+    (fileHeader . headerStamps . traverse . _EditedStamp)
+    -- If the file does not have an EDITED stamp, we regard the filesystem
+    -- modification time as the defined stamp.
+    ( \f org ->
+        let modTime = unsafePerformIO $ getModificationTime (org ^. filePath)
+         in ( \tm' ->
+                let modTime' = timeStartToUTCTime tm'
+                 in unsafePerformIO
+                      ( setModificationTime
+                          (org ^. filePath)
+                          modTime'
+                      )
+                      `seq` org
+            )
+              <$> f (utcTimeToTime InactiveTime modTime)
+    )
 
 fileDateTime :: Traversal' OrgFile Time
 fileDateTime = fileHeader . headerStamps . traverse . _DateStamp
