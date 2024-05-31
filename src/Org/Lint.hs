@@ -323,7 +323,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
           $ report LintWarn (WhitespaceAtStartOfLogEntry e)
     ruleNoExtraSpacesInTitle =
       when ("  " `T.isInfixOf` (e ^. entryTitle)) $
-        report LintInfo (TitleWithExcessiveWhitespace e)
+        report LintWarn (TitleWithExcessiveWhitespace e)
     ruleNoDuplicateTags =
       forM_
         ( findDuplicates
@@ -436,7 +436,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             Body [Whitespace _] -> False
             b -> b ^? leadSpace /= b ^? endSpace
         )
-        $ report LintInfo (UnevenWhitespace e)
+        $ report LintDebug (UnevenWhitespace e)
     ruleNoEmptyBodyWhitespace = do
       forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
         when
@@ -444,13 +444,13 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
               Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
               _ -> False
           )
-          $ report LintInfo (EmptyBodyWhitespace e)
+          $ report LintDebug (EmptyBodyWhitespace e)
       when
         ( case e ^. entryText of
             Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
             _ -> False
         )
-        $ report LintInfo (EmptyBodyWhitespace e)
+        $ report LintDebug (EmptyBodyWhitespace e)
     ruleNoUnnecessaryWhitespace = do
       forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
         when
@@ -467,7 +467,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
         $ report LintInfo (UnnecessaryWhitespace e)
     ruleNoMultipleBlankLines =
       when (any ((> 1) . length . T.lines) (bodyText (has _Whitespace))) $
-        report LintInfo (MultipleBlankLines e)
+        report LintWarn (MultipleBlankLines e)
     ruleAtMostOneLogBook =
       when (length (e ^.. entryLogEntries . traverse . cosmos . _LogBook) > 1) $
         report LintError (MultipleLogbooks e)
