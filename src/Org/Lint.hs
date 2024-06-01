@@ -66,6 +66,7 @@ data TransitionKind
 data LintMessageCode
   = TodoMissingProperty Text
   | FileMissingProperty Text
+  | FileSlugMismatch Text
   | MisplacedProperty
   | MisplacedTimestamp
   | MisplacedLogEntry
@@ -133,6 +134,8 @@ lintOrgFile :: Config -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
 lintOrgFile cfg level org = do
   -- RULE: All files must have ID and CREATED properties
   ruleFileShouldHaveIdAndCreated
+  -- RULE: File slugs should reflect the file's title
+  ruleSlugMustMatchTitle
   -- RULE: Filenames with dates should have matching CREATED
   ruleCreationTimeMatchesCreated
   -- RULE: Title file property is always last. This is needed for the sake of
@@ -164,6 +167,11 @@ lintOrgFile cfg level org = do
               else LintInfo
           )
           (FileMissingProperty "CREATED")
+
+    ruleSlugMustMatchTitle =
+      forM_ (org ^? fileSlug) $ \slug ->
+        unless (org ^? fileActualSlug == org ^? fileSlug) $
+          report LintWarn (FileSlugMismatch slug)
 
     ruleCreationTimeMatchesCreated = do
       forM_
@@ -289,9 +297,11 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             (bodyText (has _Paragraph))
         )
         $ report LintError MisplacedProperty
+
     ruleTimestampsNeverInBody =
       when (any (matchTest timestampRe) (bodyText (has _Paragraph))) $
         report LintError MisplacedTimestamp
+
     ruleLogEntriesNeverInBody =
       when
         ( any
@@ -309,6 +319,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             (bodyText (has _Paragraph))
         )
         $ report LintError MisplacedLogEntry
+
     ruleMisplacedDrawerEnd =
       when
         ( any
@@ -321,6 +332,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             (bodyText (has _Paragraph))
         )
         $ report LintError MisplacedDrawerEnd
+
     ruleNoWhitespaceAtStartOfLogEntry =
       forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
         when
@@ -329,12 +341,15 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
               _ -> False
           )
           $ report' (b ^. _LogLoc) LintWarn WhitespaceAtStartOfLogEntry
+
     ruleNoExtraSpacesInTitle =
       when ("  " `T.isInfixOf` (e ^. entryTitle)) $
         report LintWarn TitleWithExcessiveWhitespace
+
     ruleNoDuplicateTags =
       forM_ (findDuplicates (e ^. entryTags)) $ \tag ->
         report' (tag ^. tagLoc) LintError (DuplicateTag (tag ^. tagText))
+
     ruleNoDuplicateProperties =
       forM_
         ( findDuplicates
@@ -347,6 +362,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
         )
         $ \nm ->
           report LintError (DuplicateProperty nm)
+
     ruleNoInvalidStateChanges = do
       (mfinalKeyword, _mfinalTime) <-
         ( \f ->
@@ -416,6 +432,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             && maybe True (not . isTodo) (e ^? keyword)
         )
         $ report LintWarn TimestampsOnNonTodo
+
     ruleNoUnevenWhitespace = do
       -- jww (2024-05-28): If the first log entry ends with a blank line, then
       -- all of them should, except when there is no body text in which case
@@ -433,6 +450,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             b -> b ^? leadSpace /= b ^? endSpace
         )
         $ report LintInfo UnevenWhitespace
+
     -- ruleNoEmptyBodyWhitespace = do
     --   forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
     --     when
@@ -449,6 +467,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
     --         _ -> False
     --     )
     --     $ report LintInfo EmptyBodyWhitespace
+
     ruleNoUnnecessaryWhitespace = do
       forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
         when
@@ -464,12 +483,15 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             _ -> False
         )
         $ report LintInfo UnnecessaryWhitespace
+
     ruleNoMultipleBlankLines =
       when (any ((> 1) . length . T.lines) (bodyText (has _Whitespace))) $
         report LintWarn MultipleBlankLines
+
     ruleAtMostOneLogBook =
       when (length (e ^.. entryLogEntries . traverse . cosmos . _LogBook) > 1) $
         report LintError MultipleLogbooks
+
     ruleConsistentLogBook =
       when
         ( not
@@ -539,6 +561,11 @@ showLintOrg (LintMessage fl ln kind code) =
       LintInfo -> "INFO"
       LintDebug -> "DEBUG"
     renderCode = case code of
+      FileSlugMismatch slug ->
+        "Mismatch in file slug: mv "
+          ++ show fl
+          ++ " "
+          ++ show (fl & fileName . fileNameParts . _2 .~ T.unpack slug)
       TodoMissingProperty nm ->
         "Open todo missing property " ++ show nm
       FileMissingProperty nm ->

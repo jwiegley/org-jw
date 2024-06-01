@@ -15,6 +15,7 @@ import Control.Monad.Except
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.ByteString qualified as B
+import Data.Char (isAlphaNum)
 import Data.List (isInfixOf)
 import Data.Map hiding (filter)
 import Data.Map qualified as M
@@ -206,7 +207,7 @@ fileNameRe =
     Right x -> x
 {-# NOINLINE fileNameRe #-}
 
-fileNameParts :: Traversal' FilePath (Maybe FilePath, FilePath, Maybe FilePath)
+fileNameParts :: Lens' FilePath (Maybe FilePath, FilePath, Maybe FilePath)
 fileNameParts f nm = do
   case match fileNameRe nm of
     [[_, _, stamp, slug, _, ext]] ->
@@ -232,17 +233,36 @@ dirName f path = (</> takeFileName path) <$> f (takeDirectory path)
 fileName :: Lens' FilePath FilePath
 fileName f path = (takeDirectory path </>) <$> f (takeFileName path)
 
+fileActualSlug :: Lens' OrgFile Text
+fileActualSlug =
+  filePath . fileName . fileNameParts . _2 . packed
+
 fileTitle :: Traversal' OrgFile Text
 fileTitle =
   failing
     (fileProperty "TITLE")
-    (filePath . fileName . fileNameParts . _2 . packed)
+    fileActualSlug
 
-fileSlug :: Traversal' OrgFile Text
+sluggify :: Text -> Text
+sluggify =
+  useDashes
+    . dropMultipleUnderscores
+    . squashNonAlphanumerics
+    . T.toLower
+    . T.strip
+  where
+    dropMultipleUnderscores =
+      T.intercalate "_" . filter (not . T.null) . T.splitOn "_"
+    squashNonAlphanumerics =
+      T.map (\c -> if isAlphaNum c then c else '_')
+    useDashes =
+      T.map (\c -> if c == '_' then '-' else c)
+
+fileSlug :: Fold OrgFile Text
 fileSlug =
   failing
     (fileProperty "SLUG")
-    (filePath . fileName . fileNameParts . _2 . packed)
+    (fileTitle . to sluggify)
 
 stringTime :: Traversal' String Time
 stringTime f str =
