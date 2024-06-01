@@ -1,4 +1,5 @@
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
@@ -12,11 +13,12 @@ module Org.Data where
 
 import Control.Arrow (left)
 import Control.Lens
+import Control.Monad (unless, void, when)
 import Control.Monad.Except
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.ByteString qualified as B
-import Data.Char (isAlphaNum)
+import Data.Char (isAlphaNum, isDigit)
 import Data.List (isInfixOf)
 import Data.Map hiding (filter)
 import Data.Map qualified as M
@@ -37,8 +39,7 @@ import System.FilePath.Posix
 import System.IO (IOMode (..), withFile)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Megaparsec hiding (match)
-import Text.Regex.TDFA
-import Text.Regex.TDFA.Text
+import Text.Megaparsec.Char
 import Prelude hiding (readFile)
 
 lined :: Traversal' [Text] Text
@@ -159,11 +160,27 @@ readOrgFile_ cfg path content =
     errorBundlePretty
     (runReader (runParserT parseOrgFile path content) cfg)
 
+fileNameTags :: Lens' FilePath [Tag]
+fileNameTags f path =
+  case path ^. fileNameParts . _3 of
+    Nothing -> path <$ f []
+    Just tags ->
+      ( \tags' ->
+          case tags' of
+            [] -> path
+            _ ->
+              path
+                & fileNameParts . _3
+                  ?~ tags' ^.. traverse . _PlainTag . unpacked
+      )
+        <$> f (Prelude.map (PlainTag . T.pack) tags)
+
 readOrgFile :: (MonadIO m) => Config -> FilePath -> ExceptT String m OrgFile
 readOrgFile cfg path = do
-  org <- liftIO $ withFile path ReadMode $ \h -> do
-    content <- T.hGetContents h
-    pure $ readOrgFile_ cfg path content
+  org <-
+    liftIO $ withFile path ReadMode $ \h -> do
+      content <- T.hGetContents h
+      pure $ readOrgFile_ cfg path content
   liftEither org
 
 _OrgFile :: Config -> FilePath -> Prism' Text OrgFile
@@ -208,35 +225,187 @@ tsFormatLen HourMinSec = 14
 tsFormatLen HourMin = 12
 tsFormatLen JustDay = 8
 
-fileNameRe :: Regex
-fileNameRe =
-  case compile
-    defaultCompOpt
-    defaultExecOpt
-    "^(:?([0-9]{8,})-)?([^.]+)(:?\\.([^.]+))?$" of
-    Left err -> error err
-    Right x -> x
-{-# NOINLINE fileNameRe #-}
+-- Roughly equivalent to: '^[0-9]{8,}[_-].+?( -- .+?|\[.+?\])\.[^.]+$'
+fileNameRe ::
+  ParsecT
+    Void
+    String
+    m
+    ( Maybe FilePath,
+      FilePath,
+      Maybe [String],
+      Maybe FilePath
+    )
+fileNameRe = do
+  date <- optional (pDate <* optional pDateSlugSeparator)
+  slug <- pSlug
+  tags <- optional pTags
+  ext <- optional pExt
+  pure (date, slug, words <$> tags, ext)
+  where
+    pDate =
+      try $
+        (++)
+          <$> count 8 (satisfy isDigit)
+          <*> many (satisfy isDigit)
+    pDateSlugSeparator = char '-' <|> char '_'
+    pSlug = do
+      manyTill
+        anyChar
+        (lookAhead (void pTags <|> void pExt <|> eof))
+    pTags =
+      try
+        ( spaces_
+            *> string "--"
+            *> spaces_
+            *> someTill anyChar (lookAhead (void (char '.') <|> eof))
+        )
+        <|> try
+          ( skipMany singleSpace
+              *> between
+                (char '[')
+                (char ']')
+                (someTill anyChar (lookAhead (char ']')))
+          )
+    pExt = try $ do
+      _ <- char '.'
+      str <- many anyChar <* eof
+      when ("." `isInfixOf` str) $
+        fail "Error parsing file extension"
+      pure str
 
-fileNameParts :: Lens' FilePath (Maybe FilePath, FilePath, Maybe FilePath)
+fileNameReTest :: IO ()
+fileNameReTest = do
+  test
+    "foo.org"
+    (Nothing, "foo", Nothing, Just "org")
+  test
+    "foo-.org"
+    (Nothing, "foo-", Nothing, Just "org")
+  test
+    "-foo-.org"
+    (Nothing, "-foo-", Nothing, Just "org")
+  test
+    "-foo.org"
+    (Nothing, "-foo", Nothing, Just "org")
+  test
+    "20240601-foo.org"
+    (Just "20240601", "foo", Nothing, Just "org")
+  test
+    "20240601foo.org"
+    (Just "20240601", "foo", Nothing, Just "org")
+  test
+    "20240601foo-.org"
+    (Just "20240601", "foo-", Nothing, Just "org")
+  test
+    "20240601-foo-.org"
+    (Just "20240601", "foo-", Nothing, Just "org")
+  test
+    "20240601-foo[foo bar].org"
+    (Just "20240601", "foo", Just ["foo", "bar"], Just "org")
+  test
+    "20240601-foo [foo bar].org"
+    (Just "20240601", "foo", Just ["foo", "bar"], Just "org")
+  test
+    "20240601[foo bar].org"
+    (Just "20240601", "", Just ["foo", "bar"], Just "org")
+  test
+    "20240601 [foo bar].org"
+    (Just "20240601", "", Just ["foo", "bar"], Just "org")
+  test
+    "20240601-foo --foo bar.org"
+    (Just "20240601", "foo --foo bar", Nothing, Just "org")
+  test
+    "20240601-foo -- foo bar.org"
+    (Just "20240601", "foo", Just ["foo", "bar"], Just "org")
+  test
+    "20240601--foo bar.org"
+    (Just "20240601", "-foo bar", Nothing, Just "org")
+  test
+    "20240601-- foo bar.org"
+    (Just "20240601", "- foo bar", Nothing, Just "org")
+  test
+    "20240601 -- foo bar.org"
+    (Just "20240601", "", Just ["foo", "bar"], Just "org")
+  test
+    "foo"
+    (Nothing, "foo", Nothing, Nothing)
+  test
+    "foo-"
+    (Nothing, "foo-", Nothing, Nothing)
+  test
+    "-foo-"
+    (Nothing, "-foo-", Nothing, Nothing)
+  test
+    "-foo"
+    (Nothing, "-foo", Nothing, Nothing)
+  test
+    "20240601-foo"
+    (Just "20240601", "foo", Nothing, Nothing)
+  test
+    "20240601foo"
+    (Just "20240601", "foo", Nothing, Nothing)
+  test
+    "20240601foo-"
+    (Just "20240601", "foo-", Nothing, Nothing)
+  test
+    "20240601-foo-"
+    (Just "20240601", "foo-", Nothing, Nothing)
+  test
+    "20240601-foo[foo bar]"
+    (Just "20240601", "foo", Just ["foo", "bar"], Nothing)
+  test
+    "20240601-foo [foo bar]"
+    (Just "20240601", "foo", Just ["foo", "bar"], Nothing)
+  test
+    "20240601-foo --foo bar"
+    (Just "20240601", "foo --foo bar", Nothing, Nothing)
+  test
+    "20240601-foo -- foo bar"
+    (Just "20240601", "foo", Just ["foo", "bar"], Nothing)
+  test
+    "foo."
+    (Nothing, "foo", Nothing, Just "")
+  test
+    "foo.."
+    (Nothing, "foo.", Nothing, Just "")
+  where
+    test ::
+      FilePath ->
+      ( Maybe FilePath,
+        FilePath,
+        Maybe [String],
+        Maybe FilePath
+      ) ->
+      IO ()
+    test path expect = do
+      let res = parseMaybe @Void fileNameRe path
+      unless (res == Just expect) $
+        error $
+          "Failed to parse " ++ show path ++ ", got: " ++ show res
+
+fileNameParts ::
+  Lens'
+    FilePath
+    ( Maybe FilePath,
+      FilePath,
+      Maybe [String],
+      Maybe FilePath
+    )
 fileNameParts f nm = do
-  case match fileNameRe nm of
-    [[_, _, stamp, slug, _, ext]] ->
-      ( \(stamp', slug', ext') ->
+  case runIdentity (runParserT @_ @Void fileNameRe "<path>" nm) of
+    Right res ->
+      ( \(stamp', slug', tags', ext') ->
           maybe "" (<> "-") stamp'
             <> slug'
+            <> maybe "" ((\t -> "[" <> t <> "]") . unwords) tags'
             <> maybe "" ("." <>) ext'
       )
-        <$> f
-          ( if Prelude.null stamp
-              then Nothing
-              else Just stamp,
-            slug,
-            if Prelude.null ext
-              then Nothing
-              else Just ext
-          )
-    res -> error $ "impossible, but got this: " ++ show res
+        <$> f res
+    Left err ->
+      error $
+        "impossible, failed to parse file name: "
+          ++ errorBundlePretty err
 
 dirName :: Lens' FilePath FilePath
 dirName f path = (</> takeFileName path) <$> f (takeDirectory path)

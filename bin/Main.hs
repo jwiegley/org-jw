@@ -11,7 +11,7 @@ import Data.Foldable (forM_)
 import Data.Map qualified as M
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
-import Options qualified
+import Options
 import Org.Data
 import Org.Lint
 import Org.Printer
@@ -22,16 +22,16 @@ import Prelude hiding (readFile)
 
 main :: IO ()
 main = do
-  opts <- Options.getOptions
+  opts <- getOptions
 
-  paths <- case opts ^. Options.paths of
-    Options.FileFromStdin ->
+  paths <- case opts ^. command . commandInput of
+    FileFromStdin ->
       pure ["<stdin>"]
-    Options.SingleFile path ->
-      pure [path]
-    Options.ListFromStdin ->
+    Paths paths ->
+      pure paths
+    ListFromStdin ->
       map T.unpack . T.lines <$> readStdin
-    Options.FilesFromFile path ->
+    FilesFromFile path ->
       map T.unpack <$> readLines path
 
   org <-
@@ -41,8 +41,8 @@ main = do
         exitWith (ExitFailure 1)
       Right x -> pure x
 
-  case opts ^. Options.command of
-    Options.Parse -> do
+  case opts ^. command of
+    Parse _ -> do
       putStrLn $
         "There are a total of "
           ++ show (length (org ^.. orgFiles . traverse . allEntries))
@@ -59,29 +59,29 @@ main = do
             ++ ": "
             ++ show (length (o ^.. entries []))
             ++ " entries"
-    Options.Tags -> do
+    TagsList _ -> do
       let counts = countEntries
             org
             $ \e m k -> foldr (flip k) m (e ^. entryTags)
       forM_ (M.toList counts) $ \(tag, cnt) ->
         putStrLn $ show cnt ++ " " ++ T.unpack (tag ^. tagText)
-    Options.Categories -> do
+    CategoriesList _ -> do
       let counts = countEntries org $ \e m k -> k m (e ^. entryCategory)
       forM_ (M.toList counts) $ \(cat, cnt) ->
         putStrLn $ show cnt ++ " " ++ T.unpack cat
-    Options.Print ->
+    Print _ ->
       forM_ (org ^. orgFiles) $ \o ->
         T.putStrLn $ _OrgFile Config {..} (o ^. filePath) # o
-    Options.Dump -> pPrint org
-    Options.Outline ->
+    Dump _ -> pPrint org
+    Outline _ ->
       mapM_
         (mapM_ T.putStrLn . concatMap summarizeEntry . _fileEntries)
         (_orgFiles org)
-    Options.Stats ->
+    Stats _ ->
       mapM_
         (mapM_ T.putStrLn . concatMap summarizeEntry . _fileEntries)
         (_orgFiles org)
-    Options.Lint level -> do
+    Lint level _ -> do
       putStrLn $
         "Linting "
           ++ show (length (org ^.. orgFiles . traverse . allEntries))
@@ -103,7 +103,7 @@ main = do
         xs -> do
           mapM_ (putStrLn . showLintOrg) xs
           exitWith (ExitFailure (length xs))
-    Options.Test -> do
+    Test _ -> do
       forM_ (org ^. pre (orgFiles . traverse)) $ \f -> do
         putStrLn "filePath:"
         pPrint $ f ^. filePath

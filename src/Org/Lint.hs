@@ -19,7 +19,8 @@ import Data.Hashable
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as M
-import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Maybe (isJust, isNothing)
+import Data.String (IsString)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Debug.Trace (traceM)
@@ -27,30 +28,16 @@ import GHC.Generics hiding (to)
 import Org.Data
 import Org.Printer
 import Org.Types
--- import System.Directory (getModificationTime)
--- import System.IO.Unsafe (unsafePerformIO)
-import Text.Megaparsec (parseMaybe)
+import Text.Megaparsec (MonadParsec, Tokens)
 import Text.Megaparsec.Char (string)
-import Text.Regex.TDFA
-import Text.Regex.TDFA.Text
 import Text.Show.Pretty
-
--- (=~) ::
---   ( TDFA.RegexMaker
---       TDFA.Regex
---       TDFA.CompOption
---       TDFA.ExecOption
---       a
---   ) =>
---   Text ->
---   a ->
---   Bool
--- (=~) = (TDFA.=~)
 
 data LintMessageKind = LintDebug | LintInfo | LintWarn | LintError
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
-parseLintMessageKind :: BasicParser LintMessageKind
+parseLintMessageKind ::
+  (MonadParsec e s m, IsString (Tokens s)) =>
+  m LintMessageKind
 parseLintMessageKind =
   (LintError <$ string "ERROR")
     <|> (LintWarn <$ string "WARN")
@@ -102,7 +89,7 @@ data LintMessage = LintMessage
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
-lintOrgData :: Config -> String -> OrgData -> [LintMessage]
+lintOrgData :: Config -> LintMessageKind -> OrgData -> [LintMessage]
 lintOrgData cfg level org = snd . runWriter $ do
   let ids = foldAllEntries org M.empty $ \e m ->
         maybe
@@ -123,12 +110,7 @@ lintOrgData cfg level org = snd . runWriter $ do
             (DuplicatedIdentifier k (e :| es))
         ]
 
-  let level' =
-        fromMaybe
-          LintInfo
-          (parseMaybe parseLintMessageKind (T.pack level))
-
-  mapM_ (lintOrgFile cfg level') (org ^. orgFiles)
+  mapM_ (lintOrgFile cfg level) (org ^. orgFiles)
 
 lintOrgFile :: Config -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
 lintOrgFile cfg level org = do
@@ -208,16 +190,6 @@ lintOrgFile cfg level org = do
               "file: " ++ ppShow org
           tell [LintMessage (org ^. filePath) 1 kind code]
       | otherwise = pure ()
-
-timestampRe :: Regex
-timestampRe =
-  case compile
-    defaultCompOpt
-    defaultExecOpt
-    "(SCHEDULED|DEADLINE|CLOSED):" of
-    Left err -> error err
-    Right x -> x
-{-# NOINLINE timestampRe #-}
 
 lintOrgEntry ::
   Config ->
@@ -299,8 +271,16 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
         $ report LintError MisplacedProperty
 
     ruleTimestampsNeverInBody =
-      when (any (matchTest timestampRe) (bodyText (has _Paragraph))) $
-        report LintError MisplacedTimestamp
+      when
+        ( any
+            ( \t ->
+                "SCHEDULED:" `T.isInfixOf` t
+                  || "DEADLINE:" `T.isInfixOf` t
+                  || "CLOSED:" `T.isInfixOf` t
+            )
+            (bodyText (has _Paragraph))
+        )
+        $ report LintError MisplacedTimestamp
 
     ruleLogEntriesNeverInBody =
       when

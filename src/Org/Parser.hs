@@ -24,16 +24,16 @@ import Text.Megaparsec.Char
 oneOfList :: (MonadParsec e s m) => [Tokens s] -> m (Tokens s)
 oneOfList = foldr (\x rest -> string x <|> rest) mzero
 
-singleSpace :: Parser Char
+singleSpace :: (MonadParsec e s m, Token s ~ Char) => m Char
 singleSpace = char ' '
 
-spaces_ :: Parser ()
+spaces_ :: (MonadParsec e s m, Token s ~ Char) => m ()
 spaces_ = skipSome singleSpace
 
 trailingSpace :: Parser ()
 trailingSpace = skipManyTill singleSpace (void newline)
 
-anyChar :: Parser Char
+anyChar :: (MonadParsec e s m, Token s ~ Char) => m Char
 anyChar = satisfy $ \c -> c /= '\n'
 
 newlineOrEof :: Parser ()

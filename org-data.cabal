@@ -46,7 +46,6 @@ library
     , pretty
     , pretty-show
     , profunctors
-    , regex-tdfa
     , row-types
     , semigroupoids
     , simple-amount >=0.2.0
@@ -87,7 +86,6 @@ executable org-data
     , pretty
     , pretty-show
     , profunctors
-    , regex-tdfa
     , row-types
     , semigroupoids
     , simple-amount >=0.2.0
@@ -131,7 +129,6 @@ test-suite org-data-tests
     , pretty
     , pretty-show
     , profunctors
-    , regex-tdfa
     , row-types
     , semigroupoids
     , simple-amount >=0.2.0

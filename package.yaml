@@ -29,7 +29,6 @@ dependencies:
   - pretty
   - pretty-show
   - profunctors
-  - regex-tdfa
   - row-types
   - semigroupoids
   - simple-amount >= 0.2.0

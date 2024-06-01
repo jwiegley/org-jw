@@ -1,20 +1,25 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Options where
 
 import Control.Lens hiding (argument)
 import Data.Data (Data)
 import Data.Typeable (Typeable)
+import Data.Void
 import GHC.Generics
 import Options.Applicative as OA
+import Org.Lint
+import Text.Megaparsec (parseMaybe)
 
 version :: String
 version = "0.0.1"
 
 copyright :: String
-copyright = "2020"
+copyright = "2024"
 
 tradeJournalSummary :: String
 tradeJournalSummary =
@@ -24,30 +29,42 @@ tradeJournalSummary =
     ++ copyright
     ++ " John Wiegley"
 
-data Command
-  = Parse
-  | Tags
-  | Categories
-  | Print
-  | Dump
-  | Outline
-  | Stats
-  | Lint String
-  | Test
-  deriving (Data, Show, Eq, Typeable, Generic)
-
-makeLenses ''Command
-
 data InputFiles
-  = FileFromStdin
-  | ListFromStdin
-  | SingleFile FilePath
-  | FilesFromFile FilePath
+  = FileFromStdin -- '-f -'
+  | ListFromStdin -- '-F -'
+  | Paths [FilePath] -- '<path>...'
+  | FilesFromFile FilePath -- '-F <path>'
   deriving (Data, Show, Eq, Typeable, Generic)
+
+makePrisms ''InputFiles
+
+data Command
+  = Parse InputFiles
+  | TagsList InputFiles
+  | CategoriesList InputFiles
+  | Print InputFiles
+  | Dump InputFiles
+  | Outline InputFiles
+  | Stats InputFiles
+  | Lint LintMessageKind InputFiles
+  | Test InputFiles
+  deriving (Data, Show, Eq, Typeable, Generic)
+
+makePrisms ''Command
+
+commandInput :: Lens' Command InputFiles
+commandInput f (Parse input) = Parse <$> f input
+commandInput f (TagsList input) = TagsList <$> f input
+commandInput f (CategoriesList input) = CategoriesList <$> f input
+commandInput f (Print input) = Print <$> f input
+commandInput f (Dump input) = Dump <$> f input
+commandInput f (Outline input) = Outline <$> f input
+commandInput f (Stats input) = Stats <$> f input
+commandInput f (Lint kind input) = Lint kind <$> f input
+commandInput f (Test input) = Test <$> f input
 
 data Options = Options
   { _verbose :: !Bool,
-    _paths :: !InputFiles,
     _command :: !Command
   }
   deriving (Data, Show, Eq, Typeable, Generic)
@@ -62,29 +79,6 @@ tradeJournalOpts =
           <> long "verbose"
           <> help "Report progress verbosely"
       )
-    <*> ( ( ( \x ->
-                if x == "-"
-                  then FileFromStdin
-                  else SingleFile x
-            )
-              <$> strOption
-                ( short 'f'
-                    <> long "file"
-                    <> help "Single file to process"
-                )
-          )
-            <|> ( ( \x ->
-                      if x == "-"
-                        then ListFromStdin
-                        else FilesFromFile x
-                  )
-                    <$> strOption
-                      ( short 'F'
-                          <> long "files"
-                          <> help "List of files to process"
-                      )
-                )
-        )
     <*> hsubparser
       ( parseCommand
           <> tagsCommand
@@ -97,6 +91,32 @@ tradeJournalOpts =
           <> testCommand
       )
   where
+    filesOptions =
+      ( ( \x ->
+            if x == "-"
+              then FileFromStdin
+              else Paths [x]
+        )
+          <$> strOption
+            ( short 'f'
+                <> long "file"
+                <> help "Single file to process"
+            )
+      )
+        <|> ( ( \x ->
+                  if x == "-"
+                    then ListFromStdin
+                    else FilesFromFile x
+              )
+                <$> strOption
+                  ( short 'F'
+                      <> long "files"
+                      <> help "List of files to process"
+                  )
+            )
+        <|> Paths
+        <$> some (argument str (metavar "FILES"))
+
     parseCommand :: Mod CommandFields Command
     parseCommand =
       OA.command
@@ -104,25 +124,25 @@ tradeJournalOpts =
         (info parseOptions (progDesc "Parse Org-mode file"))
       where
         parseOptions :: Parser Command
-        parseOptions = pure Parse
+        parseOptions = Parse <$> filesOptions
 
     tagsCommand :: Mod CommandFields Command
     tagsCommand =
       OA.command
-        "tags"
+        "tags-list"
         (info tagsOptions (progDesc "Org-mode file tags"))
       where
         tagsOptions :: Parser Command
-        tagsOptions = pure Tags
+        tagsOptions = TagsList <$> filesOptions
 
     categoriesCommand :: Mod CommandFields Command
     categoriesCommand =
       OA.command
-        "categories"
+        "categories-list"
         (info categoriesOptions (progDesc "Org-mode file categories"))
       where
         categoriesOptions :: Parser Command
-        categoriesOptions = pure Categories
+        categoriesOptions = CategoriesList <$> filesOptions
 
     printCommand :: Mod CommandFields Command
     printCommand =
@@ -131,7 +151,7 @@ tradeJournalOpts =
         (info printOptions (progDesc "Print Org-mode file"))
       where
         printOptions :: Parser Command
-        printOptions = pure Print
+        printOptions = Print <$> filesOptions
 
     dumpCommand :: Mod CommandFields Command
     dumpCommand =
@@ -140,7 +160,7 @@ tradeJournalOpts =
         (info dumpOptions (progDesc "Dump Org-mode file"))
       where
         dumpOptions :: Parser Command
-        dumpOptions = pure Dump
+        dumpOptions = Dump <$> filesOptions
 
     outlineCommand :: Mod CommandFields Command
     outlineCommand =
@@ -149,7 +169,7 @@ tradeJournalOpts =
         (info outlineOptions (progDesc "Outline Org-mode file"))
       where
         outlineOptions :: Parser Command
-        outlineOptions = pure Outline
+        outlineOptions = Outline <$> filesOptions
 
     statsCommand :: Mod CommandFields Command
     statsCommand =
@@ -158,7 +178,7 @@ tradeJournalOpts =
         (info statsOptions (progDesc "Stats Org-mode file"))
       where
         statsOptions :: Parser Command
-        statsOptions = pure Stats
+        statsOptions = Stats <$> filesOptions
 
     lintCommand :: Mod CommandFields Command
     lintCommand =
@@ -170,12 +190,13 @@ tradeJournalOpts =
         lintOptions =
           Lint
             <$> option
-              str
+              (maybeReader (parseMaybe @Void parseLintMessageKind))
               ( short 'l'
                   <> long "level"
-                  <> value "INFO"
+                  <> value LintInfo
                   <> help "Log level to report"
               )
+            <*> filesOptions
 
     testCommand :: Mod CommandFields Command
     testCommand =
@@ -184,7 +205,7 @@ tradeJournalOpts =
         (info testOptions (progDesc "Test Org-mode file"))
       where
         testOptions :: Parser Command
-        testOptions = pure Test
+        testOptions = Test <$> filesOptions
 
 optionsDefinition :: ParserInfo Options
 optionsDefinition =
