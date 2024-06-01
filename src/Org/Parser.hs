@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
@@ -95,11 +94,7 @@ parseHeader = do
     join . maybeToList <$> optional (try parseProperties)
   _headerFileProperties <- many parseFileProperty
   _headerTags <-
-    ( \case
-        Nothing -> []
-        Just (loc, tags) ->
-          tags & traverse . failing _SpecialTag _PlainTag . _1 .~ loc
-      )
+    maybe [] snd
       <$> parseFromProperty parseTags _headerFileProperties "filetags"
   _headerStamps <-
     (\x y z -> x ++ y ++ z)
@@ -228,13 +223,8 @@ parseTags = colon *> endBy1 parseTag colon
               || ch `elem` ['-', '_', '=', '/']
         )
     parseTag = do
-      loc <- getLoc
       nm <- pack <$> tag
-      Config {..} <- ask
-      pure $
-        if nm `elem` _specialTags
-          then SpecialTag loc nm
-          else PlainTag loc nm
+      pure $ PlainTag nm
 
 parseStamps :: Parser [Stamp]
 parseStamps = sepBy1 parseStamp (char ' ')

@@ -1,6 +1,7 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
@@ -97,7 +98,7 @@ specialProperties =
     -- The scheduling timestamp.
     ("SCHEDULED", Fold (scheduledTime . re _Time)),
     -- The tags defined directly in the headline.
-    ("TAGS", undefined),
+    ("TAGS", Fold entryTagString),
     -- The first keyword-less timestamp in the entry.
     ("TIMESTAMP", undefined),
     -- The first inactive timestamp in the entry.
@@ -119,13 +120,8 @@ specialProperties =
 keywordText :: Traversal' Keyword Text
 keywordText = failing _OpenKeyword _ClosedKeyword . _2
 
-tagLoc :: Lens' Tag Loc
-tagLoc f (SpecialTag loc txt) = (`SpecialTag` txt) <$> f loc
-tagLoc f (PlainTag loc txt) = (`PlainTag` txt) <$> f loc
-
 tagText :: Traversal' Tag Text
-tagText f (SpecialTag loc txt) = (loc `SpecialTag`) <$> f txt
-tagText f (PlainTag loc txt) = (loc `PlainTag`) <$> f txt
+tagText f (PlainTag txt) = PlainTag <$> f txt
 
 keyword :: Traversal' Entry Text
 keyword = entryKeyword . _Just . keywordText
@@ -135,6 +131,21 @@ entryId = property "ID"
 
 entryCategory :: Traversal' Entry Text
 entryCategory = property "CATEGORY"
+
+entryTagString :: Traversal' Entry Text
+entryTagString f e = do
+  tags' <-
+    f
+      ( T.intercalate
+          ":"
+          (":" : e ^.. entryTags . traverse . tagText ++ [":"])
+      )
+  pure $
+    e
+      & entryTags
+        .~ Prelude.map
+          PlainTag
+          (filter (not . T.null) (T.splitOn ":" tags'))
 
 leadSpace :: Traversal' Body Text
 leadSpace = blocks . _head . _Whitespace . _2
@@ -248,6 +259,8 @@ sluggify =
   useDashes
     . dropMultipleUnderscores
     . squashNonAlphanumerics
+    . changeCertainCharacters
+    . removeCertainCharacters
     . T.toLower
     . T.strip
   where
@@ -255,6 +268,17 @@ sluggify =
       T.intercalate "_" . filter (not . T.null) . T.splitOn "_"
     squashNonAlphanumerics =
       T.map (\c -> if isAlphaNum c then c else '_')
+    changeCertainCharacters =
+      T.map
+        ( \c ->
+            if
+              | c == 'á' -> 'a'
+              | c == 'í' -> 'i'
+              | c == 'ú' -> 'u'
+              | otherwise -> c
+        )
+    removeCertainCharacters =
+      T.filter (\c -> c `notElem` ['’', '’'])
     useDashes =
       T.map (\c -> if c == '_' then '-' else c)
 

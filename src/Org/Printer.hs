@@ -224,8 +224,7 @@ showEntry propertyColumn tagsColumn Entry {..} =
               T.concat $
                 ":"
                   : [ case tag of
-                        SpecialTag _ t -> t <> ":"
-                        PlainTag _ t -> t <> ":"
+                        PlainTag t -> t <> ":"
                       | tag <- _entryTags
                     ]
           | otherwise = ""
@@ -342,8 +341,7 @@ summarizeEntry Entry {..} =
                   ( T.concat $
                       ":"
                         : [ case tag of
-                              SpecialTag _ t -> t <> ":"
-                              PlainTag _ t -> t <> ":"
+                              PlainTag t -> t <> ":"
                             | tag <- _entryTags
                           ]
                   )

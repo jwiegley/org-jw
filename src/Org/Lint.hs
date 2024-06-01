@@ -171,7 +171,7 @@ lintOrgFile cfg level org = do
     ruleSlugMustMatchTitle =
       forM_ (org ^? fileSlug) $ \slug ->
         unless (org ^? fileActualSlug == org ^? fileSlug) $
-          report LintWarn (FileSlugMismatch slug)
+          report LintInfo (FileSlugMismatch slug)
 
     ruleCreationTimeMatchesCreated = do
       forM_
@@ -348,7 +348,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
 
     ruleNoDuplicateTags =
       forM_ (findDuplicates (e ^. entryTags)) $ \tag ->
-        report' (tag ^. tagLoc) LintError (DuplicateTag (tag ^. tagText))
+        report LintError (DuplicateTag (tag ^. tagText))
 
     ruleNoDuplicateProperties =
       forM_
@@ -562,7 +562,7 @@ showLintOrg (LintMessage fl ln kind code) =
       LintDebug -> "DEBUG"
     renderCode = case code of
       FileSlugMismatch slug ->
-        "Mismatch in file slug: mv "
+        "Mismatch in file slug:\ngit mv -k -- "
           ++ show fl
           ++ " "
           ++ show (fl & fileName . fileNameParts . _2 .~ T.unpack slug)

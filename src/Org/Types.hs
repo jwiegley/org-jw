@@ -11,7 +11,6 @@
 module Org.Types where
 
 import Control.Lens
--- import Control.Monad (when)
 import Control.Monad.Reader
 import Data.Data
 import Data.Function (on)
@@ -29,7 +28,6 @@ data Config = Config
     _closedKeywords :: [Text],
     _keywordTransitions :: [(Text, [Text])],
     _priorities :: [Text],
-    _specialTags :: [Text],
     _propertyColumn :: Int,
     _tagsColumn :: Int
   }
@@ -111,9 +109,7 @@ makeClassy ''Body
 emptyBody :: Body -> Bool
 emptyBody = (== mempty)
 
-data Tag
-  = SpecialTag Loc Text
-  | PlainTag Loc Text
+newtype Tag = PlainTag Text
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Tag

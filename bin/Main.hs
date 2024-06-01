@@ -163,7 +163,5 @@ main = do
       ]
     _priorities =
       ["A", "B", "C"]
-    _specialTags =
-      ["ARCHIVE", "FILE", "URL"]
     _propertyColumn = 11
     _tagsColumn = 97
