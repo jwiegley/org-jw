@@ -16,7 +16,6 @@ import Control.Monad.Reader
 import Data.Data
 import Data.Function (on)
 import Data.Hashable
-import Data.Map (Map)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -42,8 +41,29 @@ type BasicParser = ParsecT Void Text Identity
 
 type Parser = ParsecT Void Text (Reader Config)
 
+data Loc = Loc
+  { _file :: FilePath,
+    _line :: Int,
+    _column :: Int
+  }
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
+
+makeLenses ''Loc
+
+sourcePosToLoc :: SourcePos -> Loc
+sourcePosToLoc SourcePos {..} =
+  Loc
+    { _file = sourceName,
+      _line = unPos sourceLine,
+      _column = unPos sourceColumn
+    }
+
+getLoc :: (TraversableStream s, MonadParsec e s m) => m Loc
+getLoc = sourcePosToLoc <$> getSourcePos
+
 data Property = Property
-  { _inherited :: Bool,
+  { _propertyLoc :: Loc,
+    _inherited :: Bool,
     _name :: Text,
     _value :: Text
   }
@@ -51,14 +71,17 @@ data Property = Property
 
 makeLenses ''Property
 
+lookupProperty' :: Text -> Traversal' [Property] Property
+lookupProperty' n =
+  traverse . filtered (\x -> T.toLower (x ^. name) == T.toLower n)
+
 lookupProperty :: Text -> Traversal' [Property] Text
-lookupProperty n =
-  traverse . filtered (\x -> T.toLower (x ^. name) == T.toLower n) . value
+lookupProperty n = lookupProperty' n . value
 
 data Block
-  = Whitespace Text
-  | Paragraph [Text]
-  | Drawer [Text]
+  = Whitespace Loc Text
+  | Paragraph Loc [Text]
+  | Drawer Loc [Text]
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Block
@@ -71,12 +94,12 @@ newtype Body = Body
 instance Semigroup Body where
   Body [] <> ys = ys
   xs <> Body [] = xs
-  Body xs <> Body (Whitespace yw : ys)
-    | Whitespace xw : xs' <- reverse xs =
-        Body (reverse xs' ++ Whitespace (xw <> yw) : ys)
-  Body xs <> Body (Paragraph yw : ys)
-    | Paragraph xw : xs' <- reverse xs =
-        Body (reverse xs' ++ Paragraph (xw <> yw) : ys)
+  Body xs <> Body (Whitespace _yloc yw : ys)
+    | Whitespace xloc xw : xs' <- reverse xs =
+        Body (reverse xs' ++ Whitespace xloc (xw <> yw) : ys)
+  Body xs <> Body (Paragraph _yloc yw : ys)
+    | Paragraph xloc xw : xs' <- reverse xs =
+        Body (reverse xs' ++ Paragraph xloc (xw <> yw) : ys)
   Body xs <> Body ys = Body (xs ++ ys)
 
 instance Monoid Body where
@@ -89,8 +112,8 @@ emptyBody :: Body -> Bool
 emptyBody = (== mempty)
 
 data Tag
-  = SpecialTag Text
-  | PlainTag Text
+  = SpecialTag Loc Text
+  | PlainTag Loc Text
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Tag
@@ -242,21 +265,21 @@ _duration f tm@Time {..} = do
 -}
 
 data Stamp
-  = ClosedStamp Time
-  | ScheduledStamp Time
-  | DeadlineStamp Time
-  | ActiveStamp Time
-  | CreatedStamp Time
-  | EditedStamp Time
-  | DateStamp Time
+  = ClosedStamp Loc Time
+  | ScheduledStamp Loc Time
+  | DeadlineStamp Loc Time
+  | ActiveStamp Loc Time
+  | CreatedStamp Loc Time
+  | EditedStamp Loc Time
+  | DateStamp Loc Time
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Stamp
 
 isLeadingStamp :: Stamp -> Bool
-isLeadingStamp (ClosedStamp _) = True
-isLeadingStamp (ScheduledStamp _) = True
-isLeadingStamp (DeadlineStamp _) = True
+isLeadingStamp (ClosedStamp _ _) = True
+isLeadingStamp (ScheduledStamp _ _) = True
+isLeadingStamp (DeadlineStamp _ _) = True
 isLeadingStamp _ = False
 
 data Header = Header
@@ -271,44 +294,73 @@ data Header = Header
 makeClassy ''Header
 
 data Keyword
-  = OpenKeyword Text
-  | ClosedKeyword Text
+  = OpenKeyword Loc Text
+  | ClosedKeyword Loc Text
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Keyword
 
 data LogEntry
-  = LogClosing Time (Maybe Body)
-  | LogState Keyword (Maybe Keyword) Time (Maybe Body)
-  | LogNote Time (Maybe Body)
-  | LogRescheduled Time Time (Maybe Body)
-  | LogNotScheduled Time Time (Maybe Body)
-  | LogDeadline Time Time (Maybe Body)
-  | LogNoDeadline Time Time (Maybe Body)
-  | LogRefiling Time (Maybe Body)
-  | LogClock Time (Maybe Duration)
-  | LogBook [LogEntry]
+  = LogClosing Loc Time (Maybe Body)
+  | LogState Loc Keyword (Maybe Keyword) Time (Maybe Body)
+  | LogNote Loc Time (Maybe Body)
+  | LogRescheduled Loc Time Time (Maybe Body)
+  | LogNotScheduled Loc Time Time (Maybe Body)
+  | LogDeadline Loc Time Time (Maybe Body)
+  | LogNoDeadline Loc Time Time (Maybe Body)
+  | LogRefiling Loc Time (Maybe Body)
+  | LogClock Loc Time (Maybe Duration)
+  | LogBook Loc [LogEntry]
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''LogEntry
 
+_LogLoc :: Lens' LogEntry Loc
+_LogLoc f e = case e of
+  LogClosing loc t mbody ->
+    (\loc' -> LogClosing loc' t mbody) <$> f loc
+  LogState loc k mk t mbody ->
+    (\loc' -> LogState loc' k mk t mbody) <$> f loc
+  LogNote loc t mbody ->
+    (\loc' -> LogNote loc' t mbody) <$> f loc
+  LogRescheduled loc t1 t2 mbody ->
+    (\loc' -> LogRescheduled loc' t1 t2 mbody) <$> f loc
+  LogNotScheduled loc t1 t2 mbody ->
+    (\loc' -> LogNotScheduled loc' t1 t2 mbody) <$> f loc
+  LogDeadline loc t1 t2 mbody ->
+    (\loc' -> LogDeadline loc' t1 t2 mbody) <$> f loc
+  LogNoDeadline loc t1 t2 mbody ->
+    (\loc' -> LogNoDeadline loc' t1 t2 mbody) <$> f loc
+  LogRefiling loc t mbody ->
+    (\loc' -> LogRefiling loc' t mbody) <$> f loc
+  LogClock loc t mbody ->
+    (\loc' -> LogClock loc' t mbody) <$> f loc
+  LogBook loc es ->
+    (`LogBook` es) <$> f loc
+
 _LogBody :: Traversal' LogEntry Body
 _LogBody f e = case e of
-  LogClosing t mbody -> LogClosing t <$> traverse f mbody
-  LogState k mk t mbody -> LogState k mk t <$> traverse f mbody
-  LogNote t mbody -> LogNote t <$> traverse f mbody
-  LogRescheduled t1 t2 mbody -> LogRescheduled t1 t2 <$> traverse f mbody
-  LogNotScheduled t1 t2 mbody -> LogNotScheduled t1 t2 <$> traverse f mbody
-  LogDeadline t1 t2 mbody -> LogDeadline t1 t2 <$> traverse f mbody
-  LogNoDeadline t1 t2 mbody -> LogNoDeadline t1 t2 <$> traverse f mbody
-  LogRefiling t mbody -> LogRefiling t <$> traverse f mbody
-  LogClock _ _ -> pure e
-  LogBook _ -> pure e
+  LogClosing loc t mbody ->
+    LogClosing loc t <$> traverse f mbody
+  LogState loc k mk t mbody ->
+    LogState loc k mk t <$> traverse f mbody
+  LogNote loc t mbody ->
+    LogNote loc t <$> traverse f mbody
+  LogRescheduled loc t1 t2 mbody ->
+    LogRescheduled loc t1 t2 <$> traverse f mbody
+  LogNotScheduled loc t1 t2 mbody ->
+    LogNotScheduled loc t1 t2 <$> traverse f mbody
+  LogDeadline loc t1 t2 mbody ->
+    LogDeadline loc t1 t2 <$> traverse f mbody
+  LogNoDeadline loc t1 t2 mbody ->
+    LogNoDeadline loc t1 t2 <$> traverse f mbody
+  LogRefiling loc t mbody ->
+    LogRefiling loc t <$> traverse f mbody
+  LogClock {} -> pure e
+  LogBook {} -> pure e
 
 data Entry = Entry
-  { _entryFile :: FilePath,
-    _entryLine :: Int,
-    _entryColumn :: Int,
+  { _entryLoc :: Loc,
     _entryDepth :: Int,
     _entryKeyword :: Maybe Keyword,
     _entryPriority :: Maybe Text,
@@ -337,7 +389,7 @@ data OrgFile = OrgFile
 makeClassy ''OrgFile
 
 newtype OrgData = OrgData
-  { _orgFiles :: Map FilePath OrgFile
+  { _orgFiles :: [OrgFile]
   }
   deriving (Show, Eq, Generic, Data, Typeable, Plated)
 

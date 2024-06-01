@@ -13,9 +13,9 @@ import Control.Lens
 import Control.Monad (foldM, unless, when)
 import Control.Monad.Writer
 import Data.Data
+import Data.Data.Lens
 import Data.Foldable (forM_)
 import Data.Hashable
-import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as M
@@ -64,37 +64,39 @@ data TransitionKind
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 data LintMessageCode
-  = TodoMissingProperty Text Entry
-  | FileMissingProperty Text OrgFile
-  | MisplacedProperty Entry
-  | MisplacedTimestamp Entry
-  | MisplacedLogEntry Entry
-  | MisplacedDrawerEnd Entry
-  | DuplicateFileProperty Text OrgFile
-  | DuplicateProperty Text Entry
-  | DuplicateTag Text Entry
+  = TodoMissingProperty Text
+  | FileMissingProperty Text
+  | MisplacedProperty
+  | MisplacedTimestamp
+  | MisplacedLogEntry
+  | MisplacedDrawerEnd
+  | DuplicateFileProperty Text
+  | DuplicateProperty Text
+  | DuplicateTag Text
   | DuplicatedIdentifier Text (NonEmpty Entry)
-  | InvalidStateChangeTransitionNotAllowed Text (Maybe Text) [Text] Entry
-  | InvalidStateChangeInvalidTransition TransitionKind Text Text Entry
-  | InvalidStateChangeWrongTimeOrder Time Time Entry
-  | InvalidStateChangeIdempotent Text Entry
-  | MultipleLogbooks Entry
-  | MixedLogbooks Entry
-  | WhitespaceAtStartOfLogEntry Entry
-  | TitleWithExcessiveWhitespace Entry
-  | TimestampsOnNonTodo Entry
-  | UnevenWhitespace Entry
-  | UnevenFilePreambleWhitespace OrgFile
-  | UnnecessaryWhitespace Entry
-  | EmptyBodyWhitespace Entry
-  | MultipleBlankLines Entry
-  | CategoryTooLong Text Entry
-  | FileCreatedTimeMismatch Time Time OrgFile
-  | TitlePropertyNotLast OrgFile
+  | InvalidStateChangeTransitionNotAllowed Text (Maybe Text) [Text]
+  | InvalidStateChangeInvalidTransition TransitionKind Text Text
+  | InvalidStateChangeWrongTimeOrder Time Time
+  | InvalidStateChangeIdempotent Text
+  | MultipleLogbooks
+  | MixedLogbooks
+  | WhitespaceAtStartOfLogEntry
+  | TitleWithExcessiveWhitespace
+  | TimestampsOnNonTodo
+  | UnevenWhitespace
+  | UnevenFilePreambleWhitespace
+  | UnnecessaryWhitespace
+  | EmptyBodyWhitespace
+  | MultipleBlankLines
+  | CategoryTooLong Text
+  | FileCreatedTimeMismatch Time Time
+  | TitlePropertyNotLast
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 data LintMessage = LintMessage
-  { lintMsgKind :: LintMessageKind,
+  { lintMsgFile :: FilePath,
+    lintMsgLine :: Int,
+    lintMsgKind :: LintMessageKind,
     lintMsgCode :: LintMessageCode
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
@@ -110,9 +112,15 @@ lintOrgData cfg level org = snd . runWriter $ do
           )
           (e ^? entryId)
 
-  forM_ (M.assocs ids) $ \(k, es) ->
-    when (NE.length es > 1) $
-      tell [LintMessage LintError (DuplicatedIdentifier k es)]
+  forM_ (M.assocs ids) $ \(k, e :| es) ->
+    unless (null es) $
+      tell
+        [ LintMessage
+            (e ^. entryLoc . file)
+            (e ^. entryLoc . line)
+            LintError
+            (DuplicatedIdentifier k (e :| es))
+        ]
 
   let level' =
         fromMaybe
@@ -132,7 +140,7 @@ lintOrgFile cfg level org = do
   ruleTitleProperyAlwaysLast
   forM_ (findDuplicates (props ^.. traverse . name . to T.toLower)) $ \nm ->
     unless (nm `elem` ["link", "tags"]) $
-      report LintError (DuplicateFileProperty nm org)
+      report LintError (DuplicateFileProperty nm)
   -- checkFor LintInfo (UnevenFilePreambleWhitespace org) $
   --   org ^? fileHeader . headerPreamble . leadSpace
   --     /= org ^? fileHeader . headerPreamble . endSpace
@@ -148,14 +156,14 @@ lintOrgFile cfg level org = do
 
     ruleFileShouldHaveIdAndCreated = do
       when (isNothing (org ^? fileProperty "ID")) $
-        report LintInfo (FileMissingProperty "ID" org)
+        report LintInfo (FileMissingProperty "ID")
       when (isNothing (org ^? fileProperty "CREATED")) $
         report
           ( if isNothing (org ^? fileCreatedTime)
               then LintWarn
               else LintInfo
           )
-          (FileMissingProperty "CREATED" org)
+          (FileMissingProperty "CREATED")
 
     ruleCreationTimeMatchesCreated = do
       forM_
@@ -165,7 +173,7 @@ lintOrgFile cfg level org = do
         )
         $ \(created, created') ->
           unless (created == created') $
-            report LintWarn (FileCreatedTimeMismatch created created' org)
+            report LintWarn (FileCreatedTimeMismatch created created')
 
     ruleTitleProperyAlwaysLast =
       forM_
@@ -178,7 +186,7 @@ lintOrgFile cfg level org = do
         )
         $ \lastProp ->
           unless (lastProp == "title") $
-            report LintWarn (TitlePropertyNotLast org)
+            report LintWarn TitlePropertyNotLast
 
     inArchive = isArchive org
     props =
@@ -190,7 +198,7 @@ lintOrgFile cfg level org = do
           when (level == LintDebug) $
             traceM $
               "file: " ++ ppShow org
-          tell [LintMessage kind code]
+          tell [LintMessage (org ^. filePath) 1 kind code]
       | otherwise = pure ()
 
 timestampRe :: Regex
@@ -251,7 +259,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
   -- RULE: Whitespace before and after body and log entries should match
   unless ignoreWhitespace ruleNoUnevenWhitespace
   -- RULE: Body and log entry text should never contain only whitespace
-  ruleNoEmptyBodyWhitespace
+  -- ruleNoEmptyBodyWhitespace
   -- RULE: No unnecessary leading or trailing whitespace
   ruleNoUnnecessaryWhitespace
   -- RULE: There should never be multiple blank lines
@@ -265,14 +273,14 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
       let mkw = e ^? entryKeyword . _Just . keywordText
       when (isJust mkw || isJust (e ^? entryCategory)) $ do
         when (isNothing (e ^? entryId)) $
-          report LintWarn (TodoMissingProperty "ID" e)
+          report LintWarn (TodoMissingProperty "ID")
         when (isNothing (e ^? createdTime)) $
-          report LintWarn (TodoMissingProperty "CREATED" e)
+          report LintWarn (TodoMissingProperty "CREATED")
 
     ruleCategoryNameCannotBeTooLong =
       forM_ (e ^? entryCategory) $ \cat ->
         when (T.length cat > 10) $
-          report LintWarn (CategoryTooLong cat e)
+          report LintWarn (CategoryTooLong cat)
 
     rulePropertiesDrawerNeverInBody =
       when
@@ -280,10 +288,10 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             ((":properties:" `T.isInfixOf`) . T.toLower)
             (bodyText (has _Paragraph))
         )
-        $ report LintError (MisplacedProperty e)
+        $ report LintError MisplacedProperty
     ruleTimestampsNeverInBody =
       when (any (matchTest timestampRe) (bodyText (has _Paragraph))) $
-        report LintError (MisplacedTimestamp e)
+        report LintError MisplacedTimestamp
     ruleLogEntriesNeverInBody =
       when
         ( any
@@ -300,7 +308,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             )
             (bodyText (has _Paragraph))
         )
-        $ report LintError (MisplacedLogEntry e)
+        $ report LintError MisplacedLogEntry
     ruleMisplacedDrawerEnd =
       when
         ( any
@@ -312,30 +320,21 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             )
             (bodyText (has _Paragraph))
         )
-        $ report LintError (MisplacedDrawerEnd e)
+        $ report LintError MisplacedDrawerEnd
     ruleNoWhitespaceAtStartOfLogEntry =
-      forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
+      forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
         when
-          ( case b of
-              Body (Whitespace _ : _) -> True
+          ( case b ^? _LogBody of
+              Just (Body (Whitespace _ _ : _)) -> True
               _ -> False
           )
-          $ report LintWarn (WhitespaceAtStartOfLogEntry e)
+          $ report' (b ^. _LogLoc) LintWarn WhitespaceAtStartOfLogEntry
     ruleNoExtraSpacesInTitle =
       when ("  " `T.isInfixOf` (e ^. entryTitle)) $
-        report LintWarn (TitleWithExcessiveWhitespace e)
+        report LintWarn TitleWithExcessiveWhitespace
     ruleNoDuplicateTags =
-      forM_
-        ( findDuplicates
-            ( e
-                ^.. entryTags
-                  . traverse
-                  . tagText
-                  . to T.toLower
-            )
-        )
-        $ \nm ->
-          report LintError (DuplicateTag nm e)
+      forM_ (findDuplicates (e ^. entryTags)) $ \tag ->
+        report' (tag ^. tagLoc) LintError (DuplicateTag (tag ^. tagText))
     ruleNoDuplicateProperties =
       forM_
         ( findDuplicates
@@ -347,7 +346,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             )
         )
         $ \nm ->
-          report LintError (DuplicateProperty nm e)
+          report LintError (DuplicateProperty nm)
     ruleNoInvalidStateChanges = do
       (mfinalKeyword, _mfinalTime) <-
         ( \f ->
@@ -364,7 +363,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
           $ \(mprev, mprevTm) (kw', mkw', tm) -> do
             forM_ mprevTm $ \prevTm ->
               when (tm < prevTm) $
-                report LintWarn (InvalidStateChangeWrongTimeOrder tm prevTm e)
+                report LintWarn (InvalidStateChangeWrongTimeOrder tm prevTm)
             let kwt = kw' ^. keywordText
                 mkwf = fmap (^. keywordText) mkw'
                 mallowed = transitionsOf cfg <$> mkwf
@@ -379,7 +378,6 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
                             FirstTransition
                             kwf
                             "TODO"
-                            e
                         )
                   Just prev ->
                     unless
@@ -392,15 +390,14 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
                             IntermediateTransition
                             kwf
                             prev
-                            e
                         )
             if mkwf == Just kwt
-              then report LintWarn (InvalidStateChangeIdempotent kwt e)
+              then report LintWarn (InvalidStateChangeIdempotent kwt)
               else forM_ mallowed $ \allowed ->
                 unless (kwt `elem` allowed) $
                   report
                     LintWarn
-                    (InvalidStateChangeTransitionNotAllowed kwt mkwf allowed e)
+                    (InvalidStateChangeTransitionNotAllowed kwt mkwf allowed)
             pure (Just kwt, Just tm)
       unless (inArchive || isJust (e ^? property "LAST_REPEAT")) $ do
         let mkw = e ^? entryKeyword . _Just . keywordText
@@ -412,14 +409,13 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
                   LastTransition
                   kw
                   finalKeyword
-                  e
               )
     ruleNoTimestampsOnNonTodos =
       when
         ( any isLeadingStamp (e ^. entryStamps)
             && maybe True (not . isTodo) (e ^? keyword)
         )
-        $ report LintWarn (TimestampsOnNonTodo e)
+        $ report LintWarn TimestampsOnNonTodo
     ruleNoUnevenWhitespace = do
       -- jww (2024-05-28): If the first log entry ends with a blank line, then
       -- all of them should, except when there is no body text in which case
@@ -433,44 +429,47 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
       --     $ report LintInfo (UnevenWhitespace e)
       when
         ( not lastEntry && case e ^. entryText of
-            Body [Whitespace _] -> False
+            Body [Whitespace _ _] -> False
             b -> b ^? leadSpace /= b ^? endSpace
         )
-        $ report LintInfo (UnevenWhitespace e)
-    ruleNoEmptyBodyWhitespace = do
-      forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
-        when
-          ( case b of
-              Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
-              _ -> False
-          )
-          $ report LintInfo (EmptyBodyWhitespace e)
-      when
-        ( case e ^. entryText of
-            Body [Whitespace _] -> maybe False isTodo (e ^? keyword)
-            _ -> False
-        )
-        $ report LintInfo (EmptyBodyWhitespace e)
+        $ report LintInfo UnevenWhitespace
+    -- ruleNoEmptyBodyWhitespace = do
+    --   forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
+    --     when
+    --       ( case b ^? _LogBody of
+    --           Just (Body [Whitespace _ _]) ->
+    --             maybe False isTodo (e ^? keyword)
+    --           _ -> False
+    --       )
+    --       $ report' (b ^. _LogLoc) LintInfo EmptyBodyWhitespace
+    --   when
+    --     ( case e ^. entryText of
+    --         Body [Whitespace _ _] ->
+    --           maybe False isTodo (e ^? keyword)
+    --         _ -> False
+    --     )
+    --     $ report LintInfo EmptyBodyWhitespace
     ruleNoUnnecessaryWhitespace = do
-      forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
+      forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
         when
-          ( case b of
-              Body (Paragraph ((T.unpack -> (' ' : _)) : _) : _) -> True
+          ( case b ^? _LogBody of
+              Just (Body (Paragraph _ ((T.unpack -> (' ' : _)) : _) : _)) ->
+                True
               _ -> False
           )
-          $ report LintInfo (UnnecessaryWhitespace e)
+          $ report' (b ^. _LogLoc) LintInfo UnnecessaryWhitespace
       when
         ( case e ^. entryText of
-            Body (Paragraph ((T.unpack -> (' ' : _)) : _) : _) -> True
+            Body (Paragraph _ ((T.unpack -> (' ' : _)) : _) : _) -> True
             _ -> False
         )
-        $ report LintInfo (UnnecessaryWhitespace e)
+        $ report LintInfo UnnecessaryWhitespace
     ruleNoMultipleBlankLines =
       when (any ((> 1) . length . T.lines) (bodyText (has _Whitespace))) $
-        report LintWarn (MultipleBlankLines e)
+        report LintWarn MultipleBlankLines
     ruleAtMostOneLogBook =
       when (length (e ^.. entryLogEntries . traverse . cosmos . _LogBook) > 1) $
-        report LintError (MultipleLogbooks e)
+        report LintError MultipleLogbooks
     ruleConsistentLogBook =
       when
         ( not
@@ -479,6 +478,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
                     ^.. entryLogEntries
                       . traverse
                       . _LogBook
+                      . _2
                       . traverse
                       . filtered (hasn't _LogClock)
                 )
@@ -492,7 +492,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
                   )
               )
         )
-        $ report LintError (MixedLogbooks e)
+        $ report LintError MixedLogbooks
 
     bodyText f =
       e
@@ -504,81 +504,74 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
         ++ e
           ^. entryLogEntries
             . traverse
-            . failing (_LogState . _4) (_LogNote . _2)
+            . failing (_LogState . _5) (_LogNote . _3)
             . _Just
             . blocks
             . traverse
             . filtered f
             . to (showBlock "")
 
-    report kind code
+    report' loc kind code
       | kind >= level = do
           when (level == LintDebug) $
             traceM $
               "entry: " ++ ppShow e
-          tell [LintMessage kind code]
+          tell
+            [ LintMessage
+                (loc ^. file)
+                (loc ^. line)
+                kind
+                code
+            ]
       | otherwise = pure ()
 
+    report = report' (e ^. entryLoc)
+
 showLintOrg :: LintMessage -> String
-showLintOrg (LintMessage kind code) =
-  renderCode
+showLintOrg (LintMessage fl ln kind code) =
+  prefix ++ " " ++ renderCode
   where
-    entryLoc e =
-      e ^. entryFile
-        ++ ":"
-        ++ show (e ^. entryLine)
-        ++ ":"
-        ++ show (e ^. entryColumn)
+    loc = fl ++ ":" ++ show ln
+    prefix = loc ++ ": " ++ renderKind
     renderKind = case kind of
       LintError -> "ERROR"
       LintWarn -> "WARN"
       LintInfo -> "INFO"
       LintDebug -> "DEBUG"
-    prefix e =
-      entryLoc e
-        ++ ": "
-        ++ renderKind
-        ++ " "
     renderCode = case code of
-      TodoMissingProperty nm e ->
-        prefix e ++ "Open todo missing property " ++ show nm
-      FileMissingProperty nm f ->
-        f ^. filePath ++ ":1: " ++ "File missing property " ++ show nm
-      MisplacedProperty e ->
-        prefix e ++ "Misplaced :PROPERTIES: block"
-      MisplacedTimestamp e ->
-        prefix e ++ "Misplaced timestamp (SCHEDULED, DEADLINE or CLOSED)"
-      MisplacedLogEntry e ->
-        prefix e ++ "Misplaced state change, note or LOGBOOK"
-      MisplacedDrawerEnd e ->
-        prefix e ++ "Misplaced end of drawer"
-      WhitespaceAtStartOfLogEntry e ->
-        prefix e ++ "Log entry begins with whitespace"
-      TitleWithExcessiveWhitespace e ->
-        prefix e ++ "Title with excessive whitespace"
-      DuplicateFileProperty nm f ->
-        f ^. filePath ++ ":1: " ++ "Duplicated file property " ++ show nm
-      DuplicateProperty nm e ->
-        prefix e ++ "Duplicated property " ++ show nm
-      DuplicateTag nm e ->
-        prefix e ++ "Duplicated tag " ++ show nm
-      DuplicatedIdentifier ident (e :| es) ->
-        prefix e
-          ++ "Duplicated identifier "
-          ++ T.unpack ident
-          ++ "\n"
-          ++ intercalate "\n" (map (("  " ++) . entryLoc) es)
-      InvalidStateChangeTransitionNotAllowed kwt mkwf allowed e ->
-        prefix e
-          ++ "Transition not allowed "
+      TodoMissingProperty nm ->
+        "Open todo missing property " ++ show nm
+      FileMissingProperty nm ->
+        "File missing property " ++ show nm
+      MisplacedProperty ->
+        "Misplaced :PROPERTIES: block"
+      MisplacedTimestamp ->
+        "Misplaced timestamp (SCHEDULED, DEADLINE or CLOSED)"
+      MisplacedLogEntry ->
+        "Misplaced state change, note or LOGBOOK"
+      MisplacedDrawerEnd ->
+        "Misplaced end of drawer"
+      WhitespaceAtStartOfLogEntry ->
+        "Log entry begins with whitespace"
+      TitleWithExcessiveWhitespace ->
+        "Title with excessive whitespace"
+      DuplicateFileProperty nm ->
+        "Duplicated file property " ++ show nm
+      DuplicateProperty nm ->
+        "Duplicated property " ++ show nm
+      DuplicateTag nm ->
+        "Duplicated tag " ++ show nm
+      DuplicatedIdentifier ident (_e :| _es) ->
+        "Duplicated identifier " ++ T.unpack ident
+      InvalidStateChangeTransitionNotAllowed kwt mkwf allowed ->
+        "Transition not allowed "
           ++ show mkwf
           ++ " -> "
           ++ show kwt
           ++ ", allowed: "
           ++ show allowed
-      InvalidStateChangeInvalidTransition trans kwt kwf e ->
-        prefix e
-          ++ "Invalid "
+      InvalidStateChangeInvalidTransition trans kwt kwf ->
+        "Invalid "
           ++ case trans of
             FirstTransition -> "initial"
             IntermediateTransition -> "intermediate"
@@ -587,41 +580,35 @@ showLintOrg (LintMessage kind code) =
           ++ show kwf
           ++ " -> "
           ++ show kwt
-      InvalidStateChangeWrongTimeOrder a b e ->
-        prefix e
-          ++ "Wrong time order in state transition "
+      InvalidStateChangeWrongTimeOrder a b ->
+        "Wrong time order in state transition "
           ++ show (showTime b)
           ++ " > "
           ++ show (showTime a)
-      InvalidStateChangeIdempotent kw e ->
-        prefix e ++ "Idempotent state transition " ++ show kw
-      MultipleLogbooks e ->
-        prefix e ++ "Multiple logbooks found"
-      MixedLogbooks e ->
-        prefix e ++ "Log entries inside and outside of logbooks found"
-      TimestampsOnNonTodo e ->
-        prefix e ++ "Timestamps found on non-todo entry"
-      UnevenWhitespace e ->
-        prefix e ++ "Whitespace surrounding body is not even"
-      UnevenFilePreambleWhitespace f ->
-        f ^. filePath
-          ++ ":1: "
-          ++ "Whitespace surrounding file preamble is not even"
-      EmptyBodyWhitespace e ->
-        prefix e ++ "Whitespace only body"
-      UnnecessaryWhitespace e ->
-        prefix e ++ "Unnecessary whitespace"
-      MultipleBlankLines e ->
-        prefix e ++ "Multiple blank lines"
-      CategoryTooLong cat e ->
-        prefix e ++ "Category name is too long: " ++ show cat
-      FileCreatedTimeMismatch t1 t2 f ->
-        f ^. filePath
-          ++ ":1: "
-          ++ "Created time does not match file: "
+      InvalidStateChangeIdempotent kw ->
+        "Idempotent state transition " ++ show kw
+      MultipleLogbooks ->
+        "Multiple logbooks found"
+      MixedLogbooks ->
+        "Log entries inside and outside of logbooks found"
+      TimestampsOnNonTodo ->
+        "Timestamps found on non-todo entry"
+      UnevenWhitespace ->
+        "Whitespace surrounding body is not even"
+      UnevenFilePreambleWhitespace ->
+        "Whitespace surrounding file preamble is not even"
+      EmptyBodyWhitespace ->
+        "Whitespace only body"
+      UnnecessaryWhitespace ->
+        "Unnecessary whitespace"
+      MultipleBlankLines ->
+        "Multiple blank lines"
+      CategoryTooLong cat ->
+        "Category name is too long: " ++ show cat
+      FileCreatedTimeMismatch t1 t2 ->
+        "Created time does not match file: "
           ++ show (showTime t1)
           ++ " != "
           ++ show (showTime t2)
-      TitlePropertyNotLast f ->
-        f ^. filePath
-          ++ ":1: Title is not the last file property"
+      TitlePropertyNotLast ->
+        "Title is not the last file property"

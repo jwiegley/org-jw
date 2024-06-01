@@ -6,7 +6,6 @@
 module Main where
 
 import Control.Lens
-import Control.Monad (void)
 import Control.Monad.Except
 import Data.Foldable (forM_)
 import Data.Map qualified as M
@@ -51,12 +50,15 @@ main = do
       pPrint $ countEntries org $ \e m k ->
         k m $ case e ^. entryKeyword of
           Nothing -> "<plain>"
-          Just (OpenKeyword kw) -> kw
-          Just (ClosedKeyword kw) -> kw
+          Just (OpenKeyword _ kw) -> kw
+          Just (ClosedKeyword _ kw) -> kw
       pPrint $ countEntries org $ \e m k -> foldr (flip k) m (e ^. entryTags)
-      void $ flip M.traverseWithKey (org ^. orgFiles) $ \path o -> do
+      forM_ (org ^. orgFiles) $ \o ->
         putStrLn $
-          path ++ ": " ++ show (length (o ^.. entries [])) ++ " entries"
+          o ^. filePath
+            ++ ": "
+            ++ show (length (o ^.. entries []))
+            ++ " entries"
     Options.Tags -> do
       let counts = countEntries
             org
@@ -68,8 +70,8 @@ main = do
       forM_ (M.toList counts) $ \(cat, cnt) ->
         putStrLn $ show cnt ++ " " ++ T.unpack cat
     Options.Print ->
-      void $ flip M.traverseWithKey (org ^. orgFiles) $ \path o ->
-        T.putStrLn $ _OrgFile Config {..} path # o
+      forM_ (org ^. orgFiles) $ \o ->
+        T.putStrLn $ _OrgFile Config {..} (o ^. filePath) # o
     Options.Dump -> pPrint org
     Options.Outline ->
       mapM_

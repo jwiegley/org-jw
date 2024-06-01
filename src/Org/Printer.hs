@@ -13,9 +13,9 @@ import Data.Time
 import Org.Types hiding (propertyColumn, tagsColumn)
 
 showStamp :: Stamp -> Text
-showStamp (ClosedStamp tm) = "CLOSED: " <> showTime tm
-showStamp (ScheduledStamp tm) = "SCHEDULED: " <> showTime tm
-showStamp (DeadlineStamp tm) = "DEADLINE: " <> showTime tm
+showStamp (ClosedStamp _ tm) = "CLOSED: " <> showTime tm
+showStamp (ScheduledStamp _ tm) = "SCHEDULED: " <> showTime tm
+showStamp (DeadlineStamp _ tm) = "DEADLINE: " <> showTime tm
 showStamp x = error $ "showStamp not support for " ++ show x
 
 showTime :: Time -> Text
@@ -110,13 +110,13 @@ showDuration Duration {..} =
     pad _ xs = xs
 
 showLogEntry :: LogEntry -> [Text]
-showLogEntry (LogClosing tm text) =
+showLogEntry (LogClosing _ tm text) =
   ( "- CLOSING NOTE"
       <> showTime tm
       <> if null text then "" else " \\\\"
   )
     : maybe [] (showBody "  ") text
-showLogEntry (LogState fr t tm text) =
+showLogEntry (LogState _ fr t tm text) =
   T.concat
     ( [ "- State \"",
         showKeyword fr
@@ -130,13 +130,13 @@ showLogEntry (LogState fr t tm text) =
            ]
     )
     : maybe [] (showBody "  ") text
-showLogEntry (LogNote tm text) =
+showLogEntry (LogNote _ tm text) =
   ( "- Note taken on "
       <> showTime tm
       <> if null text then "" else " \\\\"
   )
     : maybe [] (showBody "  ") text
-showLogEntry (LogRescheduled tm1 tm2 text) =
+showLogEntry (LogRescheduled _ tm1 tm2 text) =
   ( "- Rescheduled from \""
       <> showTime tm1
       <> "\" on "
@@ -144,7 +144,7 @@ showLogEntry (LogRescheduled tm1 tm2 text) =
       <> if null text then "" else " \\\\"
   )
     : maybe [] (showBody "  ") text
-showLogEntry (LogNotScheduled tm1 tm2 text) =
+showLogEntry (LogNotScheduled _ tm1 tm2 text) =
   ( "- Not scheduled, was \""
       <> showTime tm1
       <> "\" on "
@@ -152,7 +152,7 @@ showLogEntry (LogNotScheduled tm1 tm2 text) =
       <> if null text then "" else " \\\\"
   )
     : maybe [] (showBody "  ") text
-showLogEntry (LogDeadline tm1 tm2 text) =
+showLogEntry (LogDeadline _ tm1 tm2 text) =
   ( "- New deadline from \""
       <> showTime tm1
       <> "\" on "
@@ -160,7 +160,7 @@ showLogEntry (LogDeadline tm1 tm2 text) =
       <> if null text then "" else " \\\\"
   )
     : maybe [] (showBody "  ") text
-showLogEntry (LogNoDeadline tm1 tm2 text) =
+showLogEntry (LogNoDeadline _ tm1 tm2 text) =
   ( "- Removed deadline, was \""
       <> showTime tm1
       <> "\" on "
@@ -168,22 +168,22 @@ showLogEntry (LogNoDeadline tm1 tm2 text) =
       <> if null text then "" else " \\\\"
   )
     : maybe [] (showBody "  ") text
-showLogEntry (LogRefiling tm text) =
+showLogEntry (LogRefiling _ tm text) =
   ( "- Refiled on "
       <> showTime tm
       <> if null text then "" else " \\\\"
   )
     : maybe [] (showBody "  ") text
-showLogEntry (LogClock tm Nothing) =
+showLogEntry (LogClock _ tm Nothing) =
   ["CLOCK: " <> showTimeSingle tm]
-showLogEntry (LogClock tm (Just dur)) =
+showLogEntry (LogClock _ tm (Just dur)) =
   ["CLOCK: " <> showTime tm <> " => " <> showDuration dur]
-showLogEntry (LogBook tms) =
+showLogEntry (LogBook _ tms) =
   ":LOGBOOK:" : concatMap showLogEntry tms ++ [":END:"]
 
 showKeyword :: Keyword -> Text
-showKeyword (OpenKeyword n) = n
-showKeyword (ClosedKeyword n) = n
+showKeyword (OpenKeyword _ n) = n
+showKeyword (ClosedKeyword _ n) = n
 
 showEntry :: Int -> Int -> Entry -> [Text]
 showEntry propertyColumn tagsColumn Entry {..} =
@@ -224,8 +224,8 @@ showEntry propertyColumn tagsColumn Entry {..} =
               T.concat $
                 ":"
                   : [ case tag of
-                        SpecialTag t -> t <> ":"
-                        PlainTag t -> t <> ":"
+                        SpecialTag _ t -> t <> ":"
+                        PlainTag _ t -> t <> ":"
                       | tag <- _entryTags
                     ]
           | otherwise = ""
@@ -238,7 +238,7 @@ showEntry propertyColumn tagsColumn Entry {..} =
       | null _entryProperties = []
       | otherwise = showProperties propertyColumn _entryProperties
     logEntries = concatMap showLogEntry _entryLogEntries
-    activeStamp = case _entryStamps ^? traverse . _ActiveStamp of
+    activeStamp = case _entryStamps ^? traverse . _ActiveStamp . _2 of
       Nothing -> []
       Just stamp -> [showTime stamp]
     entryLines = showBody "" _entryText
@@ -247,9 +247,9 @@ showBody :: Text -> Body -> [Text]
 showBody leader (Body b) = concatMap (showBlock leader) b
 
 showBlock :: Text -> Block -> [Text]
-showBlock _leader (Whitespace txt) = [txt]
-showBlock leader (Paragraph xs) = map (leader <>) xs
-showBlock leader (Drawer xs) = map (leader <>) xs
+showBlock _leader (Whitespace _ txt) = [txt]
+showBlock leader (Paragraph _ xs) = map (leader <>) xs
+showBlock leader (Drawer _ xs) = map (leader <>) xs
 
 bodyLength :: Body -> Int
 bodyLength =
@@ -304,48 +304,66 @@ summarizeEntry Entry {..} =
     ++ showProperties
       0
       ( _entryProperties
-          ++ [Property False "FILE" (T.pack _entryFile)]
-          ++ [Property False "LINE" (T.pack (show _entryLine))]
-          ++ [Property False "COLUMN" (T.pack (show _entryColumn))]
-          ++ [ Property False "KEYWORD" (T.pack (show x))
+          ++ [Property _entryLoc False "FILE" (T.pack (_file _entryLoc))]
+          ++ [Property _entryLoc False "LINE" (T.pack (show (_line _entryLoc)))]
+          ++ [ Property _entryLoc False "KEYWORD" (T.pack (show x))
                | x <- maybeToList _entryKeyword
              ]
-          ++ [Property False "PRIORITY" x | x <- maybeToList _entryPriority]
-          ++ [Property False "CONTEXT" x | x <- maybeToList _entryContext]
-          ++ [Property False "LOCATOR" x | x <- maybeToList _entryLocator]
+          ++ [ Property _entryLoc False "PRIORITY" x
+               | x <- maybeToList _entryPriority
+             ]
+          ++ [ Property _entryLoc False "CONTEXT" x
+               | x <- maybeToList _entryContext
+             ]
+          ++ [ Property _entryLoc False "LOCATOR" x
+               | x <- maybeToList _entryLocator
+             ]
           ++ [ Property
+                 _entryLoc
                  False
                  "LOG_ENTRIES"
                  (T.pack (show (length _entryLogEntries)))
                | not (null _entryLogEntries)
              ]
-          ++ [ Property False "BODY_LEN" (T.pack (show (bodyLength _entryText)))
+          ++ [ Property
+                 _entryLoc
+                 False
+                 "BODY_LEN"
+                 (T.pack (show (bodyLength _entryText)))
                | not (emptyBody _entryText)
              ]
           ++ case _entryTags of
             [] -> []
             _ ->
               [ Property
+                  _entryLoc
                   False
                   "TAGS"
                   ( T.concat $
                       ":"
                         : [ case tag of
-                              SpecialTag t -> t <> ":"
-                              PlainTag t -> t <> ":"
+                              SpecialTag _ t -> t <> ":"
+                              PlainTag _ t -> t <> ":"
                             | tag <- _entryTags
                           ]
                   )
               ]
           ++ map
             ( \case
-                ClosedStamp tm -> Property False "CLOSED" (showTime tm)
-                ScheduledStamp tm -> Property False "SCHEDULED" (showTime tm)
-                DeadlineStamp tm -> Property False "DEADLINE" (showTime tm)
-                CreatedStamp tm -> Property False "CREATED" (showTime tm)
-                EditedStamp tm -> Property False "EDITED" (showTime tm)
-                DateStamp tm -> Property False "DATE" (showTime tm)
-                ActiveStamp tm -> Property False "ACTIVE" (showTime tm)
+                ClosedStamp _ tm ->
+                  Property _entryLoc False "CLOSED" (showTime tm)
+                ScheduledStamp _ tm ->
+                  Property _entryLoc False "SCHEDULED" (showTime tm)
+                DeadlineStamp _ tm ->
+                  Property _entryLoc False "DEADLINE" (showTime tm)
+                CreatedStamp _ tm ->
+                  Property _entryLoc False "CREATED" (showTime tm)
+                EditedStamp _ tm ->
+                  Property _entryLoc False "EDITED" (showTime tm)
+                DateStamp _ tm ->
+                  Property _entryLoc False "DATE" (showTime tm)
+                ActiveStamp _ tm ->
+                  Property _entryLoc False "ACTIVE" (showTime tm)
             )
             _entryStamps
       )

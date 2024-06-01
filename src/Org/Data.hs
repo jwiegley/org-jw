@@ -75,7 +75,7 @@ specialProperties =
     -- t if task is currently blocked by children or siblings.
     ("BLOCKED", undefined),
     -- The category of an entry. jww (2024-05-13): NYI
-    ("CATEGORY", Fold (entryFile . packed)),
+    ("CATEGORY", Fold (entryLoc . file . packed)),
     -- The sum of CLOCK intervals in the subtree. org-clock-sum must be run
     -- first to compute the values in the current buffer.
     ("CLOCKSUM", undefined),
@@ -88,7 +88,7 @@ specialProperties =
     -- The deadline timestamp.
     ("DEADLINE", Fold (deadlineTime . re _Time)),
     -- The filename the entry is located in.
-    ("FILE", Fold (entryFile . packed)),
+    ("FILE", Fold (entryLoc . file . packed)),
     -- The headline of the entry.
     ("ITEM", Fold entryHeadline),
     -- The priority of the entry, a string with a single letter.
@@ -106,8 +106,7 @@ specialProperties =
     ------------------------------------------------------------------------
     -- The following are not defined by Org-mode as special
     ------------------------------------------------------------------------
-    ("LINE", Fold (entryLine . re _Show . packed)),
-    ("COLUMN", Fold (entryColumn . re _Show . packed)),
+    ("LINE", Fold (entryLoc . line . re _Show . packed)),
     ("DEPTH", Fold (entryDepth . re _Show . packed)),
     ("KEYWORD", Fold (entryKeyword . _Just . keywordText)),
     ("TITLE", Fold entryTitle),
@@ -117,10 +116,15 @@ specialProperties =
   ]
 
 keywordText :: Traversal' Keyword Text
-keywordText = failing _OpenKeyword _ClosedKeyword
+keywordText = failing _OpenKeyword _ClosedKeyword . _2
+
+tagLoc :: Lens' Tag Loc
+tagLoc f (SpecialTag loc txt) = (`SpecialTag` txt) <$> f loc
+tagLoc f (PlainTag loc txt) = (`PlainTag` txt) <$> f loc
 
 tagText :: Traversal' Tag Text
-tagText = failing _SpecialTag _PlainTag
+tagText f (SpecialTag loc txt) = (loc `SpecialTag`) <$> f txt
+tagText f (PlainTag loc txt) = (loc `PlainTag`) <$> f txt
 
 keyword :: Traversal' Entry Text
 keyword = entryKeyword . _Just . keywordText
@@ -132,10 +136,10 @@ entryCategory :: Traversal' Entry Text
 entryCategory = property "CATEGORY"
 
 leadSpace :: Traversal' Body Text
-leadSpace = blocks . _head . _Whitespace
+leadSpace = blocks . _head . _Whitespace . _2
 
 endSpace :: Traversal' Body Text
-endSpace = blocks . _last . _Whitespace
+endSpace = blocks . _last . _Whitespace . _2
 
 readOrgFile_ :: Config -> FilePath -> Text -> Either String OrgFile
 readOrgFile_ cfg path content =
@@ -172,9 +176,7 @@ readOrgData ::
   Config ->
   [FilePath] ->
   ExceptT String m OrgData
-readOrgData cfg paths = OrgData . M.fromList <$> mapM go paths
-  where
-    go path = (path,) <$> readOrgFile cfg path
+readOrgData cfg paths = OrgData <$> mapM (readOrgFile cfg) paths
 
 _Time :: Prism' Text Time
 _Time = prism' showTime (parseMaybe @Void parseTime)
@@ -268,13 +270,13 @@ fileTimestamp = filePath . fileName . stringTime
 fileCreatedTime :: Traversal' OrgFile Time
 fileCreatedTime =
   failing
-    (fileHeader . headerStamps . traverse . _CreatedStamp)
+    (fileHeader . headerStamps . traverse . _CreatedStamp . _2)
     fileTimestamp
 
 fileEditedTime :: Traversal' OrgFile Time
 fileEditedTime =
   failing
-    (fileHeader . headerStamps . traverse . _EditedStamp)
+    (fileHeader . headerStamps . traverse . _EditedStamp . _2)
     -- If the file does not have an EDITED stamp, we regard the filesystem
     -- modification time as the defined stamp.
     ( \f org ->
@@ -292,25 +294,25 @@ fileEditedTime =
     )
 
 fileDateTime :: Traversal' OrgFile Time
-fileDateTime = fileHeader . headerStamps . traverse . _DateStamp
+fileDateTime = fileHeader . headerStamps . traverse . _DateStamp . _2
 
 createdTime :: Traversal' Entry Time
-createdTime = entryStamps . traverse . _CreatedStamp
+createdTime = entryStamps . traverse . _CreatedStamp . _2
 
 editedTime :: Traversal' Entry Time
-editedTime = entryStamps . traverse . _EditedStamp
+editedTime = entryStamps . traverse . _EditedStamp . _2
 
 dateTime :: Traversal' Entry Time
-dateTime = entryStamps . traverse . _DateStamp
+dateTime = entryStamps . traverse . _DateStamp . _2
 
 scheduledTime :: Traversal' Entry Time
-scheduledTime = entryStamps . traverse . _ScheduledStamp
+scheduledTime = entryStamps . traverse . _ScheduledStamp . _2
 
 deadlineTime :: Traversal' Entry Time
-deadlineTime = entryStamps . traverse . _DeadlineStamp
+deadlineTime = entryStamps . traverse . _DeadlineStamp . _2
 
 closedTime :: Traversal' Entry Time
-closedTime = entryStamps . traverse . _ClosedStamp
+closedTime = entryStamps . traverse . _ClosedStamp . _2
 
 foldEntries :: [Property] -> (Entry -> b -> b) -> b -> [Entry] -> b
 foldEntries _ _ z [] = z
@@ -324,11 +326,11 @@ hardCodedInheritedProperties = ["COLUMNS", "CATEGORY", "ARCHIVE", "LOGGING"]
 
 inheritProperties :: [Property] -> Entry -> Entry
 inheritProperties [] e = e
-inheritProperties (Property _ n v : ps) e =
+inheritProperties (Property loc _ n v : ps) e =
   inheritProperties ps $
     if has (property n) e
       then e
-      else e & entryProperties <>~ [Property True n v]
+      else e & entryProperties <>~ [Property loc True n v]
 
 traverseEntries ::
   (Applicative f) =>
@@ -429,8 +431,8 @@ isArchive org = "archive" `isInfixOf` (org ^. filePath)
 entryStateHistory :: Traversal' Entry (Keyword, Maybe Keyword, Time)
 entryStateHistory f e =
   e
-    & entryLogEntries . traverse . _LogState %%~ \(t, mf, tm, mbody) ->
-      (\(t', mf', tm') -> (t', mf', tm', mbody)) <$> f (t, mf, tm)
+    & entryLogEntries . traverse . _LogState %%~ \(loc, t, mf, tm, mbody) ->
+      (\(t', mf', tm') -> (loc, t', mf', tm', mbody)) <$> f (t, mf, tm)
 
 transitionsOf :: Config -> Text -> [Text]
 transitionsOf cfg kw =

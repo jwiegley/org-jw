@@ -1,9 +1,9 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ViewPatterns #-}
 
 module Org.Parser where
 
@@ -13,7 +13,7 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Reader
 import Data.Char (isAlphaNum, isPrint, isSpace)
-import Data.Maybe (fromMaybe, isJust, maybeToList)
+import Data.Maybe (isJust, maybeToList)
 import Data.String
 import Data.Text (Text, pack)
 import Data.Text qualified as T
@@ -43,8 +43,8 @@ newlineOrEof = void newline <|> eof
 lineOrEof :: Parser Text
 lineOrEof = pack <$> manyTill anyChar newlineOrEof
 
-line :: Parser Text
-line = pack <$> manyTill anyChar newline
+wholeLine :: Parser Text
+wholeLine = pack <$> manyTill anyChar newline
 
 restOfLine :: Parser Text
 restOfLine = pack <$> someTill anyChar newline
@@ -62,6 +62,7 @@ parseProperties = do
   string ":PROPERTIES:" *> trailingSpace
   -- RULE: Property blocks are never empty
   props <- some $ try $ do
+    _propertyLoc <- getLoc
     _name <- between (char ':') (char ':') identifier
     guard $ _name /= "END"
     skipMany singleSpace
@@ -71,22 +72,21 @@ parseProperties = do
   string ":END:" *> trailingSpace
   return props
 
-parseFromProperty :: Parser a -> [Property] -> Text -> Parser (Maybe a)
+parseFromProperty :: Parser a -> [Property] -> Text -> Parser (Maybe (Loc, a))
 parseFromProperty parser props nm =
-  case props ^? lookupProperty nm of
+  case props ^? lookupProperty' nm of
     Nothing -> pure Nothing
-    Just filetags -> do
-      SourcePos path _ _ <- getSourcePos
+    Just (Property loc _ _ filetags) -> do
       cfg <- ask
       case left
         errorBundlePretty
-        (runReader (runParserT (parser <* eof) path filetags) cfg) of
+        (runReader (runParserT (parser <* eof) (loc ^. file) filetags) cfg) of
         Left err -> fail err
-        Right x -> pure $ Just x
+        Right x -> pure $ Just (loc, x)
 
-stampFromProperty :: (Time -> a) -> Text -> [Property] -> Parser [a]
+stampFromProperty :: (Loc -> Time -> a) -> Text -> [Property] -> Parser [a]
 stampFromProperty f nm props =
-  maybe [] ((: []) . f)
+  maybe [] ((: []) . uncurry f)
     <$> parseFromProperty parseTimeSingle props nm
 
 parseHeader :: Parser Header
@@ -95,7 +95,11 @@ parseHeader = do
     join . maybeToList <$> optional (try parseProperties)
   _headerFileProperties <- many parseFileProperty
   _headerTags <-
-    fromMaybe []
+    ( \case
+        Nothing -> []
+        Just (loc, tags) ->
+          tags & traverse . failing _SpecialTag _PlainTag . _1 .~ loc
+      )
       <$> parseFromProperty parseTags _headerFileProperties "filetags"
   _headerStamps <-
     (\x y z -> x ++ y ++ z)
@@ -110,6 +114,7 @@ parseHeaderStars = length <$> someTill (char '*') (some singleSpace)
 
 parseFileProperty :: Parser Property
 parseFileProperty = do
+  _propertyLoc <- getLoc
   _name <- between (string "#+") (char ':') identifier
   skipMany singleSpace
   _value <- restOfLine
@@ -118,14 +123,14 @@ parseFileProperty = do
 
 parseKeyword :: Parser Keyword
 parseKeyword = do
+  loc <- getLoc
   Config {..} <- ask
-  OpenKeyword <$> oneOfList _openKeywords
-    <|> ClosedKeyword <$> oneOfList _closedKeywords
+  OpenKeyword loc <$> oneOfList _openKeywords
+    <|> ClosedKeyword loc <$> oneOfList _closedKeywords
 
 parseEntry :: Int -> Parser Entry
 parseEntry parseAtDepth = do
-  SourcePos _entryFile (unPos -> _entryLine) (unPos -> _entryColumn) <-
-    getSourcePos
+  _entryLoc <- getLoc
   _entryDepth <- try $ do
     depth <- parseHeaderStars
     guard $ depth == parseAtDepth
@@ -143,8 +148,9 @@ parseEntry parseAtDepth = do
     join . maybeToList
       <$> try (optional parseProperties)
   activeStamp <- optional $ try $ do
+    loc <- getLoc
     _ <- lookAhead (char '<')
-    ActiveStamp <$> parseTime <* trailingSpace
+    ActiveStamp loc <$> parseTime <* trailingSpace
   _entryStamps <-
     (\x y -> stamps ++ maybeToList activeStamp ++ x ++ y)
       <$> stampFromProperty CreatedStamp "created" _entryProperties
@@ -158,11 +164,11 @@ parseEntry parseAtDepth = do
               l : ls -> case l ^? _LogBody of
                 Nothing -> dflt
                 Just bdy -> case reverse (_blocks bdy) of
-                  (le@(Whitespace _) : les) ->
+                  (le@(Whitespace _ _) : les) ->
                     case ( _blocks text,
                            reverse (_blocks text)
                          ) of
-                      (b : bs, Whitespace _ : _) ->
+                      (b : bs, Whitespace _ _ : _) ->
                         ( reverse ((l & _LogBody .~ Body (reverse les)) : ls),
                           Body (le : b : bs)
                         )
@@ -222,27 +228,29 @@ parseTags = colon *> endBy1 parseTag colon
               || ch `elem` ['-', '_', '=', '/']
         )
     parseTag = do
+      loc <- getLoc
       nm <- pack <$> tag
       Config {..} <- ask
       pure $
         if nm `elem` _specialTags
-          then SpecialTag nm
-          else PlainTag nm
+          then SpecialTag loc nm
+          else PlainTag loc nm
 
 parseStamps :: Parser [Stamp]
 parseStamps = sepBy1 parseStamp (char ' ')
 
 parseStamp :: Parser Stamp
-parseStamp =
+parseStamp = do
+  loc <- getLoc
   string "CLOSED"
     *> string ": "
-    *> (ClosedStamp <$> parseTimeSingle)
+    *> (ClosedStamp loc <$> parseTimeSingle)
     <|> string "SCHEDULED"
       *> string ": "
-      *> (ScheduledStamp <$> parseTimeSingle)
+      *> (ScheduledStamp loc <$> parseTimeSingle)
     <|> string "DEADLINE"
       *> string ": "
-      *> (DeadlineStamp <$> parseTimeSingle)
+      *> (DeadlineStamp loc <$> parseTimeSingle)
 
 blendTimes :: Time -> Time -> Time
 blendTimes start Time {..} =
@@ -336,21 +344,22 @@ parseTimeSingle = do
   pure Time {..}
 
 parseLogHeading :: Parser (Maybe Body -> LogEntry)
-parseLogHeading =
-  parseClosing
-    <|> parseState
-    <|> parseNote
-    <|> parseRescheduled
-    <|> parseNotScheduled
-    <|> parseDeadline
-    <|> parseNoDeadline
-    <|> parseRefiling
+parseLogHeading = do
+  loc <- getLoc
+  parseClosing loc
+    <|> parseState loc
+    <|> parseNote loc
+    <|> parseRescheduled loc
+    <|> parseNotScheduled loc
+    <|> parseDeadline loc
+    <|> parseNoDeadline loc
+    <|> parseRefiling loc
   where
-    parseClosing = do
+    parseClosing loc = do
       _ <- try (string "- CLOSING NOTE" <* spaces_)
-      LogClosing <$> parseTimeSingle
+      LogClosing loc <$> parseTimeSingle
 
-    parseState = do
+    parseState loc = do
       fromKeyword <-
         try (string "- State \"")
           *> parseKeyword
@@ -365,45 +374,46 @@ parseLogHeading =
               *> parseKeyword
               <* char '"'
               <* spaces_
-      LogState fromKeyword toKeyword <$> parseTimeSingle
+      LogState loc fromKeyword toKeyword <$> parseTimeSingle
 
-    parseNote = do
+    parseNote loc = do
       _ <- try (string "- Note taken on" <* spaces_) --
-      LogNote <$> parseTimeSingle
+      LogNote loc <$> parseTimeSingle
 
-    parseRescheduled = do
+    parseRescheduled loc = do
       _ <- try (string "- Rescheduled from \"")
       origTime <- parseTimeSingle
       _ <- string "\" on" <* spaces_
-      LogRescheduled origTime <$> parseTimeSingle
+      LogRescheduled loc origTime <$> parseTimeSingle
 
-    parseNotScheduled = do
+    parseNotScheduled loc = do
       _ <- try (string "- Not scheduled, was \"")
       origTime <- parseTimeSingle
       _ <- string "\" on" <* spaces_
-      LogNotScheduled origTime <$> parseTimeSingle
+      LogNotScheduled loc origTime <$> parseTimeSingle
 
-    parseDeadline = do
+    parseDeadline loc = do
       _ <- try (string "- New deadline from \"")
       origTime <- parseTimeSingle
       _ <- string "\" on" <* spaces_
-      LogDeadline origTime <$> parseTimeSingle
+      LogDeadline loc origTime <$> parseTimeSingle
 
-    parseNoDeadline = do
+    parseNoDeadline loc = do
       _ <- try (string "- Removed deadline, was \"")
       origTime <- parseTimeSingle
       _ <- string "\" on" <* spaces_
-      LogNoDeadline origTime <$> parseTimeSingle
+      LogNoDeadline loc origTime <$> parseTimeSingle
 
-    parseRefiling = do
+    parseRefiling loc = do
       _ <- try (string "- Refiled on" <* spaces_)
-      LogRefiling <$> parseTimeSingle
+      LogRefiling loc <$> parseTimeSingle
 
 parseLogEntry :: Parser LogEntry
-parseLogEntry =
+parseLogEntry = do
+  loc <- getLoc
   (parseLogHeading >>= (<$> trailingNote))
-    <|> parseClockEntry
-    <|> parseLogBook
+    <|> parseClockEntry loc
+    <|> parseLogBook loc
   where
     trailingNote =
       try spaces_
@@ -412,7 +422,7 @@ parseLogEntry =
         *> (Just <$> parseNoteBody)
         <|> (Nothing <$ try trailingSpace)
 
-    parseClockEntry = do
+    parseClockEntry loc = do
       _ <- try (string "CLOCK:" <* spaces_)
       start <- parseTimeSingle
       mend <- optional $ try $ do
@@ -427,15 +437,15 @@ parseLogEntry =
         pure (tm, Duration {..})
       pure $
         maybe
-          (LogClock start Nothing)
-          (uncurry LogClock . second Just)
+          (LogClock loc start Nothing)
+          (uncurry (LogClock loc) . second Just)
           mend
 
-    parseLogBook = do
+    parseLogBook loc = do
       _ <- try (string ":LOGBOOK:") <* trailingSpace
       book <- many parseLogEntry
       string ":END:" *> trailingSpace
-      return $ LogBook book
+      return $ LogBook loc book
 
 parseEntryBody :: Parser Body
 parseEntryBody = parseBody (pure ()) parseHeaderStars
@@ -455,9 +465,10 @@ parseBody leader terminus =
 
 parseBlock :: Parser a -> Parser Block
 parseBlock leader = do
-  (Whitespace . T.pack <$> try (manyTill singleSpace newline))
-    <|> Drawer <$> try (leader *> parseDrawer leader)
-    <|> Paragraph . (: []) <$> (leader *> lineOrEof)
+  loc <- getLoc
+  (Whitespace loc . T.pack <$> try (manyTill singleSpace newline))
+    <|> Drawer loc <$> try (leader *> parseDrawer leader)
+    <|> Paragraph loc . (: []) <$> (leader *> lineOrEof)
 
 parseDrawer :: Parser a -> Parser [Text]
 parseDrawer leader = parseDrawerBlock <|> parseBeginBlock
@@ -496,7 +507,7 @@ parseDrawer leader = parseDrawerBlock <|> parseBeginBlock
       txt <- try $ do
         prefix <- T.pack <$> many singleSpace
         begin <- string' "#+begin"
-        suffix <- line
+        suffix <- wholeLine
         pure $ prefix <> begin <> suffix
       content <-
         manyTill
@@ -516,6 +527,6 @@ parseDrawer leader = parseDrawerBlock <|> parseBeginBlock
         _ <- leader
         prefix <- T.pack <$> many singleSpace
         ending <- string' "#+end"
-        suffix <- line
+        suffix <- wholeLine
         pure $ prefix <> ending <> suffix
       pure $ txt : content ++ [endLine]
