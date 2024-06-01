@@ -34,9 +34,17 @@
             };
         })
       ];
-    in {
+    in flake // {
       packages.default = flake.packages."org-data:exe:org-data";
+
       devShell = flake.devShell // {
+        packages = p: [
+        ];
+
+        buildInputs = with pkgs.haskellPackages; [
+          cabal-install
+        ];
+
         withHoogle = true;
       };
     });
