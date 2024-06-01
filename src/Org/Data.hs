@@ -19,6 +19,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.ByteString qualified as B
 import Data.Char (isAlphaNum, isDigit)
+import Data.Data.Lens (biplate)
 import Data.List (isInfixOf)
 import Data.Map hiding (filter)
 import Data.Map qualified as M
@@ -641,11 +642,8 @@ isTodo kw =
 isArchive :: OrgFile -> Bool
 isArchive org = "archive" `isInfixOf` (org ^. filePath)
 
-entryStateHistory :: Traversal' Entry (Keyword, Maybe Keyword, Time)
-entryStateHistory f e =
-  e
-    & entryLogEntries . traverse . _LogState %%~ \(loc, t, mf, tm, mbody) ->
-      (\(t', mf', tm') -> (loc, t', mf', tm', mbody)) <$> f (t, mf, tm)
+entryStateHistory :: Traversal' Entry LogEntry
+entryStateHistory = entryLogEntries . traverse . biplate
 
 transitionsOf :: Config -> Text -> [Text]
 transitionsOf cfg kw =

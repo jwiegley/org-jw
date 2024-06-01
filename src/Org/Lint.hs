@@ -356,12 +356,15 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
               -- recent.
               (reverse (e ^.. entryStateHistory))
           )
-          $ \(mprev, mprevTm) (kw', mkw', tm) -> do
-            forM_ mprevTm $ \prevTm ->
+          $ \(mprev, mprevTm) l -> do
+            let mkwt' = l ^? _LogState . _2
+                mkwf' = l ^? _LogState . _3 . _Just
+                mtm = l ^? _LogTime
+            forM_ ((,) <$> mtm <*> mprevTm) $ \(tm, prevTm) ->
               when (tm < prevTm) $
                 report LintWarn (InvalidStateChangeWrongTimeOrder tm prevTm)
-            let kwt = kw' ^. keywordText
-                mkwf = fmap (^. keywordText) mkw'
+            let mkwt = fmap (^. keywordText) mkwt'
+                mkwf = fmap (^. keywordText) mkwf'
                 mallowed = transitionsOf cfg <$> mkwf
             unless inArchive $
               forM_ mkwf $ \kwf ->
@@ -387,14 +390,15 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
                             kwf
                             prev
                         )
-            if mkwf == Just kwt
-              then report LintWarn (InvalidStateChangeIdempotent kwt)
-              else forM_ mallowed $ \allowed ->
-                unless (kwt `elem` allowed) $
-                  report
-                    LintWarn
-                    (InvalidStateChangeTransitionNotAllowed kwt mkwf allowed)
-            pure (Just kwt, Just tm)
+            forM_ mkwt $ \kwt -> do
+              if mkwf == Just kwt
+                then report LintWarn (InvalidStateChangeIdempotent kwt)
+                else forM_ mallowed $ \allowed ->
+                  unless (kwt `elem` allowed) $
+                    report
+                      LintWarn
+                      (InvalidStateChangeTransitionNotAllowed kwt mkwf allowed)
+            pure (mkwt <|> mprev, mtm <|> mprevTm)
       unless (inArchive || isJust (e ^? property "LAST_REPEAT")) $ do
         let mkw = e ^? entryKeyword . _Just . keywordText
         forM_ ((,) <$> mkw <*> mfinalKeyword) $ \(kw, finalKeyword) ->
@@ -588,7 +592,7 @@ showLintOrg (LintMessage fl ln kind code) =
           ++ " -> "
           ++ show kwt
       InvalidStateChangeWrongTimeOrder a b ->
-        "Wrong time order in state transition "
+        "Wrong time order in log "
           ++ show (showTime b)
           ++ " > "
           ++ show (showTime a)

@@ -334,6 +334,28 @@ _LogLoc f e = case e of
   LogBook loc es ->
     (`LogBook` es) <$> f loc
 
+_LogTime :: Traversal' LogEntry Time
+_LogTime f e = case e of
+  LogClosing loc t mbody ->
+    (\t' -> LogClosing loc t' mbody) <$> f t
+  LogState loc k mk t mbody ->
+    (\t' -> LogState loc k mk t' mbody) <$> f t
+  LogNote loc t mbody ->
+    (\t' -> LogNote loc t' mbody) <$> f t
+  LogRescheduled loc t1 t2 mbody ->
+    (\t2' -> LogRescheduled loc t1 t2' mbody) <$> f t2
+  LogNotScheduled loc t1 t2 mbody ->
+    (\t2' -> LogNotScheduled loc t1 t2' mbody) <$> f t2
+  LogDeadline loc t1 t2 mbody ->
+    (\t2' -> LogDeadline loc t1 t2' mbody) <$> f t2
+  LogNoDeadline loc t1 t2 mbody ->
+    (\t2' -> LogNoDeadline loc t1 t2' mbody) <$> f t2
+  LogRefiling loc t mbody ->
+    (\t' -> LogRefiling loc t' mbody) <$> f t
+  LogClock loc t mbody ->
+    (\t' -> LogClock loc t' mbody) <$> f t
+  LogBook {} -> pure e
+
 _LogBody :: Traversal' LogEntry Body
 _LogBody f e = case e of
   LogClosing loc t mbody ->
