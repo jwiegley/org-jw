@@ -54,7 +54,7 @@ identifier = pack <$> many (alphaNumChar <|> char '_')
 parseOrgFile :: Parser OrgFile
 parseOrgFile = do
   SourcePos path _ _ <- getSourcePos
-  OrgFile path <$> parseHeader <*> many (parseEntry 1)
+  OrgFile path <$> parseHeader <*> many (parseEntry 1) <* eof
 
 parseProperties :: Parser [Property]
 parseProperties = do

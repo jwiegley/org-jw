@@ -71,7 +71,7 @@ data LintMessageCode
   | WhitespaceAtStartOfLogEntry
   | TitleWithExcessiveWhitespace
   | TimestampsOnNonTodo
-  | UnevenWhitespace
+  | UnevenWhitespace Text
   | UnevenFilePreambleWhitespace
   | UnnecessaryWhitespace
   | EmptyBodyWhitespace
@@ -418,22 +418,36 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
         $ report LintWarn TimestampsOnNonTodo
 
     ruleNoUnevenWhitespace = do
-      -- jww (2024-05-28): If the first log entry ends with a blank line, then
-      -- all of them should, except when there is no body text in which case
-      -- the last log entry should not end with whitespace.
-      -- forM_ (e ^.. entryLogEntries . traverse . cosmos . _LogBody) $ \b ->
-      --   when
-      --     ( case b of
-      --         Body [Whitespace _] -> False
-      --         _ -> b ^? leadSpace /= b ^? endSpace
-      --     )
-      --     $ report LintInfo (UnevenWhitespace e)
+      case e
+        ^? entryLogEntries
+          . traverse
+          . cosmos
+          . _LogBody
+          . blocks
+          . _last of
+        Just (Whitespace _ txt) -> do
+          let ents = e ^.. entryLogEntries . traverse . biplate
+          forM_ ents $ \l ->
+            forM_ (l ^? _LogBody) $ \logBody -> do
+              let good =
+                    if last ents == l
+                      then case e ^. entryText of
+                        Body [] -> True
+                        Body (Whitespace _ _ : _) -> True
+                        _ -> logBody ^? endSpace == Just txt
+                      else logBody ^? endSpace == Just txt
+              unless good $
+                report'
+                  (l ^. _LogLoc)
+                  LintWarn
+                  (UnevenWhitespace "log entry")
+        _ -> pure ()
       when
         ( not lastEntry && case e ^. entryText of
             Body [Whitespace _ _] -> False
             b -> b ^? leadSpace /= b ^? endSpace
         )
-        $ report LintInfo UnevenWhitespace
+        $ report LintInfo (UnevenWhitespace "body")
 
     -- ruleNoEmptyBodyWhitespace = do
     --   forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
@@ -604,8 +618,8 @@ showLintOrg (LintMessage fl ln kind code) =
         "Log entries inside and outside of logbooks found"
       TimestampsOnNonTodo ->
         "Timestamps found on non-todo entry"
-      UnevenWhitespace ->
-        "Whitespace surrounding body is not even"
+      UnevenWhitespace desc ->
+        "Whitespace surrounding " ++ T.unpack desc ++ " is not even"
       UnevenFilePreambleWhitespace ->
         "Whitespace surrounding file preamble is not even"
       EmptyBodyWhitespace ->
