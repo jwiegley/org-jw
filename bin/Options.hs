@@ -48,6 +48,13 @@ data Command
   | Stats InputFiles
   | Lint LintMessageKind InputFiles
   | Test InputFiles
+  | TagTrees
+      { tagTreesDryRun :: Bool,
+        tagTreesDirectory :: FilePath,
+        tagTreesDepth :: Int,
+        tagTreesTagForUntagged :: Maybe String,
+        tagTreesInputs :: InputFiles
+      }
   deriving (Data, Show, Eq, Typeable, Generic)
 
 makePrisms ''Command
@@ -62,6 +69,8 @@ commandInput f (Outline input) = Outline <$> f input
 commandInput f (Stats input) = Stats <$> f input
 commandInput f (Lint kind input) = Lint kind <$> f input
 commandInput f (Test input) = Test <$> f input
+commandInput f (TagTrees dryRun dir depth tagForUntagged input) =
+  TagTrees dryRun dir depth tagForUntagged <$> f input
 
 data Options = Options
   { _verbose :: !Bool,
@@ -89,6 +98,7 @@ tradeJournalOpts =
           <> statsCommand
           <> lintCommand
           <> testCommand
+          <> tagTreesCommand
       )
   where
     filesOptions =
@@ -206,6 +216,41 @@ tradeJournalOpts =
       where
         testOptions :: Parser Command
         testOptions = Test <$> filesOptions
+
+    tagTreesCommand :: Mod CommandFields Command
+    tagTreesCommand =
+      OA.command
+        "tagtrees"
+        (info tagTreesOptions (progDesc "Create tag trees"))
+      where
+        tagTreesOptions :: Parser Command
+        tagTreesOptions =
+          TagTrees
+            <$> switch
+              ( short 'n'
+                  <> long "dry-run"
+                  <> help "If enabled, make no changes to disk"
+              )
+            <*> option
+              auto
+              ( long "directory"
+                  <> value ".tagtrees"
+                  <> help "Directory to create tag trees in"
+              )
+            <*> option
+              auto
+              ( short 'd'
+                  <> long "depth"
+                  <> value 2
+                  <> help "Depth of tag hierarchy to create"
+              )
+            <*> optional
+              ( strOption
+                  ( long "tag-for-untagged"
+                      <> help "Depth of tag hierarchy to create"
+                  )
+              )
+            <*> filesOptions
 
 optionsDefinition :: ParserInfo Options
 optionsDefinition =
