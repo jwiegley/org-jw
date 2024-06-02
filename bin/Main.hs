@@ -6,9 +6,12 @@
 
 module Main where
 
+import Control.Arrow ((***))
 import Control.Lens
-import Control.Monad (when)
+import Control.Monad (unless, when)
 import Control.Monad.Except
+import Control.Monad.IO.Class
+import Control.Monad.Trans.State
 import Data.Foldable (forM_)
 import Data.List (permutations, subsequences)
 import Data.Map qualified as M
@@ -208,33 +211,41 @@ doTagTrees ::
   Bool -> FilePath -> Int -> Maybe String -> OrgData -> IO ()
 doTagTrees dryRun tagTreesDir depth tagForUntagged org = do
   isPresent <- doesDirectoryExist tagTreesDir
-  if dryRun
-    then when isPresent $ do
-      putStrLn $ "Would remove existing " ++ tagTreesDir ++ " directory..."
-    else when isPresent $ do
-      putStrLn $ "Removing existing " ++ tagTreesDir ++ " directory..."
-      removeDirectoryRecursive tagTreesDir
+  if isPresent
+    then do
+      contents <- listDirectory tagTreesDir
+      unless (null contents) $ do
+        putStrLn $ "Cannot overwrite tagtrees directory " ++ tagTreesDir
+        exitWith (ExitFailure 1)
+    else createDirectoryIfMissing True tagTreesDir
 
-  forM_ (org ^.. orgFiles . traverse) $ \f -> do
-    let path :: FilePath = f ^. filePath
-        tags :: [Text] = f ^.. fileHeader . headerTags . traverse . _PlainTag
-    forM_
-      ( case (paths tags, tagForUntagged) of
-          ([], Just tag) -> [[T.pack tag]]
-          (xs, _) -> xs
-      )
-      $ \ts -> do
-        let tagPath = T.unpack (T.intercalate "/" ts)
-            tagDir = tagTreesDir </> tagPath
-        if dryRun
-          then
-            putStrLn $
-              takeFileName path
-                ++ " -> "
-                ++ tagPath
-          else do
-            createDirectoryIfMissing True tagDir
-            createFileLink path (tagTreesDir </> tagPath </> takeFileName path)
+  (count, maxDepth) <-
+    flip execStateT (0 :: Int, 0 :: Int) $ do
+      forM_ (org ^.. orgFiles . traverse) $ \f -> do
+        let path :: FilePath = f ^. filePath
+            tags :: [Text] =
+              f ^.. fileHeader . headerTags . traverse . _PlainTag
+        forM_
+          ( case (paths tags, tagForUntagged) of
+              ([], Just tag) -> [[T.pack tag]]
+              (xs, _) -> xs
+          )
+          $ \ts -> do
+            let tagPath = T.unpack (T.intercalate "/" ts)
+                tagDir = tagTreesDir </> tagPath
+            liftIO $
+              unless dryRun $ do
+                createDirectoryIfMissing True tagDir
+                createFileLink
+                  path
+                  (tagTreesDir </> tagPath </> takeFileName path)
+            modify (succ *** max (length ts))
+  putStrLn $
+    (if dryRun then "Would create " else "Created ")
+      ++ show count
+      ++ " symbolic links at a maximum depth of "
+      ++ show maxDepth
+      ++ " links"
   where
     paths =
       concatMap
