@@ -256,8 +256,8 @@ bodyLength =
 
 showOrgFile :: Int -> Int -> OrgFile -> [Text]
 showOrgFile propertyColumn tagsColumn OrgFile {..} =
-  showHeader propertyColumn _fileHeader
-    ++ concatMap (showEntry propertyColumn tagsColumn) _fileEntries
+  showHeader propertyColumn _orgFileHeader
+    ++ concatMap (showEntry propertyColumn tagsColumn) _orgFileEntries
 
 showHeader :: Int -> Header -> [Text]
 showHeader propertyColumn Header {..} =

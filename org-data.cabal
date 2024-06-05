@@ -21,11 +21,13 @@ library
       Org.Lint
       Org.Normalize
       Org.Data
+      Org.TagTrees
+      Org.Filter
   other-modules:
       Paths_org_data
   hs-source-dirs:
       src
-  ghc-options: -Wall -Wno-missing-home-modules
+  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
       aeson
     , array
@@ -63,7 +65,7 @@ executable org-data
       Options
   hs-source-dirs:
       bin
-  ghc-options: -Wall -Wno-missing-home-modules
+  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
       aeson
     , array
@@ -104,7 +106,7 @@ test-suite org-data-tests
       Paths_org_data
   hs-source-dirs:
       tests
-  ghc-options: -Wall -Wno-missing-home-modules
+  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
       HUnit
     , aeson

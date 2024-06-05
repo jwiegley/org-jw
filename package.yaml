@@ -8,6 +8,7 @@ description: Org-mode parser and data drier
 ghc-options:
    - -Wall
    - -Wno-missing-home-modules
+   - -fprof-auto
 
 dependencies:
   - aeson
@@ -48,6 +49,8 @@ library:
     - Org.Lint
     - Org.Normalize
     - Org.Data
+    - Org.TagTrees
+    - Org.Filter
 
 tests:
   org-data-tests:

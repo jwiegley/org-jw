@@ -23,33 +23,48 @@ import Text.Megaparsec.Char
 
 oneOfList :: (MonadParsec e s m) => [Tokens s] -> m (Tokens s)
 oneOfList = foldr (\x rest -> string x <|> rest) mzero
+{-# INLINE oneOfList #-}
+{-# SPECIALIZE oneOfList :: [Text] -> Parser Text #-}
 
 singleSpace :: (MonadParsec e s m, Token s ~ Char) => m Char
 singleSpace = char ' '
+{-# INLINE singleSpace #-}
+{-# SPECIALIZE singleSpace :: Parser Char #-}
 
 spaces_ :: (MonadParsec e s m, Token s ~ Char) => m ()
 spaces_ = skipSome singleSpace
+{-# INLINE spaces_ #-}
+{-# SPECIALIZE spaces_ :: Parser () #-}
 
 trailingSpace :: Parser ()
 trailingSpace = skipManyTill singleSpace (void newline)
+{-# INLINE trailingSpace #-}
 
 anyChar :: (MonadParsec e s m, Token s ~ Char) => m Char
-anyChar = satisfy $ \c -> c /= '\n'
+anyChar = satisfy (/= '\n')
+{-# INLINE anyChar #-}
+{-# SPECIALIZE anyChar :: Parser Char #-}
 
 newlineOrEof :: Parser ()
 newlineOrEof = void newline <|> eof
+{-# INLINE newlineOrEof #-}
 
 lineOrEof :: Parser Text
 lineOrEof = pack <$> manyTill anyChar newlineOrEof
+{-# INLINE lineOrEof #-}
 
 wholeLine :: Parser Text
 wholeLine = pack <$> manyTill anyChar newline
+{-# INLINE wholeLine #-}
 
 restOfLine :: Parser Text
 restOfLine = pack <$> someTill anyChar newline
+{-# INLINE restOfLine #-}
 
 identifier :: (MonadParsec e s m, Token s ~ Char) => m Text
 identifier = pack <$> many (alphaNumChar <|> char '_')
+{-# INLINE identifier #-}
+{-# SPECIALIZE identifier :: Parser Text #-}
 
 parseOrgFile :: Parser OrgFile
 parseOrgFile = do
@@ -222,6 +237,7 @@ parseTags = colon *> endBy1 parseTag colon
             isAlphaNum ch
               || ch `elem` ['-', '_', '=', '/']
         )
+    {-# SPECIALIZE tag :: Parser String #-}
     parseTag = do
       nm <- pack <$> tag
       pure $ PlainTag nm
@@ -265,6 +281,7 @@ parseTime = do
       forM_ _timeSuffix $ \_ ->
         fail $ "Invalid org time: " ++ show tm
       pure $ blendTimes start tm
+{-# SPECIALIZE parseTime :: Parser Time #-}
 
 parseTimeSingle ::
   (MonadParsec e s m, Token s ~ Char, IsString (Tokens s), MonadFail m) =>
@@ -332,6 +349,7 @@ parseTimeSingle = do
     ActiveTime -> char '>'
     InactiveTime -> char ']'
   pure Time {..}
+{-# SPECIALIZE parseTimeSingle :: Parser Time #-}
 
 parseLogHeading :: Parser (Maybe Body -> LogEntry)
 parseLogHeading = do
@@ -461,24 +479,22 @@ parseBlock leader = do
     <|> Paragraph loc . (: []) <$> (leader *> lineOrEof)
 
 parseDrawer :: Parser a -> Parser [Text]
-parseDrawer leader = parseDrawerBlock <|> parseBeginBlock
+parseDrawer leader = try $ do
+  prefix <- T.pack <$> many singleSpace
+  parseDrawerBlock prefix <|> parseBeginBlock prefix
   where
-    parseDrawerBlock = do
-      txt <- try $ do
-        prefix <- T.pack <$> many singleSpace
-        _ <- char ':'
-        ident <- identifier
-        _ <- char ':'
-        trailingSpace
+    parseDrawerBlock prefix = do
+      txt <- do
+        ident <- char ':' *> identifier <* char ':' <* trailingSpace
         pure $ prefix <> ":" <> ident <> ":"
       content <-
         manyTill
-          (leader *> restOfLine <|> T.singleton <$> newline)
+          (T.singleton <$> newline <|> leader *> restOfLine)
           ( lookAhead
               ( try
                   ( void
                       ( leader
-                          *> skipMany singleSpace
+                          *> string prefix
                           *> string' ":end:"
                       )
                   )
@@ -486,27 +502,24 @@ parseDrawer leader = parseDrawerBlock <|> parseBeginBlock
               )
           )
       endLine <- do
-        _ <- leader
-        prefix <- T.pack <$> many singleSpace
-        ending <- string' ":end:"
-        trailingSpace
+        _ <- leader *> string prefix
+        ending <- string' ":end:" <* trailingSpace
         pure $ prefix <> ending
       pure $ txt : content ++ [endLine]
 
-    parseBeginBlock = do
-      txt <- try $ do
-        prefix <- T.pack <$> many singleSpace
+    parseBeginBlock prefix = do
+      txt <- do
         begin <- string' "#+begin"
         suffix <- wholeLine
         pure $ prefix <> begin <> suffix
       content <-
         manyTill
-          (leader *> restOfLine <|> T.singleton <$> newline)
+          (T.singleton <$> newline <|> leader *> restOfLine)
           ( lookAhead
               ( try
                   ( void
                       ( leader
-                          *> skipMany singleSpace
+                          *> string prefix
                           *> string' "#+end"
                       )
                   )
@@ -514,8 +527,7 @@ parseDrawer leader = parseDrawerBlock <|> parseBeginBlock
               )
           )
       endLine <- do
-        _ <- leader
-        prefix <- T.pack <$> many singleSpace
+        _ <- leader *> string prefix
         ending <- string' "#+end"
         suffix <- wholeLine
         pure $ prefix <> ending <> suffix

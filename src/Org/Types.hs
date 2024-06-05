@@ -59,6 +59,7 @@ sourcePosToLoc SourcePos {..} =
 
 getLoc :: (TraversableStream s, MonadParsec e s m) => m Loc
 getLoc = sourcePosToLoc <$> getSourcePos
+{-# INLINE getLoc #-}
 
 data Property = Property
   { _propertyLoc :: Loc,
@@ -109,6 +110,7 @@ makeClassy ''Body
 
 emptyBody :: Body -> Bool
 emptyBody = (== mempty)
+{-# INLINE emptyBody #-}
 
 newtype Tag = PlainTag Text
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
@@ -399,17 +401,24 @@ data Entry = Entry
 makeClassy ''Entry
 
 data OrgFile = OrgFile
-  { _filePath :: FilePath,
-    _fileHeader :: Header,
-    _fileEntries :: [Entry]
+  { _orgFilePath :: FilePath,
+    _orgFileHeader :: Header,
+    _orgFileEntries :: [Entry]
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
 makeClassy ''OrgFile
 
-newtype OrgData = OrgData
-  { _orgFiles :: [OrgFile]
-  }
-  deriving (Show, Eq, Generic, Data, Typeable, Plated)
+data CollectionItem
+  = OrgItem OrgFile
+  | DataItem FilePath
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
-makeClassy ''OrgData
+makePrisms ''CollectionItem
+
+newtype Collection = Collection
+  { _items :: [CollectionItem]
+  }
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+
+makeClassy ''Collection

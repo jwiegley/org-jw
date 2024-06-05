@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Org.Lint where
@@ -89,9 +90,9 @@ data LintMessage = LintMessage
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
-lintOrgData :: Config -> LintMessageKind -> OrgData -> [LintMessage]
-lintOrgData cfg level org = snd . runWriter $ do
-  let ids = foldAllEntries org M.empty $ \e m ->
+lintCollection :: Config -> LintMessageKind -> Collection -> [LintMessage]
+lintCollection cfg level cs = snd . runWriter $ do
+  let ids = foldAllEntries cs M.empty $ \e m ->
         maybe
           m
           ( \ident ->
@@ -110,10 +111,12 @@ lintOrgData cfg level org = snd . runWriter $ do
             (DuplicatedIdentifier k (e :| es))
         ]
 
-  mapM_ (lintOrgFile cfg level) (org ^. orgFiles)
+  mapM_ (lintOrgFile cfg level) (cs ^.. items . traverse . _OrgItem)
 
 lintOrgFile :: Config -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
 lintOrgFile cfg level org = do
+  when (level == LintDebug) $ do
+    traceM $ "Linting " ++ (org ^. orgFilePath)
   -- RULE: All files must have ID and CREATED properties
   ruleFileShouldHaveIdAndCreated
   -- RULE: File slugs should reflect the file's title
@@ -137,29 +140,29 @@ lintOrgFile cfg level org = do
         (reverse es)
       lintOrgEntry cfg inArchive True ignoreWhitespace level e
   where
-    ignoreWhitespace = org ^? fileProperty "WHITESPACE" == Just "ignore"
+    ignoreWhitespace = org ^? orgFileProperty "WHITESPACE" == Just "ignore"
 
     ruleFileShouldHaveIdAndCreated = do
-      when (isNothing (org ^? fileProperty "ID")) $
+      when (isNothing (org ^? orgFileProperty "ID")) $
         report LintInfo (FileMissingProperty "ID")
-      when (isNothing (org ^? fileProperty "CREATED")) $
+      when (isNothing (org ^? orgFileProperty "CREATED")) $
         report
-          ( if isNothing (org ^? fileCreatedTime)
+          ( if isNothing (OrgItem org ^? fileCreatedTime)
               then LintWarn
               else LintInfo
           )
           (FileMissingProperty "CREATED")
 
     ruleSlugMustMatchTitle =
-      forM_ (org ^? fileSlug) $ \slug ->
-        unless (org ^? fileActualSlug == org ^? fileSlug) $
+      forM_ (OrgItem org ^? fileSlug) $ \slug ->
+        unless (OrgItem org ^? fileActualSlug == OrgItem org ^? fileSlug) $
           report LintInfo (FileSlugMismatch slug)
 
     ruleCreationTimeMatchesCreated = do
       forM_
         ( (,)
-            <$> org ^? fileTimestamp
-            <*> org ^? fileCreatedTime
+            <$> OrgItem org ^? fileTimestamp
+            <*> OrgItem org ^? fileCreatedTime
         )
         $ \(created, created') ->
           unless (created == created') $
@@ -168,7 +171,7 @@ lintOrgFile cfg level org = do
     ruleTitleProperyAlwaysLast =
       forM_
         ( org
-            ^? fileHeader
+            ^? orgFileHeader
               . headerFileProperties
               . _last
               . name
@@ -180,15 +183,15 @@ lintOrgFile cfg level org = do
 
     inArchive = isArchive org
     props =
-      org ^. fileHeader . headerPropertiesDrawer
-        ++ org ^. fileHeader . headerFileProperties
+      org ^. orgFileHeader . headerPropertiesDrawer
+        ++ org ^. orgFileHeader . headerFileProperties
 
     report kind code
       | kind >= level = do
           when (level == LintDebug) $
             traceM $
               "file: " ++ ppShow org
-          tell [LintMessage (org ^. filePath) 1 kind code]
+          tell [LintMessage (org ^. orgFilePath) 1 kind code]
       | otherwise = pure ()
 
 lintOrgEntry ::
