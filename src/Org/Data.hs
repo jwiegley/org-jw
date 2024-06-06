@@ -5,55 +5,53 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE StrictData #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Org.Data where
 
+import Control.Applicative
 import Control.Arrow (left)
 import Control.Lens
 import Control.Lens.Unsound
 import Control.Monad (unless, void, when)
 import Control.Monad.Except
 import Control.Monad.IO.Class
-import Control.Monad.Reader
+import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
-import Data.Char (isAlphaNum, isDigit)
+import Data.Char (isAlphaNum, toLower)
 import Data.Data.Lens (biplate)
-import Data.List (isInfixOf)
-import Data.Map hiding (filter)
+import Data.List (intercalate, isInfixOf)
+import Data.List.Split (splitOn)
+import Data.Map (Map)
 import Data.Map qualified as M
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
-import Data.Text.IO qualified as T
-import Data.Text.Lens
-import Data.Time (defaultTimeLocale)
+import Data.Time (UTCTime, defaultTimeLocale)
 import Data.Time.Format (formatTime, parseTimeM)
-import Data.Void
+import FlatParse.Stateful hiding (optional, (<|>))
+import FlatParse.Stateful qualified as FP
 import Org.Parser
 import Org.Printer
 import Org.Types
 import System.Directory
 import System.FilePath.Posix
-import System.IO (IOMode (..), withFile)
+import System.IO (IOMode (..), readFile, withFile)
 import System.IO.Unsafe (unsafePerformIO)
-import Text.Megaparsec hiding (match)
-import Text.Megaparsec.Char
 import Prelude hiding (readFile)
 
-lined :: Traversal' [Text] Text
-lined f a = T.lines <$> f (T.unlines a)
+lined :: Traversal' [String] String
+lined f a = lines <$> f (unlines a)
 
 -- Roughly equivalent to: '^[0-9]{8,}[_-].+?( -- .+?|\[.+?\])\.[^.]+$'
 fileNameRe ::
-  ParsecT
-    Void
+  FP.Parser
+    r
     String
-    m
     ( Maybe FilePath,
       FilePath,
       Maybe [String],
@@ -71,30 +69,30 @@ fileNameRe = do
         (++)
           <$> count 8 (satisfy isDigit)
           <*> many (satisfy isDigit)
-    pDateSlugSeparator = char '-' <|> char '_'
+    pDateSlugSeparator = $(char '-') <|> $(char '_')
     pSlug = do
       manyTill
         anyChar
-        (lookAhead (void pTags <|> void pExt <|> eof))
+        (lookahead (void pTags <|> void pExt <|> eof))
     pTags =
       try
         ( spaces_
-            *> string "--"
+            *> $(string "--")
             *> spaces_
-            *> someTill anyChar (lookAhead (void (char '.') <|> eof))
+            *> someTill anyChar (lookahead ($(char '.') <|> eof))
         )
         <|> try
           ( skipMany singleSpace
               *> between
-                (char '[')
-                (char ']')
-                (someTill anyChar (lookAhead (char ']')))
+                $(char '[')
+                $(char ']')
+                (someTill anyChar (lookahead $(char ']')))
           )
     pExt = try $ do
-      _ <- char '.'
+      _ <- $(char '.')
       str <- many anyChar <* eof
       when ("." `isInfixOf` str) $
-        fail "Error parsing file extension"
+        err "Error parsing file extension"
       pure str
 
 fileNameReTest :: IO ()
@@ -202,7 +200,7 @@ fileNameReTest = do
       ) ->
       IO ()
     test path expect = do
-      let res = parseMaybe @Void fileNameRe path
+      let res = parseMaybe fileNameRe (T.encodeUtf8 (T.pack path))
       unless (res == Just expect) $
         error $
           "Failed to parse " ++ show path ++ ", got: " ++ show res
@@ -216,8 +214,8 @@ fileNameParts ::
       Maybe FilePath
     )
 fileNameParts f nm = do
-  case runIdentity (runParserT @_ @Void fileNameRe "<path>" nm) of
-    Right res ->
+  case runParser fileNameRe () 0 (T.encodeUtf8 (T.pack nm)) of
+    OK res _ _ ->
       ( \(stamp', slug', tags', ext') ->
           maybe "" (<> "-") stamp'
             <> slug'
@@ -225,10 +223,10 @@ fileNameParts f nm = do
             <> maybe "" ("." <>) ext'
       )
         <$> f res
-    Left err ->
-      error $
-        "impossible, failed to parse file name: "
-          ++ errorBundlePretty err
+    Err err ->
+      error $ "impossible, failed to parse file name: " ++ show err
+    Fail ->
+      error $ "impossible, failed to parse file name: " ++ show nm
 
 dirName :: Lens' FilePath FilePath
 dirName f path = (</> takeFileName path) <$> f (takeDirectory path)
@@ -247,12 +245,12 @@ fileNameTags f path =
             _ ->
               path
                 & fileNameParts . _3
-                  ?~ tags' ^.. traverse . _PlainTag . unpacked
+                  ?~ tags' ^.. traverse . _PlainTag
       )
-        <$> f (Prelude.map (PlainTag . T.pack) tags)
+        <$> f (map PlainTag tags)
 
-fileActualSlug :: Lens' CollectionItem Text
-fileActualSlug = filePath . fileName . fileNameParts . _2 . packed
+fileActualSlug :: Lens' CollectionItem String
+fileActualSlug = filePath . fileName . fileNameParts . _2
 
 filePath :: Lens' CollectionItem FilePath
 filePath f (OrgItem o) = OrgItem <$> (o & orgFilePath %%~ f)
@@ -262,30 +260,29 @@ filePath f (DataItem path) = DataItem <$> f path
 -- from there, and written back there. Otherwise, the filename itself is used.
 fileTags :: Lens' CollectionItem [Tag]
 fileTags f (OrgItem o)
-  | Prelude.null (o ^. orgFileHeader . headerTags) =
+  | null (o ^. orgFileHeader . headerTags) =
       OrgItem <$> (o & orgFilePath . fileNameTags %%~ f)
   | otherwise = OrgItem <$> (o & orgFileHeader . headerTags %%~ f)
 fileTags f (DataItem path) = DataItem <$> (path & fileNameTags %%~ f)
 
-fileTitle :: Traversal' CollectionItem Text
+fileTitle :: Traversal' CollectionItem String
 fileTitle = failing (_OrgItem . orgFileProperty "TITLE") fileActualSlug
 
-sluggify :: Text -> Text
+sluggify :: String -> String
 sluggify =
   useDashes
     . dropMultipleUnderscores
     . squashNonAlphanumerics
     . changeCertainCharacters
     . removeCertainCharacters
-    . T.toLower
-    . T.strip
+    . map toLower
   where
     dropMultipleUnderscores =
-      T.intercalate "_" . filter (not . T.null) . T.splitOn "_"
+      intercalate "_" . filter (not . null) . splitOn "_"
     squashNonAlphanumerics =
-      T.map (\c -> if isAlphaNum c then c else '_')
+      map (\c -> if isAlphaNum c then c else '_')
     changeCertainCharacters =
-      T.map
+      map
         ( \c ->
             if
               | c == 'á' -> 'a'
@@ -294,11 +291,11 @@ sluggify =
               | otherwise -> c
         )
     removeCertainCharacters =
-      T.filter (\c -> c `notElem` ['’', '’'])
+      filter (\c -> c `notElem` ['’', '’'])
     useDashes =
-      T.map (\c -> if c == '_' then '-' else c)
+      map (\c -> if c == '_' then '-' else c)
 
-fileSlug :: Fold CollectionItem Text
+fileSlug :: Fold CollectionItem String
 fileSlug =
   failing
     (_OrgItem . orgFileProperty "SLUG")
@@ -343,10 +340,10 @@ fileDateTime =
 --   - A property explicit defined by the entry, in its PROPERTIES drawer.
 --
 --   - A property implicitly inherited from its file or outline context.
-property :: Text -> Traversal' Entry Text
+property :: String -> Traversal' Entry String
 property n = entryProperties . lookupProperty n
 
-orgFileProperty :: Text -> Traversal' OrgFile Text
+orgFileProperty :: String -> Traversal' OrgFile String
 orgFileProperty n =
   orgFileHeader
     . failing
@@ -357,21 +354,21 @@ orgFileProperty n =
 --
 --   - A virtual property used as an alternate way to access details about the
 --     entry.
-anyProperty :: Text -> Fold Entry Text
+anyProperty :: String -> Fold Entry String
 anyProperty n =
   failing
     (entryProperties . lookupProperty n)
-    (maybe ignored runFold (Prelude.lookup n specialProperties))
+    (maybe ignored runFold (lookup n specialProperties))
 
 -- jww (2024-05-13): Need to handle inherited tags
-specialProperties :: [(Text, ReifiedFold Entry Text)]
+specialProperties :: [(String, ReifiedFold Entry String)]
 specialProperties =
   [ -- All tags, including inherited ones.
     ("ALLTAGS", undefined),
     -- t if task is currently blocked by children or siblings.
     ("BLOCKED", undefined),
     -- The category of an entry. jww (2024-05-13): NYI
-    ("CATEGORY", Fold (entryLoc . file . packed)),
+    ("CATEGORY", Fold (entryLoc . file)),
     -- The sum of CLOCK intervals in the subtree. org-clock-sum must be run
     -- first to compute the values in the current buffer.
     ("CLOCKSUM", undefined),
@@ -384,7 +381,7 @@ specialProperties =
     -- The deadline timestamp.
     ("DEADLINE", Fold (deadlineTime . re _Time)),
     -- The filename the entry is located in.
-    ("FILE", Fold (entryLoc . file . packed)),
+    ("FILE", Fold (entryLoc . file)),
     -- The headline of the entry.
     ("ITEM", Fold entryHeadline),
     -- The priority of the entry, a string with a single letter.
@@ -398,58 +395,58 @@ specialProperties =
     -- The first inactive timestamp in the entry.
     ("TIMESTAMP_IA", undefined),
     -- The TODO keyword of the entry.
-    ("TODO", Fold (entryKeyword . _Just . keywordText . filtered isTodo)),
+    ("TODO", Fold (entryKeyword . _Just . keywordString . filtered isTodo)),
     ------------------------------------------------------------------------
     -- The following are not defined by Org-mode as special
     ------------------------------------------------------------------------
-    ("LINE", Fold (entryLoc . line . re _Show . packed)),
-    ("DEPTH", Fold (entryDepth . re _Show . packed)),
-    ("KEYWORD", Fold (entryKeyword . _Just . keywordText)),
+    ("OFFSET", Fold (entryLoc . pos . re _Show)),
+    ("DEPTH", Fold (entryDepth . re _Show)),
+    ("KEYWORD", Fold (entryKeyword . _Just . keywordString)),
     ("TITLE", Fold entryTitle),
     ("CONTEXT", Fold (entryContext . _Just)),
     ("LOCATOR", Fold (entryLocator . _Just)),
-    ("BODY", Fold (entryText . to (T.unlines . showBody "")))
+    ("BODY", Fold (entryString . to (unlines . showBody "")))
   ]
 
-keywordText :: Lens' Keyword Text
-keywordText f (OpenKeyword loc kw) = OpenKeyword loc <$> f kw
-keywordText f (ClosedKeyword loc kw) = ClosedKeyword loc <$> f kw
+keywordString :: Lens' Keyword String
+keywordString f (OpenKeyword loc kw) = OpenKeyword loc <$> f kw
+keywordString f (ClosedKeyword loc kw) = ClosedKeyword loc <$> f kw
 
-tagText :: Lens' Tag Text
-tagText f (PlainTag txt) = PlainTag <$> f txt
+tagString :: Lens' Tag String
+tagString f (PlainTag txt) = PlainTag <$> f txt
 
-keyword :: Traversal' Entry Text
-keyword = entryKeyword . _Just . keywordText
+keyword :: Traversal' Entry String
+keyword = entryKeyword . _Just . keywordString
 
-entryId :: Traversal' Entry Text
+entryId :: Traversal' Entry String
 entryId = property "ID"
 
-entryCategory :: Traversal' Entry Text
+entryCategory :: Traversal' Entry String
 entryCategory = property "CATEGORY"
 
-entryTagString :: Traversal' Entry Text
+entryTagString :: Traversal' Entry String
 entryTagString f e = do
   tags' <-
     f
-      ( T.intercalate
+      ( intercalate
           ":"
-          (":" : e ^.. entryTags . traverse . tagText ++ [":"])
+          (":" : e ^.. entryTags . traverse . tagString ++ [":"])
       )
   pure $
     e
       & entryTags
-        .~ Prelude.map
+        .~ map
           PlainTag
-          (filter (not . T.null) (T.splitOn ":" tags'))
+          (filter (not . null) (splitOn ":" tags'))
 
-leadSpace :: Traversal' Body Text
+leadSpace :: Traversal' Body String
 leadSpace = blocks . _head . _Whitespace . _2
 
-endSpace :: Traversal' Body Text
+endSpace :: Traversal' Body String
 endSpace = blocks . _last . _Whitespace . _2
 
-_Time :: Prism' Text Time
-_Time = prism' showTime (parseMaybe @Void parseTime)
+_Time :: Prism' String Time
+_Time = prism' showTime (parseMaybe parseTime . T.encodeUtf8 . T.pack)
 
 data TimestampFormat
   = HourMinSec
@@ -482,9 +479,10 @@ stringTime f str =
       where
         tm = utcTimeToTime InactiveTime utct
   where
+    ptime :: TimestampFormat -> Maybe (TimestampFormat, UTCTime)
     ptime tf = (tf,) <$> parseTime' (tsFormatFmt tf)
-    parseTime' fmt =
-      parseTimeM False defaultTimeLocale fmt str
+    parseTime' :: String -> Maybe UTCTime
+    parseTime' fmt = parseTimeM False defaultTimeLocale fmt str
 
 createdTime :: Traversal' Entry Time
 createdTime = entryStamps . traverse . _CreatedStamp . _2
@@ -511,7 +509,7 @@ foldEntries props f z (e : es) =
     (inheritProperties props e)
     (foldEntries props f z (e ^. entryItems ++ es))
 
-hardCodedInheritedProperties :: [Text]
+hardCodedInheritedProperties :: [String]
 hardCodedInheritedProperties = ["COLUMNS", "CATEGORY", "ARCHIVE", "LOGGING"]
 
 inheritProperties :: [Property] -> Entry -> Entry
@@ -562,14 +560,14 @@ allTaggedItems = items . traverse . lensProduct filePath fileTags
 --
 --   - If there are values behind the empty key, then there are entries with
 --     no ID. This is fine except for certain cases, such as TODOs.
-entriesMap :: Collection -> Map Text [Entry]
+entriesMap :: Collection -> Map String [Entry]
 entriesMap db =
-  Prelude.foldr
+  foldr
     addEntryToMap
     M.empty
     (db ^.. items . traverse . _OrgItem . allEntries)
 
-addEntryToMap :: Entry -> Map Text [Entry] -> Map Text [Entry]
+addEntryToMap :: Entry -> Map String [Entry] -> Map String [Entry]
 addEntryToMap e =
   at ident
     %~ Just . \case
@@ -578,7 +576,7 @@ addEntryToMap e =
   where
     ident = fromMaybe "" (e ^? entryId)
 
-addRefToMap :: Text -> Map Text [Entry] -> Map Text [Entry]
+addRefToMap :: String -> Map String [Entry] -> Map String [Entry]
 addRefToMap ident =
   at ident
     %~ Just . \case
@@ -587,10 +585,10 @@ addRefToMap ident =
 
 foldAllEntries :: Collection -> b -> (Entry -> b -> b) -> b
 foldAllEntries cs z f =
-  Prelude.foldr f z (cs ^.. items . traverse . _OrgItem . allEntries)
+  foldr f z (cs ^.. items . traverse . _OrgItem . allEntries)
 
 findDuplicates :: (Ord a) => [a] -> [a]
-findDuplicates = M.keys . M.filter (> 1) . Prelude.foldr go M.empty
+findDuplicates = M.keys . M.filter (> 1) . foldr go M.empty
   where
     go x = at x %~ Just . maybe (1 :: Int) succ
 
@@ -610,7 +608,7 @@ countEntries ::
 countEntries cs = foldAllEntries cs M.empty . tallyEntry
 
 -- jww (2024-05-12): This should be driven by a configuration file
-isTodo :: Text -> Bool
+isTodo :: String -> Bool
 isTodo kw =
   kw
     `elem` [ "TODO",
@@ -630,47 +628,53 @@ isArchive org = "archive" `isInfixOf` (org ^. orgFilePath)
 entryStateHistory :: Traversal' Entry LogEntry
 entryStateHistory = entryLogEntries . traverse . biplate
 
-transitionsOf :: Config -> Text -> [Text]
+transitionsOf :: Config -> String -> [String]
 transitionsOf cfg kw =
-  fromMaybe [] (Prelude.lookup kw (cfg ^. keywordTransitions))
+  fromMaybe [] (lookup kw (cfg ^. keywordTransitions))
 
-readOrgFile_ :: Config -> FilePath -> Text -> Either String OrgFile
-readOrgFile_ cfg path content =
-  left
-    errorBundlePretty
-    (runReader (runParserT parseOrgFile path content) cfg)
+liftResult :: (MonadError e m) => Result e a -> m a
+liftResult (OK res _ _) = pure res
+liftResult (Err e) = throwError e
+liftResult Fail = error "The worst happened"
+
+resultToEither :: Result e a -> Either e a
+resultToEither (OK res _ _) = Right res
+resultToEither (Err e) = Left e
+resultToEither Fail = error "The worst happened"
 
 readOrgFile :: (MonadIO m) => Config -> FilePath -> ExceptT String m OrgFile
 readOrgFile cfg path = do
   org <-
-    liftIO $ withFile path ReadMode $ \h -> do
-      content <- T.hGetContents h
-      pure $ readOrgFile_ cfg path content
-  liftEither org
+    liftIO $
+      withFile path ReadMode $
+        fmap (readOrgFile_ cfg path) . B.hGetContents
+  liftResult org
 
-_OrgFile :: Config -> FilePath -> Prism' Text OrgFile
+_OrgFile :: Config -> FilePath -> Prism' ByteString OrgFile
 _OrgFile cfg path =
   prism
-    ( T.intercalate "\n"
+    ( T.encodeUtf8
+        . T.pack
+        . intercalate "\n"
         . showOrgFile (cfg ^. propertyColumn) (cfg ^. tagsColumn)
     )
-    (left T.pack . readOrgFile_ cfg path)
+    (left (T.encodeUtf8 . T.pack) . resultToEither . readOrgFile_ cfg path)
 
-readStdin :: (MonadIO m) => m Text
-readStdin = T.decodeUtf8 <$> liftIO B.getContents
+readStdin :: (MonadIO m) => m ByteString
+readStdin = liftIO B.getContents
 
-readFile :: (MonadIO m) => FilePath -> m Text
-readFile path = T.decodeUtf8 <$> liftIO (B.readFile path)
+readFile :: (MonadIO m) => FilePath -> m ByteString
+readFile path = liftIO (B.readFile path)
 
-readLines :: (MonadIO m) => FilePath -> m [Text]
-readLines path = T.lines <$> readFile path
+readLines :: (MonadIO m) => FilePath -> m [String]
+readLines path = lines <$> liftIO (System.IO.readFile path)
 
 readCollectionItem ::
   (MonadIO m) =>
   Config ->
   FilePath ->
   ExceptT String m CollectionItem
-readCollectionItem cfg path =
+readCollectionItem cfg path = do
   if takeExtension path == ".org"
     then OrgItem <$> readOrgFile cfg path
     else pure $ DataItem path

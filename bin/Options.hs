@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
@@ -8,12 +9,13 @@ module Options where
 
 import Control.Lens hiding (argument)
 import Data.Data (Data)
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import Data.Typeable (Typeable)
-import Data.Void
 import GHC.Generics
 import Options.Applicative as OA
 import Org.Lint
-import Text.Megaparsec (parseMaybe)
+import Org.Parser
 
 version :: String
 version = "0.0.1"
@@ -200,7 +202,12 @@ tradeJournalOpts =
         lintOptions =
           Lint
             <$> option
-              (maybeReader (parseMaybe @Void parseLintMessageKind))
+              ( maybeReader
+                  ( parseMaybe parseLintMessageKind
+                      . T.encodeUtf8
+                      . T.pack
+                  )
+              )
               ( short 'l'
                   <> long "level"
                   <> value LintInfo

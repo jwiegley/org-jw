@@ -25,7 +25,7 @@ dependencies:
   - free
   - hashable
   - lens
-  - megaparsec
+  - flatparse
   - mtl
   - pretty
   - pretty-show
@@ -38,6 +38,7 @@ dependencies:
   - time
   - transformers
   - unordered-containers
+  - template-haskell
   - vector
 
 library:

@@ -40,10 +40,10 @@ library
     , data-default
     , directory
     , filepath
+    , flatparse
     , free
     , hashable
     , lens
-    , megaparsec
     , mtl
     , pretty
     , pretty-show
@@ -52,6 +52,7 @@ library
     , semigroupoids
     , simple-amount >=0.2.0
     , split
+    , template-haskell
     , text
     , time
     , transformers
@@ -78,10 +79,10 @@ executable org-data
     , data-default
     , directory
     , filepath
+    , flatparse
     , free
     , hashable
     , lens
-    , megaparsec
     , mtl
     , optparse-applicative
     , org-data
@@ -92,6 +93,7 @@ executable org-data
     , semigroupoids
     , simple-amount >=0.2.0
     , split
+    , template-haskell
     , text
     , time
     , transformers
@@ -120,12 +122,12 @@ test-suite org-data-tests
     , data-default
     , directory
     , filepath
+    , flatparse
     , free
     , hashable
     , hedgehog
     , here
     , lens
-    , megaparsec
     , mtl
     , org-data
     , pretty
@@ -138,6 +140,7 @@ test-suite org-data-tests
     , tasty
     , tasty-hedgehog
     , tasty-hunit
+    , template-haskell
     , text
     , time
     , transformers

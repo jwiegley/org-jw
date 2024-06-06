@@ -8,10 +8,13 @@ module Main where
 
 import Control.Lens
 import Control.Monad.Except
+import Data.ByteString qualified as B
 import Data.Foldable (forM_)
 import Data.Map qualified as M
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import Data.Text.IO qualified as T
+import FlatParse.Stateful
 import Options
 import Org.Data
 import Org.Lint
@@ -26,18 +29,14 @@ main :: IO ()
 main = do
   opts <- getOptions
   paths <- case opts ^. command . commandInput of
-    FileFromStdin ->
-      pure ["<stdin>"]
-    Paths paths ->
-      pure paths
-    ListFromStdin ->
-      map T.unpack . T.lines <$> readStdin
-    FilesFromFile path ->
-      map T.unpack <$> readLines path
+    FileFromStdin -> pure ["<stdin>"]
+    Paths paths -> pure paths
+    ListFromStdin -> map T.unpack . T.lines . T.decodeUtf8 <$> readStdin
+    FilesFromFile path -> readLines path
   cs <-
     runExceptT (readCollection globalConfig paths) >>= \case
-      Left err -> do
-        putStrLn $ "Cannot parse: " ++ err
+      Left msg -> do
+        putStrLn $ "Cannot parse: " ++ msg
         exitWith (ExitFailure 1)
       Right x -> pure x
   case opts ^. command of
@@ -51,7 +50,7 @@ main = do
     Lint level _ -> doLint level cs
     Test _ -> doTest cs
     TagTrees dryRun dir depth tagForUntagged _ ->
-      makeTagTrees dryRun dir depth (PlainTag . T.pack <$> tagForUntagged) cs
+      makeTagTrees dryRun dir depth (PlainTag <$> tagForUntagged) cs
 
 globalConfig :: Config
 globalConfig = Config {..}
@@ -101,31 +100,33 @@ doParse cs = do
       Just (OpenKeyword _ kw) -> kw
       Just (ClosedKeyword _ kw) -> kw
   pPrint $ countEntries cs $ \e m k -> foldr (flip k) m (e ^. entryTags)
-  forM_ (cs ^. items) $ \case
-    OrgItem o ->
-      putStrLn $
-        o ^. orgFilePath
-          ++ ": "
-          ++ show (length (o ^.. entries []))
-          ++ " entries"
-    _ -> pure ()
+
+-- forM_ (cs ^. items) $ \case
+--   OrgItem o ->
+--     putStrLn $
+--       o ^. orgFilePath
+--         ++ ": "
+--         ++ show (length (o ^.. entries []))
+--         ++ " entries"
+--   _ -> pure ()
 
 doTagsList :: Collection -> IO ()
 doTagsList cs = do
   let counts = countEntries cs $ \e m k -> foldr (flip k) m (e ^. entryTags)
   forM_ (M.toList counts) $ \(tag, cnt) ->
-    putStrLn $ show cnt ++ " " ++ T.unpack (tag ^. tagText)
+    putStrLn $ show cnt ++ " " ++ tag ^. tagString
 
 doCategoriesList :: Collection -> IO ()
 doCategoriesList cs = do
   let counts = countEntries cs $ \e m k -> k m (e ^. entryCategory)
   forM_ (M.toList counts) $ \(cat, cnt) ->
-    putStrLn $ show cnt ++ " " ++ T.unpack cat
+    putStrLn $ show cnt ++ " " ++ cat
 
 doPrint :: Collection -> IO ()
 doPrint cs =
   forM_ (cs ^. items) $ \case
-    OrgItem o -> T.putStrLn $ _OrgFile globalConfig (o ^. orgFilePath) # o
+    OrgItem o ->
+      T.putStrLn $ T.decodeUtf8 $ _OrgFile globalConfig (o ^. orgFilePath) # o
     _ -> pure ()
 
 doDump :: Collection -> IO ()
@@ -134,13 +135,13 @@ doDump = pPrint
 doOutline :: Collection -> IO ()
 doOutline cs =
   mapM_
-    (mapM_ T.putStrLn . concatMap summarizeEntry)
+    (mapM_ putStrLn . concatMap summarizeEntry)
     (cs ^.. allOrgFiles . orgFileEntries)
 
 doStats :: Collection -> IO ()
 doStats cs =
   mapM_
-    (mapM_ T.putStrLn . concatMap summarizeEntry)
+    (mapM_ putStrLn . concatMap summarizeEntry)
     (cs ^.. allOrgFiles . orgFileEntries)
 
 doLint :: LintMessageKind -> Collection -> IO ()
@@ -159,13 +160,28 @@ doLint level cs = do
       ++ " todo entries) across "
       ++ show (length (cs ^.. allOrgFiles))
       ++ " org files"
-  case lintCollection globalConfig level cs of
-    [] -> do
+  let m = lintCollection globalConfig level cs
+  if M.null m
+    then do
       putStrLn "Pass."
       exitSuccess
-    xs -> do
-      mapM_ (putStrLn . showLintOrg) xs
-      exitWith (ExitFailure (length xs))
+    else do
+      _ <- flip M.traverseWithKey m $ \path msgs -> do
+        contents <- B.readFile path
+        let poss = map (\(LintMessage p _ _) -> Pos p) msgs
+            linesCols = posLineCols contents poss
+            msgs' =
+              zipWith
+                ( curry
+                    ( \((ln, _col), LintMessage _ k c) ->
+                        LintMessage ln k c
+                    )
+                )
+                linesCols
+                msgs
+        forM_ msgs' $ \msg ->
+          putStrLn $ showLintOrg path msg
+      exitWith (ExitFailure (M.size m))
 
 doTest :: Collection -> IO ()
 doTest cs = do
@@ -189,11 +205,11 @@ doTest cs = do
     pPrint $ e ^? anyProperty "ITEM"
     putStrLn "entry FOOBAR:"
     pPrint $ e ^? anyProperty "FOOBAR"
-    putStrLn $ "Entry text: " ++ ppShow (e ^. entryText)
-    putStrLn $ "Lead space: " ++ ppShow (e ^. entryText . leadSpace)
-    putStrLn $ " End space: " ++ ppShow (e ^. entryText . endSpace)
-    let e' = e & entryText . endSpace .~ ""
-    putStrLn $ "Entry text': " ++ ppShow (e' ^. entryText)
+    putStrLn $ "Entry text: " ++ ppShow (e ^. entryString)
+    putStrLn $ "Lead space: " ++ ppShow (e ^. entryString . leadSpace)
+    putStrLn $ " End space: " ++ ppShow (e ^. entryString . endSpace)
+    let e' = e & entryString . endSpace .~ ""
+    putStrLn $ "Entry text': " ++ ppShow (e' ^. entryString)
     putStrLn $ "State history': " ++ ppShow (e' ^.. entryStateHistory)
     putStrLn "Entire entry:"
     pPrint e

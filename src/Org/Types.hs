@@ -6,29 +6,27 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE StrictData #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Org.Types where
 
 import Control.Lens
-import Control.Monad.Reader
+import Data.Char (toLower)
 import Data.Data
 import Data.Function (on)
 import Data.Hashable
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
-import Data.Text qualified as T
 import Data.Time
 import Data.Void
+import FlatParse.Stateful hiding (Parser, many, some)
+import FlatParse.Stateful qualified as FP
 import GHC.Generics
-import Text.Megaparsec hiding (many, some)
 
 data Config = Config
-  { _openKeywords :: [Text],
-    _closedKeywords :: [Text],
-    _keywordTransitions :: [(Text, [Text])],
-    _priorities :: [Text],
+  { _openKeywords :: [String],
+    _closedKeywords :: [String],
+    _keywordTransitions :: [(String, [String])],
+    _priorities :: [String],
     _propertyColumn :: Int,
     _tagsColumn :: Int
   }
@@ -36,52 +34,45 @@ data Config = Config
 
 makeClassy ''Config
 
-type BasicParser = ParsecT Void Text Identity
+type BasicParser = FP.Parser Void String
 
-type Parser = ParsecT Void Text (Reader Config)
+type Parser = FP.Parser (FilePath, Config) String
 
 data Loc = Loc
   { _file :: FilePath,
-    _line :: Int,
-    _column :: Int
+    _pos :: Int
   }
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makeLenses ''Loc
 
-sourcePosToLoc :: SourcePos -> Loc
-sourcePosToLoc SourcePos {..} =
-  Loc
-    { _file = sourceName,
-      _line = unPos sourceLine,
-      _column = unPos sourceColumn
-    }
-
-getLoc :: (TraversableStream s, MonadParsec e s m) => m Loc
-getLoc = sourcePosToLoc <$> getSourcePos
-{-# INLINE getLoc #-}
+getLoc :: Parser Loc
+getLoc = do
+  p <- getPos
+  (path, _) <- ask
+  pure $ Loc path (unPos p)
 
 data Property = Property
   { _propertyLoc :: Loc,
     _inherited :: Bool,
-    _name :: Text,
-    _value :: Text
+    _name :: String,
+    _value :: String
   }
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makeLenses ''Property
 
-lookupProperty' :: Text -> Traversal' [Property] Property
+lookupProperty' :: String -> Traversal' [Property] Property
 lookupProperty' n =
-  traverse . filtered (\x -> T.toLower (x ^. name) == T.toLower n)
+  traverse . filtered (\x -> map toLower (x ^. name) == map toLower n)
 
-lookupProperty :: Text -> Traversal' [Property] Text
+lookupProperty :: String -> Traversal' [Property] String
 lookupProperty n = lookupProperty' n . value
 
 data Block
-  = Whitespace Loc Text
-  | Paragraph Loc [Text]
-  | Drawer Loc [Text]
+  = Whitespace Loc String
+  | Paragraph Loc [String]
+  | Drawer Loc [String]
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Block
@@ -112,7 +103,7 @@ emptyBody :: Body -> Bool
 emptyBody = (== mempty)
 {-# INLINE emptyBody #-}
 
-newtype Tag = PlainTag Text
+newtype Tag = PlainTag String
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Tag
@@ -293,8 +284,8 @@ data Header = Header
 makeClassy ''Header
 
 data Keyword
-  = OpenKeyword Loc Text
-  | ClosedKeyword Loc Text
+  = OpenKeyword Loc String
+  | ClosedKeyword Loc String
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Keyword
@@ -384,16 +375,16 @@ data Entry = Entry
   { _entryLoc :: Loc,
     _entryDepth :: Int,
     _entryKeyword :: Maybe Keyword,
-    _entryPriority :: Maybe Text,
-    _entryHeadline :: Text,
-    _entryTitle :: Text,
-    _entryContext :: Maybe Text,
-    _entryLocator :: Maybe Text,
+    _entryPriority :: Maybe String,
+    _entryHeadline :: String,
+    _entryTitle :: String,
+    _entryContext :: Maybe String,
+    _entryLocator :: Maybe String,
     _entryTags :: [Tag],
     _entryStamps :: [Stamp],
     _entryProperties :: [Property],
     _entryLogEntries :: [LogEntry],
-    _entryText :: Body,
+    _entryString :: Body,
     _entryItems :: [Entry]
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
