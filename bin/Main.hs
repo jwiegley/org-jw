@@ -17,6 +17,7 @@ import Data.Text.IO qualified as T
 import FlatParse.Stateful
 import Options
 import Org.Data
+import Org.Filter
 import Org.Lint
 import Org.Printer
 import Org.TagTrees
@@ -49,8 +50,10 @@ main = do
     Stats _ -> doStats cs
     Lint level _ -> doLint level cs
     Test _ -> doTest cs
-    TagTrees dryRun dir depth tagForUntagged _ ->
-      makeTagTrees dryRun dir depth (PlainTag <$> tagForUntagged) cs
+    TagTrees dryRun dir overwrite depth tagForUntagged _ ->
+      makeTagTrees dryRun dir overwrite depth (PlainTag <$> tagForUntagged) cs
+    Filter dryRun dir overwrite expr _ ->
+      makeFilter dryRun dir overwrite expr cs
 
 globalConfig :: Config
 globalConfig = Config {..}

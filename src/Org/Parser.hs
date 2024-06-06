@@ -336,6 +336,10 @@ parseTags = do
   colon *> endBy1 parseTag colon
   where
     colon = $(char ':')
+
+parseTag :: FP.Parser r String Tag
+parseTag = PlainTag <$> tag
+  where
     tag :: FP.Parser r String String
     tag =
       many
@@ -343,7 +347,6 @@ parseTags = do
             isAlphaNum ch
               || ch `elem` ['-', '_', '=', '/']
         )
-    parseTag = PlainTag <$> tag
 
 parseStamps :: Parser [Stamp]
 parseStamps = do

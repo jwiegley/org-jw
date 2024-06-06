@@ -14,6 +14,7 @@ import Data.Text.Encoding qualified as T
 import Data.Typeable (Typeable)
 import GHC.Generics
 import Options.Applicative as OA
+import Org.Filter
 import Org.Lint
 import Org.Parser
 
@@ -53,9 +54,17 @@ data Command
   | TagTrees
       { tagTreesDryRun :: Bool,
         tagTreesDirectory :: FilePath,
+        tagTreesOverwrite :: Bool,
         tagTreesDepth :: Int,
         tagTreesTagForUntagged :: Maybe String,
         tagTreesInputs :: InputFiles
+      }
+  | Filter
+      { filterDryRun :: Bool,
+        filterDirectory :: FilePath,
+        filterOverwrite :: Bool,
+        filterExpr :: TagExpr,
+        filterInputs :: InputFiles
       }
   deriving (Data, Show, Eq, Typeable, Generic)
 
@@ -71,8 +80,10 @@ commandInput f (Outline input) = Outline <$> f input
 commandInput f (Stats input) = Stats <$> f input
 commandInput f (Lint kind input) = Lint kind <$> f input
 commandInput f (Test input) = Test <$> f input
-commandInput f (TagTrees dryRun dir depth tagForUntagged input) =
-  TagTrees dryRun dir depth tagForUntagged <$> f input
+commandInput f (TagTrees dryRun dir overwrite depth tagForUntagged input) =
+  TagTrees dryRun dir overwrite depth tagForUntagged <$> f input
+commandInput f (Filter dryRun dir overwrite expr input) =
+  Filter dryRun dir overwrite expr <$> f input
 
 data Options = Options
   { _verbose :: !Bool,
@@ -101,33 +112,28 @@ tradeJournalOpts =
           <> lintCommand
           <> testCommand
           <> tagTreesCommand
+          <> filterCommand
       )
   where
     filesOptions =
       ( ( \x ->
             if x == "-"
-              then FileFromStdin
-              else Paths [x]
+              then ListFromStdin
+              else FilesFromFile x
         )
           <$> strOption
-            ( short 'f'
-                <> long "file"
-                <> help "Single file to process"
+            ( short 'F'
+                <> long "files"
+                <> help "List of files to process"
             )
       )
-        <|> ( ( \x ->
-                  if x == "-"
-                    then ListFromStdin
-                    else FilesFromFile x
+        <|> ( ( \xs ->
+                  if xs == ["-"]
+                    then FileFromStdin
+                    else Paths xs
               )
-                <$> strOption
-                  ( short 'F'
-                      <> long "files"
-                      <> help "List of files to process"
-                  )
+                <$> some (argument str (metavar "FILES"))
             )
-        <|> Paths
-        <$> some (argument str (metavar "FILES"))
 
     parseCommand :: Mod CommandFields Command
     parseCommand =
@@ -244,6 +250,11 @@ tradeJournalOpts =
                   <> value ".tagtrees"
                   <> help "Directory to create tag trees in"
               )
+            <*> switch
+              ( short 'f'
+                  <> long "force"
+                  <> help "If enabled, remove existing tagtrees directory"
+              )
             <*> option
               auto
               ( short 'd'
@@ -256,6 +267,44 @@ tradeJournalOpts =
                   ( long "tag-for-untagged"
                       <> help "Depth of tag hierarchy to create"
                   )
+              )
+            <*> filesOptions
+
+    filterCommand :: Mod CommandFields Command
+    filterCommand =
+      OA.command
+        "filter"
+        (info filterOptions (progDesc "Filter by tag expression"))
+      where
+        filterOptions :: Parser Command
+        filterOptions =
+          Filter
+            <$> switch
+              ( short 'n'
+                  <> long "dry-run"
+                  <> help "If enabled, make no changes to disk"
+              )
+            <*> option
+              auto
+              ( long "directory"
+                  <> value ".filter"
+                  <> help "Directory to create tag trees in"
+              )
+            <*> switch
+              ( short 'f'
+                  <> long "force"
+                  <> help "If enabled, remove existing filter directory"
+              )
+            <*> option
+              ( maybeReader
+                  ( parseMaybe parseTagExpr
+                      . T.encodeUtf8
+                      . T.pack
+                  )
+              )
+              ( short 't'
+                  <> long "tags"
+                  <> help "Tags to filter by"
               )
             <*> filesOptions
 
