@@ -13,7 +13,6 @@ import Org.Types
 import System.Directory
 import System.Exit
 import System.FilePath.Posix
-import Prelude hiding (readFile)
 
 combinations :: [a] -> [[a]]
 combinations = concatMap (filter (not . null) . permutations) . subsequences
@@ -25,14 +24,14 @@ createEmptyDirectory :: Bool -> FilePath -> IO ()
 createEmptyDirectory overwrite dir = do
   isPresent <- doesDirectoryExist dir
   if isPresent
-    then do
+    then
       if overwrite
         then do
           removeDirectoryRecursive dir
           createDirectoryIfMissing True dir
         else do
           contents <- listDirectory dir
-          unless (Prelude.null contents) $ do
+          unless (null contents) $ do
             putStrLn $ "Cannot overwrite directory " ++ dir
             exitWith (ExitFailure 1)
     else createDirectoryIfMissing True dir
@@ -53,14 +52,14 @@ makeTagTrees dryRun tagTreesDir overwrite depth tagForUntagged cs = do
       let tags = case f ^.. fileTags . traverse of
             [] -> maybeToList tagForUntagged
             xs -> xs
-          tagSets = filter (\ts -> length ts <= depth) (combinations tags)
-      forM_ tagSets $ \tagSet -> do
-        modify (succ *** max (length tagSet))
-        unless dryRun $
-          liftIO $
-            createLinkInDirectory
-              (f ^. filePath)
-              (tagTreesDir </> tagPath tagSet)
+      forM_ (filter (\ts -> length ts <= depth) (combinations tags)) $
+        \tagSet -> do
+          modify (succ *** max (length tagSet))
+          unless dryRun $
+            liftIO $
+              createLinkInDirectory
+                (f ^. filePath)
+                (tagTreesDir </> tagPath tagSet)
 
   putStrLn $
     (if dryRun then "Would create " else "Created ")

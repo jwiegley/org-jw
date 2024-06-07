@@ -30,12 +30,19 @@ data TagExpr
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Plated)
 
 parseTagExpr :: FP.Parser r String TagExpr
-parseTagExpr =
-  foldr TagAnd TagTrue <$> (sepBy1 go spaces_ <* eof)
+parseTagExpr = f TagAnd TagTrue
   where
-    go = do
-      f <- (TagNot <$ $(char '-')) <|> pure id
-      f . TagVar <$> parseTag
+    f binop end = foldr binop end <$> (sepBy1 go spaces_ <* eof)
+    go =
+      $( switch
+           [|
+             case _ of
+               "-" -> TagNot . TagVar <$> parseTag
+               "(" -> parseTagExpr <* $(char ')')
+               "(|" -> f TagOr TagFalse <* $(char ')')
+               _ -> TagVar <$> parseTag
+             |]
+       )
 
 tagsMatch :: TagExpr -> [Tag] -> Bool
 tagsMatch (TagVar tag) ts = tag `elem` ts
@@ -52,9 +59,8 @@ makeFilter dryRun filterDir overwrite expr cs = do
     createEmptyDirectory overwrite filterDir
 
   cnt <- flip execStateT (0 :: Int) $
-    forM_ (cs ^. items) $ \f -> do
-      let tags = f ^.. fileTags . traverse
-      when (tagsMatch expr tags) $ do
+    forM_ (cs ^. items) $ \f ->
+      when (tagsMatch expr (f ^.. fileTags . traverse)) $ do
         modify succ
         unless dryRun $
           liftIO $
