@@ -291,7 +291,7 @@ sluggify =
               | otherwise -> c
         )
     removeCertainCharacters =
-      filter (\c -> c `notElem` ['’', '’'])
+      filter (\c -> c `notElem` ['’', '‘', '“', '”', '`', '\''])
     useDashes =
       map (\c -> if c == '_' then '-' else c)
 
