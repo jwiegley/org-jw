@@ -177,7 +177,7 @@ doLint level cs = do
               zipWith
                 ( curry
                     ( \((ln, _col), LintMessage _ k c) ->
-                        LintMessage ln k c
+                        LintMessage (succ ln) k c
                     )
                 )
                 linesCols
