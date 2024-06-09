@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Org.Printer where
+module Org.Print where
 
 import Control.Lens
 import Data.Maybe (maybeToList)

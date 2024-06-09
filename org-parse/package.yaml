@@ -1,0 +1,47 @@
+name:        org-parse
+version:     0.0.1
+license:     BSD3
+author:      John Wiegley
+maintainer:  johnw@newartisans.com
+description: Org-mode parser
+
+ghc-options:
+   - -Wall
+   - -Wno-missing-home-modules
+   - -fprof-auto
+
+dependencies:
+  - base >= 4.5
+  # - aeson
+  # - array
+  # - bytestring
+  # - cassava
+  # - comonad
+  # - constraints
+  # - containers
+  # - data-default
+  # - directory
+  # - filepath
+  # - free
+  # - hashable
+  # - lens
+  # - flatparse
+  # - mtl
+  # - pretty
+  # - pretty-show
+  # - profunctors
+  # - row-types
+  # - semigroupoids
+  # - simple-amount >= 0.2.0
+  # - split
+  # - text
+  # - time
+  # - transformers
+  # - unordered-containers
+  # - template-haskell
+  # - vector
+
+library:
+  source-dirs: src
+  exposed-modules:
+    - Org.Parser

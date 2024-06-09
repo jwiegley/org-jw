@@ -1,4 +1,5 @@
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
@@ -14,14 +15,11 @@
 module Org.Data where
 
 import Control.Applicative
-import Control.Arrow (left)
 import Control.Lens
 import Control.Lens.Unsound
 import Control.Monad (unless, void, when)
 import Control.Monad.Except
-import Control.Monad.IO.Class
 import Data.ByteString (ByteString)
-import Data.ByteString qualified as B
 import Data.Char (isAlphaNum, toLower)
 import Data.Data.Lens (biplate)
 import Data.List (intercalate, isInfixOf)
@@ -35,17 +33,113 @@ import Data.Time (UTCTime, defaultTimeLocale)
 import Data.Time.Format (formatTime, parseTimeM)
 import FlatParse.Stateful hiding (optional, (<|>))
 import FlatParse.Stateful qualified as FP
-import Org.Parser
-import Org.Printer
 import Org.Types
 import System.Directory
 import System.FilePath.Posix
-import System.IO (IOMode (..), readFile, withFile)
 import System.IO.Unsafe (unsafePerformIO)
 import Prelude hiding (readFile)
 
 lined :: Traversal' [String] String
 lined f a = lines <$> f (unlines a)
+
+count ::
+  Int ->
+  FP.Parser r String a ->
+  FP.Parser r String [a]
+count cnt p = go cnt
+  where
+    go 0 = pure []
+    go n = (:) <$> p <*> go (pred n)
+
+between ::
+  FP.Parser r String () ->
+  FP.Parser r String () ->
+  FP.Parser r String a ->
+  FP.Parser r String a
+between s e p = s *> p <* e
+
+endBy1 ::
+  FP.Parser r String a ->
+  FP.Parser r String sep ->
+  FP.Parser r String [a]
+endBy1 p sep = some $ do
+  x <- p
+  _ <- sep
+  return x
+
+sepBy1 ::
+  FP.Parser r String a ->
+  FP.Parser r String sep ->
+  FP.Parser r String [a]
+sepBy1 p sep = do
+  x <- p
+  xs <- many (sep >> p)
+  return (x : xs)
+
+manyTill ::
+  (Show a) =>
+  FP.Parser r String a ->
+  FP.Parser r String () ->
+  FP.Parser r String [a]
+manyTill p e = go []
+  where
+    go acc =
+      (reverse acc <$ e)
+        <|> (go . (: acc) =<< p)
+
+manyTill_ ::
+  FP.Parser r String a ->
+  FP.Parser r String end ->
+  FP.Parser r String ([a], end)
+manyTill_ p e = go []
+  where
+    go !acc = do
+      (let !y = reverse acc in ((y,) <$> e))
+        <|> (go . (: acc) =<< p)
+
+someTill ::
+  FP.Parser r String a ->
+  FP.Parser r String () ->
+  FP.Parser r String [a]
+someTill p e = go []
+  where
+    go acc = do
+      x <- p
+      ((x : acc) <$ e)
+        <|> go (x : acc)
+
+newline :: FP.Parser r String ()
+newline = $(char '\n')
+
+singleSpace :: FP.Parser r String ()
+singleSpace = $(char ' ')
+
+spaces_ :: FP.Parser r String ()
+spaces_ = skipSome singleSpace
+
+digitChar :: FP.Parser r String Char
+digitChar = satisfy isDigit
+
+trailingSpace :: FP.Parser r String ()
+trailingSpace = skipMany singleSpace <* newline
+
+lineOrEof :: FP.Parser r String String
+lineOrEof = takeLine
+
+wholeLine :: FP.Parser r String String
+wholeLine = takeLine
+
+restOfLine :: FP.Parser r String String
+restOfLine = takeLine
+
+identifier :: FP.Parser r String String
+identifier = some (satisfy (\c -> isAlphaNum c || c == '_' || c == ' '))
+
+parseMaybe :: FP.Parser () e a -> ByteString -> Maybe a
+parseMaybe p s = case runParser p () 0 s of
+  OK res _ _ -> Just res
+  Err _ -> Nothing
+  Fail -> Nothing
 
 -- Roughly equivalent to: '^[0-9]{8,}[_-].+?( -- .+?|\[.+?\])\.[^.]+$'
 fileNameRe ::
@@ -404,8 +498,7 @@ specialProperties =
     ("KEYWORD", Fold (entryKeyword . _Just . keywordString)),
     ("TITLE", Fold entryTitle),
     ("CONTEXT", Fold (entryContext . _Just)),
-    ("LOCATOR", Fold (entryLocator . _Just)),
-    ("BODY", Fold (entryString . to (unlines . showBody "")))
+    ("LOCATOR", Fold (entryLocator . _Just))
   ]
 
 keywordString :: Lens' Keyword String
@@ -641,47 +734,3 @@ resultToEither :: Result e a -> Either e a
 resultToEither (OK res _ _) = Right res
 resultToEither (Err e) = Left e
 resultToEither Fail = error "The worst happened"
-
-readOrgFile :: (MonadIO m) => Config -> FilePath -> ExceptT String m OrgFile
-readOrgFile cfg path = do
-  org <-
-    liftIO $
-      withFile path ReadMode $
-        fmap (readOrgFile_ cfg path) . B.hGetContents
-  liftResult org
-
-_OrgFile :: Config -> FilePath -> Prism' ByteString OrgFile
-_OrgFile cfg path =
-  prism
-    ( T.encodeUtf8
-        . T.pack
-        . intercalate "\n"
-        . showOrgFile (cfg ^. propertyColumn) (cfg ^. tagsColumn)
-    )
-    (left (T.encodeUtf8 . T.pack) . resultToEither . readOrgFile_ cfg path)
-
-readStdin :: (MonadIO m) => m ByteString
-readStdin = liftIO B.getContents
-
-readFile :: (MonadIO m) => FilePath -> m ByteString
-readFile path = liftIO (B.readFile path)
-
-readLines :: (MonadIO m) => FilePath -> m [String]
-readLines path = lines <$> liftIO (System.IO.readFile path)
-
-readCollectionItem ::
-  (MonadIO m) =>
-  Config ->
-  FilePath ->
-  ExceptT String m CollectionItem
-readCollectionItem cfg path = do
-  if takeExtension path == ".org"
-    then OrgItem <$> readOrgFile cfg path
-    else pure $ DataItem path
-
-readCollection ::
-  (MonadIO m) =>
-  Config ->
-  [FilePath] ->
-  ExceptT String m Collection
-readCollection cfg paths = Collection <$> mapM (readCollectionItem cfg) paths

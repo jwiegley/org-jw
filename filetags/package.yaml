@@ -1,4 +1,4 @@
-name:        org-data
+name:        filetags
 version:     0.0.1
 license:     BSD3
 author:      John Wiegley
@@ -53,21 +53,8 @@ library:
     - Org.TagTrees
     - Org.Filter
 
-tests:
-  org-data-tests:
-    main: Main.hs
-    source-dirs: tests
-    dependencies:
-      - HUnit
-      - hedgehog
-      - here
-      - tasty
-      - tasty-hedgehog
-      - tasty-hunit
-      - org-data
-
 executables:
-  org-data:
+  filetags:
     main: Main.hs
     source-dirs: bin
     other-modules:

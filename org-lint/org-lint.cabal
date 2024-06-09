@@ -1,0 +1,40 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.36.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           org-lint
+version:        0.0.1
+description:    Org-mode parser and data drier
+author:         John Wiegley
+maintainer:     johnw@newartisans.com
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+
+library
+  exposed-modules:
+      Org.Lint
+  other-modules:
+      Paths_org_lint
+  hs-source-dirs:
+      src
+  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
+  build-depends:
+      base >=4.5
+    , org-data
+  default-language: Haskell2010
+
+executable org-lint
+  main-is: Main.hs
+  other-modules:
+      Options
+  hs-source-dirs:
+      bin
+  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
+  build-depends:
+      base >=4.5
+    , optparse-applicative
+    , org-lint
+  default-language: Haskell2010

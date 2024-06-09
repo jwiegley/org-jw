@@ -7,7 +7,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module Org.Parser where
+module Org.Parse where
 
 import Control.Arrow (second)
 import Control.Lens
@@ -24,107 +24,58 @@ import Org.Types
 
 -- import Debug.Trace
 
-parseMaybe :: FP.Parser () e a -> ByteString -> Maybe a
-parseMaybe p s = case runParser p () 0 s of
-  OK res _ _ -> Just res
-  Err _ -> Nothing
-  Fail -> Nothing
-
-singleSpace :: FP.Parser r String ()
-singleSpace = $(char ' ')
-
-spaces_ :: FP.Parser r String ()
-spaces_ = skipSome singleSpace
-
-digitChar :: FP.Parser r String Char
-digitChar = satisfy isDigit
-
-count ::
-  Int ->
-  FP.Parser r String a ->
-  FP.Parser r String [a]
-count cnt p = go cnt
-  where
-    go 0 = pure []
-    go n = (:) <$> p <*> go (pred n)
-
-between ::
-  FP.Parser r String () ->
-  FP.Parser r String () ->
-  FP.Parser r String a ->
-  FP.Parser r String a
-between s e p = s *> p <* e
-
-endBy1 ::
-  FP.Parser r String a ->
-  FP.Parser r String sep ->
-  FP.Parser r String [a]
-endBy1 p sep = some $ do
-  x <- p
-  _ <- sep
-  return x
-
-sepBy1 ::
-  FP.Parser r String a ->
-  FP.Parser r String sep ->
-  FP.Parser r String [a]
-sepBy1 p sep = do
-  x <- p
-  xs <- many (sep >> p)
-  return (x : xs)
-
-manyTill ::
-  (Show a) =>
-  FP.Parser r String a ->
-  FP.Parser r String () ->
-  FP.Parser r String [a]
-manyTill p e = go []
-  where
-    go acc =
-      (reverse acc <$ e)
-        <|> (go . (: acc) =<< p)
-
-manyTill_ ::
-  FP.Parser r String a ->
-  FP.Parser r String end ->
-  FP.Parser r String ([a], end)
-manyTill_ p e = go []
-  where
-    go !acc = do
-      (let !y = reverse acc in ((y,) <$> e))
-        <|> (go . (: acc) =<< p)
-
-someTill ::
-  FP.Parser r String a ->
-  FP.Parser r String () ->
-  FP.Parser r String [a]
-someTill p e = go []
-  where
-    go acc = do
-      x <- p
-      ((x : acc) <$ e)
-        <|> go (x : acc)
-
-newline :: Parser ()
-newline = $(char '\n')
-
-trailingSpace :: Parser ()
-trailingSpace = skipMany singleSpace <* newline
-
-lineOrEof :: Parser String
-lineOrEof = takeLine
-
-wholeLine :: Parser String
-wholeLine = takeLine
-
-restOfLine :: Parser String
-restOfLine = takeLine
-
-identifier :: FP.Parser r String String
-identifier = some (satisfy (\c -> isAlphaNum c || c == '_' || c == ' '))
+getLoc :: Parser Loc
+getLoc = do
+  p <- getPos
+  (path, _) <- ask
+  pure $ Loc path (unPos p)
 
 readOrgFile_ :: Config -> FilePath -> ByteString -> Result String OrgFile
 readOrgFile_ cfg path = runParser parseOrgFile (path, cfg) 0
+
+readOrgFile :: (MonadIO m) => Config -> FilePath -> ExceptT String m OrgFile
+readOrgFile cfg path = do
+  org <-
+    liftIO $
+      withFile path ReadMode $
+        fmap (readOrgFile_ cfg path) . B.hGetContents
+  liftResult org
+
+_OrgFile :: Config -> FilePath -> Prism' ByteString OrgFile
+_OrgFile cfg path =
+  prism
+    ( T.encodeUtf8
+        . T.pack
+        . intercalate "\n"
+        . showOrgFile (cfg ^. propertyColumn) (cfg ^. tagsColumn)
+    )
+    (left (T.encodeUtf8 . T.pack) . resultToEither . readOrgFile_ cfg path)
+
+readStdin :: (MonadIO m) => m ByteString
+readStdin = liftIO B.getContents
+
+readFile :: (MonadIO m) => FilePath -> m ByteString
+readFile path = liftIO (B.readFile path)
+
+readLines :: (MonadIO m) => FilePath -> m [String]
+readLines path = lines <$> liftIO (System.IO.readFile path)
+
+readCollectionItem ::
+  (MonadIO m) =>
+  Config ->
+  FilePath ->
+  ExceptT String m CollectionItem
+readCollectionItem cfg path = do
+  if takeExtension path == ".org"
+    then OrgItem <$> readOrgFile cfg path
+    else pure $ DataItem path
+
+readCollection ::
+  (MonadIO m) =>
+  Config ->
+  [FilePath] ->
+  ExceptT String m Collection
+readCollection cfg paths = Collection <$> mapM (readCollectionItem cfg) paths
 
 parseOrgFile :: Parser OrgFile
 parseOrgFile = do

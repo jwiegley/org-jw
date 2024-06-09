@@ -14,13 +14,13 @@
         inherit system overlays;
         inherit (haskellNix) config;
       };
-      flake = pkgs.org-data.flake {
+      flake = pkgs.org-lint.flake {
       };
       overlays = [ haskellNix.overlay
         (final: prev: {
-          org-data =
+          org-types =
             final.haskell-nix.project' {
-              src = ./.;
+              src = ./org-types;
               supportHpack = true;
               compiler-nix-name = "ghc98";
               shell.tools = {
@@ -32,14 +32,104 @@
                 pkg-config
               ];
               modules = [{
-                enableLibraryProfiling = true;
-                enableProfiling = true;
+                enableLibraryProfiling = false;
+                enableProfiling = false;
+              }];
+            };
+          org-data =
+            final.haskell-nix.project' {
+              src = ./org-data;
+              supportHpack = true;
+              compiler-nix-name = "ghc98";
+              shell.tools = {
+                cabal = {};
+                haskell-language-server = {};
+                hlint = {};
+              };
+              shell.buildInputs = with pkgs; [
+                pkg-config
+              ];
+              modules = [{
+                enableLibraryProfiling = false;
+                enableProfiling = false;
+              }];
+            };
+          org-parse =
+            final.haskell-nix.project' {
+              src = ./org-parse;
+              supportHpack = true;
+              compiler-nix-name = "ghc98";
+              shell.tools = {
+                cabal = {};
+                haskell-language-server = {};
+                hlint = {};
+              };
+              shell.buildInputs = with pkgs; [
+                pkg-config
+              ];
+              modules = [{
+                enableLibraryProfiling = false;
+                enableProfiling = false;
+              }];
+            };
+          org-print =
+            final.haskell-nix.project' {
+              src = ./org-print;
+              supportHpack = true;
+              compiler-nix-name = "ghc98";
+              shell.tools = {
+                cabal = {};
+                haskell-language-server = {};
+                hlint = {};
+              };
+              shell.buildInputs = with pkgs; [
+                pkg-config
+              ];
+              modules = [{
+                enableLibraryProfiling = false;
+                enableProfiling = false;
+              }];
+            };
+          org-lint =
+            final.haskell-nix.project' {
+              src = ./org-lint;
+              supportHpack = true;
+              compiler-nix-name = "ghc98";
+              shell.tools = {
+                cabal = {};
+                haskell-language-server = {};
+                hlint = {};
+              };
+              shell.buildInputs = with pkgs; [
+                pkg-config
+              ];
+              modules = [{
+                enableLibraryProfiling = false;
+                enableProfiling = false;
+              }];
+            };
+          filetags =
+            final.haskell-nix.project' {
+              src = ./filetags;
+              supportHpack = true;
+              compiler-nix-name = "ghc98";
+              shell.tools = {
+                cabal = {};
+                haskell-language-server = {};
+                hlint = {};
+              };
+              shell.buildInputs = with pkgs; [
+                pkg-config
+              ];
+              modules = [{
+                enableLibraryProfiling = false;
+                enableProfiling = false;
               }];
             };
         })
       ];
     in flake // {
-      packages.default = flake.packages."org-data:exe:org-data";
+      packages.default = flake.packages."org-lint:exe:org-lint";
 
       devShell = flake.devShell // {
         packages = p: [
