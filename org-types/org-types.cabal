@@ -6,7 +6,7 @@ cabal-version: 1.12
 
 name:           org-types
 version:        0.0.1
-description:    Org-mode parser and data drier
+description:    Types that represent Org-mode data
 author:         John Wiegley
 maintainer:     johnw@newartisans.com
 license:        BSD3

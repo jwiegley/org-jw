@@ -11,35 +11,35 @@ ghc-options:
    - -fprof-auto
 
 dependencies:
-  - aeson
-  - array
   - base >= 4.5
-  - bytestring
-  - cassava
-  - comonad
-  - constraints
-  - containers
-  - data-default
-  - directory
-  - filepath
-  - free
-  - hashable
-  - lens
-  - flatparse
-  - mtl
-  - pretty
-  - pretty-show
-  - profunctors
-  - row-types
-  - semigroupoids
-  - simple-amount >= 0.2.0
-  - split
-  - text
-  - time
-  - transformers
-  - unordered-containers
-  - template-haskell
-  - vector
+  # - aeson
+  # - array
+  # - bytestring
+  # - cassava
+  # - comonad
+  # - constraints
+  # - containers
+  # - data-default
+  # - directory
+  # - filepath
+  # - free
+  # - hashable
+  # - lens
+  # - flatparse
+  # - mtl
+  # - pretty
+  # - pretty-show
+  # - profunctors
+  # - row-types
+  # - semigroupoids
+  # - simple-amount >= 0.2.0
+  # - split
+  # - text
+  # - time
+  # - transformers
+  # - unordered-containers
+  # - template-haskell
+  # - vector
 
 library:
   source-dirs: src

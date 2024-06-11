@@ -30,7 +30,7 @@ import FlatParse.Stateful hiding ((<|>))
 import FlatParse.Stateful qualified as FP
 import GHC.Generics hiding (to)
 import Org.Data
-import Org.Printer
+import Org.Print
 import Org.Types
 import Text.Show.Pretty
 

@@ -14,103 +14,13 @@
         inherit system overlays;
         inherit (haskellNix) config;
       };
-      flake = pkgs.org-lint.flake {
+      flake = pkgs.org-jw.flake {
       };
       overlays = [ haskellNix.overlay
         (final: prev: {
-          org-types =
+          org-jw =
             final.haskell-nix.project' {
-              src = ./org-types;
-              supportHpack = true;
-              compiler-nix-name = "ghc98";
-              shell.tools = {
-                cabal = {};
-                haskell-language-server = {};
-                hlint = {};
-              };
-              shell.buildInputs = with pkgs; [
-                pkg-config
-              ];
-              modules = [{
-                enableLibraryProfiling = false;
-                enableProfiling = false;
-              }];
-            };
-          org-data =
-            final.haskell-nix.project' {
-              src = ./org-data;
-              supportHpack = true;
-              compiler-nix-name = "ghc98";
-              shell.tools = {
-                cabal = {};
-                haskell-language-server = {};
-                hlint = {};
-              };
-              shell.buildInputs = with pkgs; [
-                pkg-config
-              ];
-              modules = [{
-                enableLibraryProfiling = false;
-                enableProfiling = false;
-              }];
-            };
-          org-parse =
-            final.haskell-nix.project' {
-              src = ./org-parse;
-              supportHpack = true;
-              compiler-nix-name = "ghc98";
-              shell.tools = {
-                cabal = {};
-                haskell-language-server = {};
-                hlint = {};
-              };
-              shell.buildInputs = with pkgs; [
-                pkg-config
-              ];
-              modules = [{
-                enableLibraryProfiling = false;
-                enableProfiling = false;
-              }];
-            };
-          org-print =
-            final.haskell-nix.project' {
-              src = ./org-print;
-              supportHpack = true;
-              compiler-nix-name = "ghc98";
-              shell.tools = {
-                cabal = {};
-                haskell-language-server = {};
-                hlint = {};
-              };
-              shell.buildInputs = with pkgs; [
-                pkg-config
-              ];
-              modules = [{
-                enableLibraryProfiling = false;
-                enableProfiling = false;
-              }];
-            };
-          org-lint =
-            final.haskell-nix.project' {
-              src = ./org-lint;
-              supportHpack = true;
-              compiler-nix-name = "ghc98";
-              shell.tools = {
-                cabal = {};
-                haskell-language-server = {};
-                hlint = {};
-              };
-              shell.buildInputs = with pkgs; [
-                pkg-config
-              ];
-              modules = [{
-                enableLibraryProfiling = false;
-                enableProfiling = false;
-              }];
-            };
-          filetags =
-            final.haskell-nix.project' {
-              src = ./filetags;
+              src = ./.;
               supportHpack = true;
               compiler-nix-name = "ghc98";
               shell.tools = {
@@ -137,6 +47,7 @@
 
         buildInputs = with pkgs.haskellPackages; [
           cabal-install
+          ghcid
         ];
 
         withHoogle = true;

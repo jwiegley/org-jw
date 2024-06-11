@@ -4,5 +4,5 @@ packages: org-types/
           org-lint/
           org-parse/
           org-print/
-          -- sitebuilder/
-          -- tinderbox/
+          sitebuilder/
+          tinderbox/

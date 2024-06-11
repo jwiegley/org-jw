@@ -19,7 +19,7 @@ import Options
 import Org.Data
 import Org.Filter
 import Org.Lint
-import Org.Printer
+import Org.Print
 import Org.TagTrees
 import Org.Types
 import System.Exit

@@ -44,4 +44,4 @@ dependencies:
 library:
   source-dirs: src
   exposed-modules:
-    - Org.Printer
+    - Org.Print

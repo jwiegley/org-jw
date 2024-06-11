@@ -15,48 +15,12 @@ build-type:     Simple
 
 library
   exposed-modules:
-      Org.Printer
-      Org.Parser
-      Org.Types
-      Org.Lint
-      Org.Normalize
-      Org.Data
-      Org.TagTrees
-      Org.Filter
-  other-modules:
       Org.Print
+  other-modules:
       Paths_org_print
   hs-source-dirs:
       src
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
-      aeson
-    , array
-    , base >=4.5
-    , bytestring
-    , cassava
-    , comonad
-    , constraints
-    , containers
-    , data-default
-    , directory
-    , filepath
-    , flatparse
-    , free
-    , hashable
-    , lens
-    , mtl
-    , pretty
-    , pretty-show
-    , profunctors
-    , row-types
-    , semigroupoids
-    , simple-amount >=0.2.0
-    , split
-    , template-haskell
-    , text
-    , time
-    , transformers
-    , unordered-containers
-    , vector
+      base >=4.5
   default-language: Haskell2010
