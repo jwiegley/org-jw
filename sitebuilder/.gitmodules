@@ -1,3 +1,0 @@
-[submodule "vendor/hakyll"]
-	path = vendor/hakyll
-	url = https://github.com/jwiegley/hakyll
