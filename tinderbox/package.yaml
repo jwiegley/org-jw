@@ -10,31 +10,31 @@ ghc-options:
    - -Wno-missing-home-modules
 
 dependencies:
-  - aeson
   - base >= 4.5
-  - bytestring
-  - cassava
-  - comonad
-  - constraints
-  - containers
-  - data-default
-  - free
-  - hashable
-  - lens
-  - megaparsec
-  - mtl
-  - pretty
-  - pretty-show
-  - profunctors
-  - row-types
-  - semigroupoids
-  - simple-amount >= 0.2.0
-  - split
-  - text
-  - time
-  - transformers
-  - unordered-containers
-  - vector
+  # - aeson
+  # - bytestring
+  # - cassava
+  # - comonad
+  # - constraints
+  # - containers
+  # - data-default
+  # - free
+  # - hashable
+  # - lens
+  # - megaparsec
+  # - mtl
+  # - pretty
+  # - pretty-show
+  # - profunctors
+  # - row-types
+  # - semigroupoids
+  # - simple-amount >= 0.2.0
+  # - split
+  # - text
+  # - time
+  # - transformers
+  # - unordered-containers
+  # - vector
 
 library:
   source-dirs: src
@@ -58,7 +58,7 @@ tests:
       - tinderbox
 
 executables:
-  tinderbox:
+  box:
     main: Main.hs
     source-dirs: bin
     other-modules:

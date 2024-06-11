@@ -1,5 +1,6 @@
 packages: org-types/
           filetags/
+          flatparse-util/
           org-data/
           org-lint/
           org-parse/

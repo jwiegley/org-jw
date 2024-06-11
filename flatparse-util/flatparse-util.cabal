@@ -4,9 +4,9 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           org-data
+name:           flatparse-util
 version:        0.0.1
-description:    Org-mode parser and data drier
+description:    Combinators and utilities for flatparse
 author:         John Wiegley
 maintainer:     johnw@newartisans.com
 license:        BSD3
@@ -15,24 +15,12 @@ build-type:     Simple
 
 library
   exposed-modules:
-      Org.Data
+      FlatParse.Combinators
   other-modules:
-      Org.Types
-      Paths_org_data
+      Paths_flatparse_util
   hs-source-dirs:
       src
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
       base >=4.5
-    , bytestring
-    , containers
-    , directory
-    , filepath
-    , flatparse
-    , hashable
-    , lens
-    , mtl
-    , split
-    , text
-    , time
   default-language: Haskell2010

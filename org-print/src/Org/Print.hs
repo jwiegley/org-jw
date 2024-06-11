@@ -9,6 +9,16 @@ import Data.Maybe (maybeToList)
 import Data.Time
 import Org.Types hiding (propertyColumn, tagsColumn)
 
+_OrgFile :: Config -> FilePath -> Prism' ByteString OrgFile
+_OrgFile cfg path =
+  prism
+    ( T.encodeUtf8
+        . T.pack
+        . intercalate "\n"
+        . showOrgFile (cfg ^. propertyColumn) (cfg ^. tagsColumn)
+    )
+    (left (T.encodeUtf8 . T.pack) . resultToEither . readOrgFile_ cfg path)
+
 showStamp :: Stamp -> String
 showStamp (ClosedStamp _ tm) = "CLOSED: " <> showTime tm
 showStamp (ScheduledStamp _ tm) = "SCHEDULED: " <> showTime tm

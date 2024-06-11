@@ -20,9 +20,12 @@ import Data.Text.Encoding qualified as T
 import Data.Time
 import FlatParse.Stateful hiding (Parser)
 import FlatParse.Stateful qualified as FP
+import Org.Parse.Combinators
 import Org.Types
 
 -- import Debug.Trace
+
+type Parser = FP.Parser (FilePath, Config) String
 
 getLoc :: Parser Loc
 getLoc = do
@@ -32,50 +35,6 @@ getLoc = do
 
 readOrgFile_ :: Config -> FilePath -> ByteString -> Result String OrgFile
 readOrgFile_ cfg path = runParser parseOrgFile (path, cfg) 0
-
-readOrgFile :: (MonadIO m) => Config -> FilePath -> ExceptT String m OrgFile
-readOrgFile cfg path = do
-  org <-
-    liftIO $
-      withFile path ReadMode $
-        fmap (readOrgFile_ cfg path) . B.hGetContents
-  liftResult org
-
-_OrgFile :: Config -> FilePath -> Prism' ByteString OrgFile
-_OrgFile cfg path =
-  prism
-    ( T.encodeUtf8
-        . T.pack
-        . intercalate "\n"
-        . showOrgFile (cfg ^. propertyColumn) (cfg ^. tagsColumn)
-    )
-    (left (T.encodeUtf8 . T.pack) . resultToEither . readOrgFile_ cfg path)
-
-readStdin :: (MonadIO m) => m ByteString
-readStdin = liftIO B.getContents
-
-readFile :: (MonadIO m) => FilePath -> m ByteString
-readFile path = liftIO (B.readFile path)
-
-readLines :: (MonadIO m) => FilePath -> m [String]
-readLines path = lines <$> liftIO (System.IO.readFile path)
-
-readCollectionItem ::
-  (MonadIO m) =>
-  Config ->
-  FilePath ->
-  ExceptT String m CollectionItem
-readCollectionItem cfg path = do
-  if takeExtension path == ".org"
-    then OrgItem <$> readOrgFile cfg path
-    else pure $ DataItem path
-
-readCollection ::
-  (MonadIO m) =>
-  Config ->
-  [FilePath] ->
-  ExceptT String m Collection
-readCollection cfg paths = Collection <$> mapM (readCollectionItem cfg) paths
 
 parseOrgFile :: Parser OrgFile
 parseOrgFile = do

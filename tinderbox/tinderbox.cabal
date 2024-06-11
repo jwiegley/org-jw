@@ -25,34 +25,10 @@ library
       src
   ghc-options: -Wall -Wno-missing-home-modules
   build-depends:
-      aeson
-    , base >=4.5
-    , bytestring
-    , cassava
-    , comonad
-    , constraints
-    , containers
-    , data-default
-    , free
-    , hashable
-    , lens
-    , megaparsec
-    , mtl
-    , pretty
-    , pretty-show
-    , profunctors
-    , row-types
-    , semigroupoids
-    , simple-amount >=0.2.0
-    , split
-    , text
-    , time
-    , transformers
-    , unordered-containers
-    , vector
+      base >=4.5
   default-language: Haskell2010
 
-executable tinderbox
+executable box
   main-is: Main.hs
   other-modules:
       Options
@@ -60,33 +36,9 @@ executable tinderbox
       bin
   ghc-options: -Wall -Wno-missing-home-modules
   build-depends:
-      aeson
-    , base >=4.5
-    , bytestring
-    , cassava
-    , comonad
-    , constraints
-    , containers
-    , data-default
-    , free
-    , hashable
-    , lens
-    , megaparsec
-    , mtl
+      base >=4.5
     , optparse-applicative
-    , pretty
-    , pretty-show
-    , profunctors
-    , row-types
-    , semigroupoids
-    , simple-amount >=0.2.0
-    , split
-    , text
-    , time
     , tinderbox
-    , transformers
-    , unordered-containers
-    , vector
   default-language: Haskell2010
 
 test-suite tinderbox-tests
@@ -99,35 +51,11 @@ test-suite tinderbox-tests
   ghc-options: -Wall -Wno-missing-home-modules
   build-depends:
       HUnit
-    , aeson
     , base >=4.5
-    , bytestring
-    , cassava
-    , comonad
-    , constraints
-    , containers
-    , data-default
-    , free
-    , hashable
     , hedgehog
     , here
-    , lens
-    , megaparsec
-    , mtl
-    , pretty
-    , pretty-show
-    , profunctors
-    , row-types
-    , semigroupoids
-    , simple-amount >=0.2.0
-    , split
     , tasty
     , tasty-hedgehog
     , tasty-hunit
-    , text
-    , time
     , tinderbox
-    , transformers
-    , unordered-containers
-    , vector
   default-language: Haskell2010

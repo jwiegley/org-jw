@@ -42,13 +42,15 @@
       packages.default = flake.packages."org-lint:exe:org-lint";
 
       devShell = flake.devShell // {
-        packages = p: [
-        ];
+        # packages = p: [
+        # ];
 
-        buildInputs = with pkgs.haskellPackages; [
-          cabal-install
-          ghcid
-        ];
+        # buildInputs = with pkgs.haskellPackages; [
+        #   cabal-install
+        #   ghcid
+        #   haskell-language-server
+        #   hlint
+        # ];
 
         withHoogle = true;
       };
