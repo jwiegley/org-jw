@@ -1,0 +1,6 @@
+/_cache/
+/_site/
+/Setup
+/dist/
+/_config.yml
+/shell.nix

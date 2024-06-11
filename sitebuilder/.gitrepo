@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = /Users/johnw/src/sitebuilder
+	branch = master
+	commit = d7ca32db4c396d1e415fd20ad4da379cd4997f98
+	parent = 64721baffa5d629cd4b574fdf48f327dbc6bc295
+	method = merge
+	cmdver = 0.4.6
