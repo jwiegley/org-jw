@@ -23,14 +23,18 @@
               src = ./.;
               supportHpack = true;
               compiler-nix-name = "ghc98";
-              shell.tools = {
-                cabal = {};
-                haskell-language-server = {};
-                hlint = {};
+              shell = {
+                tools = {
+                  cabal = {};
+                  haskell-language-server = {};
+                  hlint = {};
+                  ghcid = {};
+                };
+                buildInputs = with pkgs; [
+                  pkg-config
+                ];
+                withHoogle = true;
               };
-              shell.buildInputs = with pkgs; [
-                pkg-config
-              ];
               modules = [{
                 enableLibraryProfiling = false;
                 enableProfiling = false;
@@ -40,19 +44,5 @@
       ];
     in flake // {
       packages.default = flake.packages."org-lint:exe:org-lint";
-
-      devShell = flake.devShell // {
-        # packages = p: [
-        # ];
-
-        # buildInputs = with pkgs.haskellPackages; [
-        #   cabal-install
-        #   ghcid
-        #   haskell-language-server
-        #   hlint
-        # ];
-
-        withHoogle = true;
-      };
     });
 }
