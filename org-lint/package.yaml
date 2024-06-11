@@ -12,41 +12,22 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
-  # - aeson
-  # - array
-  # - bytestring
-  # - cassava
-  # - comonad
-  # - constraints
-  # - containers
-  # - data-default
-  # - directory
-  # - filepath
-  # - free
-  # - hashable
-  # - lens
-  # - flatparse
-  # - mtl
-  # - pretty
-  # - pretty-show
-  # - profunctors
-  # - row-types
-  # - semigroupoids
-  # - simple-amount >= 0.2.0
-  # - split
-  # - text
-  # - time
-  # - transformers
-  # - unordered-containers
-  # - template-haskell
-  # - vector
+  - bytestring
+  - containers
+  - lens
+  - mtl
+  - flatparse
+  - pretty-show
+  - text
+  - org-types
+  - org-parse
+  - org-print
+  - org-data
 
 library:
   source-dirs: src
   exposed-modules:
     - Org.Lint
-  dependencies:
-    - org-data
 
 executables:
   org-lint:

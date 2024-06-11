@@ -26,7 +26,6 @@ library:
   source-dirs: src
   exposed-modules:
     - Org.Parse
-    - Org.Parse.Combinators
     - Org.Read
   dependencies:
     - org-types

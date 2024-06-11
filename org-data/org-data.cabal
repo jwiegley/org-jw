@@ -17,7 +17,6 @@ library
   exposed-modules:
       Org.Data
   other-modules:
-      Org.Types
       Paths_org_data
   hs-source-dirs:
       src
@@ -29,9 +28,13 @@ library
     , directory
     , filepath
     , flatparse
+    , flatparse-util
     , hashable
     , lens
     , mtl
+    , org-parse
+    , org-print
+    , org-types
     , split
     , text
     , time

@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -18,7 +19,6 @@ import Data.Char (toLower)
 import Data.Data
 import Data.Data.Lens
 import Data.Foldable (forM_)
-import Data.Hashable
 import Data.List (isInfixOf)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
@@ -26,8 +26,6 @@ import Data.Map (Map)
 import Data.Map qualified as M
 import Data.Maybe (isJust, isNothing)
 import Debug.Trace (traceM)
-import FlatParse.Stateful hiding ((<|>))
-import FlatParse.Stateful qualified as FP
 import GHC.Generics hiding (to)
 import Org.Data
 import Org.Print
@@ -35,26 +33,21 @@ import Org.Types
 import Text.Show.Pretty
 
 data LintMessageKind = LintDebug | LintInfo | LintWarn | LintError
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable)
 
-parseLintMessageKind ::
-  FP.Parser r e LintMessageKind
-parseLintMessageKind =
-  $( switch
-       [|
-         case _ of
-           "ERROR" -> pure LintError
-           "WARN" -> pure LintWarn
-           "INFO" -> pure LintInfo
-           "DEBUG" -> pure LintDebug
-         |]
-   )
+parseLintMessageKind :: String -> Maybe LintMessageKind
+parseLintMessageKind = \case
+  "ERROR" -> Just LintError
+  "WARN" -> Just LintWarn
+  "INFO" -> Just LintInfo
+  "DEBUG" -> Just LintDebug
+  _ -> Nothing
 
 data TransitionKind
   = FirstTransition
   | IntermediateTransition
   | LastTransition
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable)
 
 data LintMessageCode
   = TodoMissingProperty String
@@ -85,14 +78,14 @@ data LintMessageCode
   | CategoryTooLong String
   | FileCreatedTimeMismatch Time Time
   | TitlePropertyNotLast
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable)
 
 data LintMessage = LintMessage
   { lintMsgPos :: Int,
     lintMsgKind :: LintMessageKind,
     lintMsgCode :: LintMessageCode
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable)
 
 lintCollection ::
   Config ->

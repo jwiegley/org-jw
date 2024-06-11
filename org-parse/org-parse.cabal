@@ -16,7 +16,6 @@ build-type:     Simple
 library
   exposed-modules:
       Org.Parse
-      Org.Parse.Combinators
       Org.Read
   other-modules:
       Paths_org_parse
@@ -28,6 +27,7 @@ library
     , bytestring
     , filepath
     , flatparse
+    , flatparse-util
     , lens
     , mtl
     , org-types

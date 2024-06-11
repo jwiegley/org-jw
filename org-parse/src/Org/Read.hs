@@ -6,8 +6,8 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Except
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
+import FlatParse.Combinators
 import Org.Parse
-import Org.Parse.Combinators
 import Org.Types
 import System.FilePath.Posix
 import System.IO

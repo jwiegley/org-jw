@@ -12,11 +12,11 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
-  # - bytestring
+  - bytestring
   # - filepath
   # - lens
-  # - flatparse
-  # - mtl
+  - flatparse
+  - mtl
   # - text
   # - time
   # - transformers

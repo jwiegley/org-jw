@@ -14,7 +14,7 @@ dependencies:
   - base >= 4.5
   # - aeson
   # - array
-  # - bytestring
+  - bytestring
   # - cassava
   # - comonad
   # - constraints
@@ -24,8 +24,8 @@ dependencies:
   # - filepath
   # - free
   # - hashable
-  # - lens
-  # - flatparse
+  - lens
+  - flatparse-util
   # - mtl
   # - pretty
   # - pretty-show
@@ -34,8 +34,8 @@ dependencies:
   # - semigroupoids
   # - simple-amount >= 0.2.0
   # - split
-  # - text
-  # - time
+  - text
+  - time
   # - transformers
   # - unordered-containers
   # - template-haskell
@@ -45,3 +45,6 @@ library:
   source-dirs: src
   exposed-modules:
     - Org.Print
+  dependencies:
+    - org-types
+    - org-parse

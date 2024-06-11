@@ -1,13 +1,22 @@
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Org.Print where
 
+import Control.Arrow (left)
 import Control.Lens
+import Data.ByteString (ByteString)
+import Data.List (intercalate)
 import Data.Maybe (maybeToList)
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import Data.Time
-import Org.Types hiding (propertyColumn, tagsColumn)
+import FlatParse.Combinators
+import Org.Parse
+import Org.Types
 
 _OrgFile :: Config -> FilePath -> Prism' ByteString OrgFile
 _OrgFile cfg path =
@@ -187,14 +196,14 @@ showKeyword (OpenKeyword _ n) = n
 showKeyword (ClosedKeyword _ n) = n
 
 showEntry :: Int -> Int -> Entry -> [String]
-showEntry propertyColumn tagsColumn Entry {..} =
+showEntry propCol tagCol Entry {..} =
   [title]
     ++ timestamps
     ++ properties
     ++ logEntries
     ++ activeStamp
     ++ entryLines
-    ++ concatMap (showEntry propertyColumn tagsColumn) _entryItems
+    ++ concatMap (showEntry propCol tagCol) _entryItems
   where
     title
       | null suffix = prefix
@@ -205,7 +214,7 @@ showEntry propertyColumn tagsColumn Entry {..} =
           | otherwise = replicate (fromIntegral width) ' '
           where
             width =
-              tagsColumn
+              tagCol
                 - fromIntegral (length prefix)
                 - fromIntegral (length suffix)
         prefix =
@@ -236,7 +245,7 @@ showEntry propertyColumn tagsColumn Entry {..} =
         leadingStamps = filter isLeadingStamp _entryStamps
     properties
       | null _entryProperties = []
-      | otherwise = showProperties propertyColumn _entryProperties
+      | otherwise = showProperties propCol _entryProperties
     logEntries = concatMap showLogEntry _entryLogEntries
     activeStamp = case _entryStamps ^? traverse . _ActiveStamp . _2 of
       Nothing -> []
@@ -256,26 +265,26 @@ bodyLength =
   sum . Prelude.map (fromIntegral . length) . showBody ""
 
 showOrgFile :: Int -> Int -> OrgFile -> [String]
-showOrgFile propertyColumn tagsColumn OrgFile {..} =
-  showHeader propertyColumn _orgFileHeader
-    ++ concatMap (showEntry propertyColumn tagsColumn) _orgFileEntries
+showOrgFile propCol tagCol OrgFile {..} =
+  showHeader propCol _orgFileHeader
+    ++ concatMap (showEntry propCol tagCol) _orgFileEntries
 
 showHeader :: Int -> Header -> [String]
-showHeader propertyColumn Header {..} =
+showHeader propCol Header {..} =
   propertiesDrawer
     ++ fileProperties
     ++ preamble
   where
     propertiesDrawer
       | null _headerPropertiesDrawer = []
-      | otherwise = showProperties propertyColumn _headerPropertiesDrawer
+      | otherwise = showProperties propCol _headerPropertiesDrawer
     fileProperties
       | null _headerFileProperties = []
       | otherwise = showFileProperties _headerFileProperties
     preamble = showBody "" _headerPreamble
 
 showProperties :: Int -> [Property] -> [String]
-showProperties propertyColumn ps =
+showProperties propCol ps =
   [":PROPERTIES:"]
     ++ map propLine ps
     ++ [":END:"]
@@ -288,7 +297,7 @@ showProperties propertyColumn ps =
           | width < 1 = " "
           | otherwise = replicate (fromIntegral width) ' '
           where
-            width = propertyColumn - fromIntegral (length prefix)
+            width = propCol - fromIntegral (length prefix)
         prefix = ":" <> _name <> ":"
         suffix = _value
 

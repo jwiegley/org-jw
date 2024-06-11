@@ -29,3 +29,7 @@ library:
   source-dirs: src
   exposed-modules:
     - Org.Data
+  dependencies:
+    - org-types
+    - org-parse
+    - org-print

@@ -1,16 +1,14 @@
--- {-# LANGUAGE BangPatterns #-}
--- {-# LANGUAGE FlexibleContexts #-}
--- {-# LANGUAGE ImportQualifiedPost #-}
--- {-# LANGUAGE OverloadedStrings #-}
--- {-# LANGUAGE RecordWildCards #-}
--- {-# LANGUAGE TemplateHaskell #-}
--- {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module FlatParse.Combinators where
 
 import Control.Monad.Except
 import Data.ByteString (ByteString)
+import Data.Char (isAlphaNum)
 import FlatParse.Stateful hiding (Parser)
 import FlatParse.Stateful qualified as FP
 

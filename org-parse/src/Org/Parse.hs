@@ -18,9 +18,9 @@ import Data.Maybe (isJust, maybeToList)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Time
+import FlatParse.Combinators
 import FlatParse.Stateful hiding (Parser)
 import FlatParse.Stateful qualified as FP
-import Org.Parse.Combinators
 import Org.Types
 
 -- import Debug.Trace
