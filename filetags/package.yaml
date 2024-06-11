@@ -12,34 +12,18 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
-  # - aeson
-  # - array
-  # - bytestring
-  # - cassava
-  # - comonad
-  # - constraints
-  # - containers
-  # - data-default
-  # - directory
-  # - filepath
-  # - free
-  # - hashable
-  # - lens
-  # - flatparse
-  # - mtl
-  # - pretty
-  # - pretty-show
-  # - profunctors
-  # - row-types
-  # - semigroupoids
-  # - simple-amount >= 0.2.0
-  # - split
-  # - text
-  # - time
-  # - transformers
-  # - unordered-containers
-  # - template-haskell
-  # - vector
+  - containers
+  - directory
+  - filepath
+  - lens
+  - flatparse
+  - flatparse-util
+  - mtl
+  - text
+  - transformers
+  - org-types
+  - org-parse
+  - org-data
 
 library:
   source-dirs: src
@@ -54,5 +38,5 @@ executables:
     other-modules:
       - Options
     dependencies:
-      - org-data
+      - filetags
       - optparse-applicative

@@ -12,11 +12,12 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.State
 import Data.Data
 import Data.Foldable (forM_)
+import FlatParse.Combinators
 import FlatParse.Stateful hiding (Parser, modify)
 import FlatParse.Stateful qualified as FP hiding (modify)
 import GHC.Generics
 import Org.Data
-import Org.Parser
+import Org.Parse
 import Org.TagTrees
 import Org.Types
 
