@@ -6,7 +6,6 @@ packages: org-types/
           org-parse/
           org-print/
           sitebuilder/
-          tinderbox/
 
 source-repository-package
     type: git
