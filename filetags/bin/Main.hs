@@ -10,8 +10,6 @@ import Control.Lens
 import Control.Monad.Except
 import Data.Foldable (forM_)
 import Data.Map qualified as M
-import Data.Text qualified as T
-import Data.Text.Encoding qualified as T
 import Options
 import Org.Data
 import Org.Filter
@@ -24,17 +22,17 @@ import Prelude hiding (readFile)
 main :: IO ()
 main = do
   opts <- getOptions
-  paths <- case opts ^. command . commandInput of
-    FileFromStdin -> pure ["<stdin>"]
-    Paths paths -> pure paths
-    ListFromStdin -> map T.unpack . T.lines . T.decodeUtf8 <$> readStdin
-    FilesFromFile path -> readLines path
   cs <-
-    runExceptT (readCollection globalConfig paths) >>= \case
-      Left msg -> do
-        putStrLn $ "Cannot parse: " ++ msg
-        exitWith (ExitFailure 1)
-      Right x -> pure x
+    runExceptT
+      ( readCollection
+          globalConfig
+          (opts ^. command . commandInput)
+      )
+      >>= \case
+        Left msg -> do
+          putStrLn $ "Error: " ++ msg
+          exitWith (ExitFailure 1)
+        Right x -> pure x
   case opts ^. command of
     TagsList _ -> doTagsList cs
     TagTrees dryRun dir overwrite depth tagForUntagged _ ->

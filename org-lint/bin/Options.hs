@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -8,11 +6,9 @@
 module Options where
 
 import Control.Lens hiding (argument)
-import Data.Data (Data)
-import Data.Typeable (Typeable)
-import GHC.Generics
 import Options.Applicative as OA
 import Org.Lint
+import Org.Read
 
 version :: String
 version = "0.0.1"
@@ -28,21 +24,12 @@ orgLintSummary =
     ++ copyright
     ++ " John Wiegley"
 
-data InputFiles
-  = FileFromStdin -- '-f -'
-  | ListFromStdin -- '-F -'
-  | Paths [FilePath] -- '<path>...'
-  | FilesFromFile FilePath -- '-F <path>'
-  deriving (Data, Show, Eq, Typeable, Generic)
-
-makePrisms ''InputFiles
-
 data Options = Options
   { _verbose :: !Bool,
     _kind :: !LintMessageKind,
     _inputs :: InputFiles
   }
-  deriving (Data, Show, Eq, Typeable, Generic)
+  deriving (Show, Eq)
 
 makeLenses ''Options
 

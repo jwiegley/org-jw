@@ -16,6 +16,7 @@ dependencies:
   - containers
   - lens
   - mtl
+  - transformers
   - flatparse
   - pretty-show
   - text

@@ -7,12 +7,16 @@
 module Main where
 
 import Control.Lens
-import Control.Monad.Except
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Except
+import Control.Monad.Writer
 import Data.ByteString qualified as B
 import Data.Foldable (forM_)
+import Data.List (genericLength)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
+import Data.Map (Map)
 import Data.Map qualified as M
-import Data.Text qualified as T
-import Data.Text.Encoding qualified as T
 import FlatParse.Stateful qualified as FP
 import Options
 import Org.Data
@@ -25,18 +29,39 @@ import Prelude hiding (readFile)
 main :: IO ()
 main = do
   opts <- getOptions
-  paths <- case opts ^. inputs of
-    FileFromStdin -> pure ["<stdin>"]
-    Paths paths -> pure paths
-    ListFromStdin -> map T.unpack . T.lines . T.decodeUtf8 <$> readStdin
-    FilesFromFile path -> readLines path
-  cs <-
-    runExceptT (readCollection globalConfig paths) >>= \case
-      Left msg -> do
-        putStrLn $ "Cannot parse: " ++ msg
-        exitWith (ExitFailure 1)
-      Right x -> pure x
-  doLint (opts ^. kind) cs
+  (entriesById, n) <-
+    runExceptT
+      ( foldCollection
+          globalConfig
+          (opts ^. inputs)
+          (M.empty, 0)
+          (doLint globalConfig (opts ^. kind))
+      )
+      >>= \case
+        Left msg -> do
+          putStrLn $ "Error: " ++ msg
+          exitWith (ExitFailure 1)
+        Right x -> pure x
+  let idMsgs :: [(FilePath, [LintMessage])]
+      idMsgs = flip concatMap (M.assocs entriesById) $ \(k, e :| es) ->
+        [ ( e ^. entryLoc . file,
+            [ LintMessage
+                (e ^. entryLoc . pos)
+                LintError
+                (DuplicatedIdentifier k (e :| es))
+            ]
+          )
+          | not (null es)
+        ]
+  forM_ idMsgs $ \(path, msgs) ->
+    forM_ msgs $ \msg ->
+      putStrLn $ showLintOrg path msg
+  if n == 0
+    then do
+      putStrLn "Pass."
+      exitSuccess
+    else do
+      exitWith (ExitFailure (fromInteger n))
 
 globalConfig :: Config
 globalConfig = Config {..}
@@ -74,41 +99,39 @@ globalConfig = Config {..}
     _propertyColumn = 11
     _tagsColumn = 97
 
-doLint :: LintMessageKind -> Collection -> IO ()
-doLint level cs = do
-  putStrLn $
-    "Linting "
-      ++ show (length (cs ^.. allOrgFiles . allEntries))
-      ++ " entries ("
-      ++ show
-        ( length
-            ( filter
-                (\e -> maybe False isTodo (e ^? keyword))
-                (cs ^.. allOrgFiles . allEntries)
-            )
-        )
-      ++ " todo entries) across "
-      ++ show (length (cs ^.. allOrgFiles))
-      ++ " org files"
-  let m = lintCollection globalConfig level cs
-  if M.null m
-    then do
-      putStrLn "Pass."
-      exitSuccess
-    else do
-      _ <- flip M.traverseWithKey m $ \path msgs -> do
-        contents <- B.readFile path
-        let poss = map (\(LintMessage p _ _) -> FP.Pos p) msgs
-            linesCols = FP.posLineCols contents poss
-            msgs' =
-              zipWith
-                ( curry
-                    ( \((ln, _col), LintMessage _ k c) ->
-                        LintMessage (succ ln) k c
-                    )
-                )
-                linesCols
-                msgs
-        forM_ msgs' $ \msg ->
-          putStrLn $ showLintOrg path msg
-      exitWith (ExitFailure (M.size m))
+doLint ::
+  Config ->
+  LintMessageKind ->
+  FilePath ->
+  Either String CollectionItem ->
+  (Map String (NonEmpty Entry), Integer) ->
+  ExceptT String IO (Map String (NonEmpty Entry), Integer)
+doLint _ _level path (Left err) (entriesById, n) = liftIO $ do
+  putStrLn $ path ++ ": " ++ err
+  return (entriesById, succ n)
+doLint _ _level _path (Right (DataItem _item)) (entriesById, n) =
+  pure (entriesById, n)
+doLint cfg level path (Right (OrgItem org)) (entriesById, n) = liftIO $ do
+  let entriesById' = (\f -> foldr f entriesById (org ^.. allEntries)) $ \e m ->
+        maybe
+          m
+          ( \ident ->
+              m
+                & at ident %~ Just . maybe (NE.singleton e) (NE.cons e)
+          )
+          (e ^? entryId)
+  let msgs = execWriter $ lintOrgFile cfg level org
+  contents <- B.readFile path
+  let poss = map (\(LintMessage p _ _) -> FP.Pos p) msgs
+      linesCols = FP.posLineCols contents poss
+      msgs' =
+        zipWith
+          ( curry
+              ( \((ln, _col), LintMessage _ k c) ->
+                  LintMessage (succ ln) k c
+              )
+          )
+          linesCols
+          msgs
+  forM_ msgs' $ putStrLn . showLintOrg path
+  pure (entriesById', n + genericLength msgs)

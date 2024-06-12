@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -8,14 +6,12 @@
 module Options where
 
 import Control.Lens hiding (argument)
-import Data.Data (Data)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
-import Data.Typeable (Typeable)
 import FlatParse.Combinators
-import GHC.Generics
 import Options.Applicative as OA
 import Org.Filter
+import Org.Read
 
 version :: String
 version = "0.0.1"
@@ -30,15 +26,6 @@ filetagsSummary =
     ++ ", (C) "
     ++ copyright
     ++ " John Wiegley"
-
-data InputFiles
-  = FileFromStdin -- '-f -'
-  | ListFromStdin -- '-F -'
-  | Paths [FilePath] -- '<path>...'
-  | FilesFromFile FilePath -- '-F <path>'
-  deriving (Data, Show, Eq, Typeable, Generic)
-
-makePrisms ''InputFiles
 
 data Command
   = TagsList InputFiles
@@ -57,7 +44,7 @@ data Command
         filterExpr :: TagExpr,
         filterInputs :: InputFiles
       }
-  deriving (Data, Show, Eq, Typeable, Generic)
+  deriving (Show, Eq)
 
 makePrisms ''Command
 
@@ -72,7 +59,7 @@ data Options = Options
   { _verbose :: !Bool,
     _command :: !Command
   }
-  deriving (Data, Show, Eq, Typeable, Generic)
+  deriving (Show, Eq)
 
 makeLenses ''Options
 

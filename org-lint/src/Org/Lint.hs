@@ -1,6 +1,3 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
@@ -16,7 +13,6 @@ import Control.Lens
 import Control.Monad (foldM, unless, when)
 import Control.Monad.Writer
 import Data.Char (toLower)
-import Data.Data
 import Data.Data.Lens
 import Data.Foldable (forM_)
 import Data.List (isInfixOf)
@@ -26,14 +22,13 @@ import Data.Map (Map)
 import Data.Map qualified as M
 import Data.Maybe (isJust, isNothing)
 import Debug.Trace (traceM)
-import GHC.Generics hiding (to)
 import Org.Data
 import Org.Print
 import Org.Types
 import Text.Show.Pretty
 
 data LintMessageKind = LintDebug | LintInfo | LintWarn | LintError
-  deriving (Show, Eq, Ord, Generic, Data, Typeable)
+  deriving (Show, Eq, Ord)
 
 parseLintMessageKind :: String -> Maybe LintMessageKind
 parseLintMessageKind = \case
@@ -47,7 +42,7 @@ data TransitionKind
   = FirstTransition
   | IntermediateTransition
   | LastTransition
-  deriving (Show, Eq, Generic, Data, Typeable)
+  deriving (Show, Eq)
 
 data LintMessageCode
   = TodoMissingProperty String
@@ -78,14 +73,14 @@ data LintMessageCode
   | CategoryTooLong String
   | FileCreatedTimeMismatch Time Time
   | TitlePropertyNotLast
-  deriving (Show, Eq, Generic, Data, Typeable)
+  deriving (Show, Eq)
 
 data LintMessage = LintMessage
   { lintMsgPos :: Int,
     lintMsgKind :: LintMessageKind,
     lintMsgCode :: LintMessageCode
   }
-  deriving (Show, Eq, Generic, Data, Typeable)
+  deriving (Show, Eq)
 
 lintCollection ::
   Config ->

@@ -34,6 +34,7 @@ library
     , org-types
     , pretty-show
     , text
+    , transformers
   default-language: Haskell2010
 
 executable org-lint
@@ -58,4 +59,5 @@ executable org-lint
     , org-types
     , pretty-show
     , text
+    , transformers
   default-language: Haskell2010
