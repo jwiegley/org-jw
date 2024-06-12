@@ -33,6 +33,7 @@ library
     , org-print
     , org-types
     , pretty-show
+    , regex-tdfa
     , text
     , transformers
   default-language: Haskell2010
@@ -58,6 +59,7 @@ executable org-lint
     , org-print
     , org-types
     , pretty-show
+    , regex-tdfa
     , text
     , transformers
   default-language: Haskell2010

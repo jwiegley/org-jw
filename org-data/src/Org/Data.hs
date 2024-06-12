@@ -35,9 +35,7 @@ import FlatParse.Stateful qualified as FP
 import Org.Parse
 import Org.Print
 import Org.Types
-import System.Directory
 import System.FilePath.Posix
-import System.IO.Unsafe (unsafePerformIO)
 import Prelude hiding (readFile)
 
 lined :: Traversal' [String] String
@@ -255,10 +253,13 @@ filePath f (DataItem path) = DataItem <$> f path
 -- If an Org-mode file has a '#+filetags' property, then the tags are read
 -- from there, and written back there. Otherwise, the filename itself is used.
 fileTags :: Lens' CollectionItem [Tag]
-fileTags f (OrgItem o)
-  | null (o ^. orgFileHeader . headerTags) =
-      OrgItem <$> (o & orgFilePath . fileNameTags %%~ f)
-  | otherwise = OrgItem <$> (o & orgFileHeader . headerTags %%~ f)
+fileTags f (OrgItem o) = case o ^? orgFileProperty "filetags" . from tagList of
+  Nothing -> OrgItem <$> (o & orgFilePath . fileNameTags %%~ f)
+  Just filetags ->
+    ( \filetags' ->
+        OrgItem (o & orgFileProperty "filetags" . from tagList .~ filetags')
+    )
+      <$> f filetags
 fileTags f (DataItem path) = DataItem <$> (path & fileNameTags %%~ f)
 
 fileTitle :: Traversal' CollectionItem String
@@ -304,9 +305,10 @@ fileTimestamp =
 fileCreatedTime :: Traversal' CollectionItem Time
 fileCreatedTime =
   failing
-    (_OrgItem . orgFileHeader . headerStamps . traverse . _CreatedStamp . _2)
+    (_OrgItem . orgFileProperty "CREATED" . _Time)
     fileTimestamp
 
+{-
 fileEditedTime :: Traversal' CollectionItem Time
 fileEditedTime =
   failing
@@ -326,10 +328,11 @@ fileEditedTime =
             )
               <$> f (utcTimeToTime InactiveTime modTime)
     )
+-}
 
-fileDateTime :: Traversal' CollectionItem Time
-fileDateTime =
-  _OrgItem . orgFileHeader . headerStamps . traverse . _DateStamp . _2
+-- fileDateTime :: Traversal' CollectionItem Time
+-- fileDateTime =
+--   _OrgItem . orgFileHeader . headerStamps . traverse . _DateStamp . _2
 
 -- A property for an entry is either:
 --
@@ -419,20 +422,18 @@ entryId = property "ID"
 entryCategory :: Traversal' Entry String
 entryCategory = property "CATEGORY"
 
-entryTagString :: Traversal' Entry String
-entryTagString f e = do
-  tags' <-
-    f
-      ( intercalate
+tagList :: Iso' [Tag] String
+tagList =
+  iso
+    ( \tags ->
+        intercalate
           ":"
-          (":" : e ^.. entryTags . traverse . tagString ++ [":"])
-      )
-  pure $
-    e
-      & entryTags
-        .~ map
-          PlainTag
-          (filter (not . null) (splitOn ":" tags'))
+          (":" : tags ^.. traverse . tagString ++ [":"])
+    )
+    (map PlainTag . filter (not . null) . splitOn ":")
+
+entryTagString :: Traversal' Entry String
+entryTagString f e = e & entryTags . tagList %%~ f
 
 leadSpace :: Traversal' Body String
 leadSpace = blocks . _head . _Whitespace . _2
@@ -480,13 +481,10 @@ stringTime f str =
     parseTime' fmt = parseTimeM False defaultTimeLocale fmt str
 
 createdTime :: Traversal' Entry Time
-createdTime = entryStamps . traverse . _CreatedStamp . _2
+createdTime = property "CREATED" . _Time
 
 editedTime :: Traversal' Entry Time
-editedTime = entryStamps . traverse . _EditedStamp . _2
-
-dateTime :: Traversal' Entry Time
-dateTime = entryStamps . traverse . _DateStamp . _2
+editedTime = property "EDITED" . _Time
 
 scheduledTime :: Traversal' Entry Time
 scheduledTime = entryStamps . traverse . _ScheduledStamp . _2

@@ -69,6 +69,7 @@ parseProperties = do
   -- traceM "parseProperties..11"
   return props
 
+{-
 parseFromProperty :: Parser a -> [Property] -> String -> Parser (Maybe (Loc, a))
 parseFromProperty parser props nm = do
   -- traceM "parseFromProperty..1"
@@ -90,6 +91,7 @@ stampFromProperty f nm props = do
   -- traceM "stampFromProperty..1"
   maybe [] ((: []) . uncurry f)
     <$> parseFromProperty parseTimeSingle props nm
+-}
 
 parseHeader :: Parser Header
 parseHeader = do
@@ -97,14 +99,14 @@ parseHeader = do
   _headerPropertiesDrawer <-
     join . maybeToList <$> optional parseProperties
   _headerFileProperties <- many parseFileProperty
-  _headerTags <-
-    maybe [] snd
-      <$> parseFromProperty parseTags _headerFileProperties "filetags"
-  _headerStamps <-
-    (\x y z -> x ++ y ++ z)
-      <$> stampFromProperty CreatedStamp "created" _headerPropertiesDrawer
-      <*> stampFromProperty EditedStamp "edited" _headerPropertiesDrawer
-      <*> stampFromProperty DateStamp "date" _headerFileProperties
+  -- _headerTags <-
+  --   maybe [] snd
+  --     <$> parseFromProperty parseTags _headerFileProperties "filetags"
+  -- _headerStamps <-
+  --   (\x y z -> x ++ y ++ z)
+  --     <$> stampFromProperty CreatedStamp "created" _headerPropertiesDrawer
+  --     <*> stampFromProperty EditedStamp "edited" _headerPropertiesDrawer
+  --     <*> stampFromProperty DateStamp "date" _headerFileProperties
   _headerPreamble <- parseEntryBody
   pure Header {..}
 
@@ -168,10 +170,11 @@ parseEntry parseAtDepth = do
     loc <- getLoc
     lookahead $(char '<')
     ActiveStamp loc <$> parseTime <* trailingSpace
-  _entryStamps <-
-    (\x y -> stamps ++ maybeToList activeStamp ++ x ++ y)
-      <$> stampFromProperty CreatedStamp "created" _entryProperties
-      <*> stampFromProperty EditedStamp "edited" _entryProperties
+  let _entryStamps = stamps ++ maybeToList activeStamp
+  -- _entryStamps <-
+  --   (\x y -> stamps ++ maybeToList activeStamp ++ x ++ y)
+  --     <$> stampFromProperty CreatedStamp "created" _entryProperties
+  --     <*> stampFromProperty EditedStamp "edited" _entryProperties
   logEntries <- many parseLogEntry
   text <- parseEntryBody
   let (_entryLogEntries, _entryString) =

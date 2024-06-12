@@ -246,9 +246,6 @@ data Stamp
   | ScheduledStamp Loc Time
   | DeadlineStamp Loc Time
   | ActiveStamp Loc Time
-  | CreatedStamp Loc Time
-  | EditedStamp Loc Time
-  | DateStamp Loc Time
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
 makePrisms ''Stamp
@@ -262,8 +259,8 @@ isLeadingStamp _ = False
 data Header = Header
   { _headerPropertiesDrawer :: [Property],
     _headerFileProperties :: [Property],
-    _headerTags :: [Tag],
-    _headerStamps :: [Stamp],
+    -- _headerTags :: [Tag],
+    -- _headerStamps :: [Stamp],
     _headerPreamble :: Body
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)

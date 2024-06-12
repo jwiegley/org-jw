@@ -364,12 +364,6 @@ summarizeEntry Entry {..} =
                   Property _entryLoc False "SCHEDULED" (showTime tm)
                 DeadlineStamp _ tm ->
                   Property _entryLoc False "DEADLINE" (showTime tm)
-                CreatedStamp _ tm ->
-                  Property _entryLoc False "CREATED" (showTime tm)
-                EditedStamp _ tm ->
-                  Property _entryLoc False "EDITED" (showTime tm)
-                DateStamp _ tm ->
-                  Property _entryLoc False "DATE" (showTime tm)
                 ActiveStamp _ tm ->
                   Property _entryLoc False "ACTIVE" (showTime tm)
             )

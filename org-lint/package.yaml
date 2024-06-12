@@ -19,6 +19,7 @@ dependencies:
   - transformers
   - flatparse
   - pretty-show
+  - regex-tdfa
   - text
   - org-types
   - org-parse

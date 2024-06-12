@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Org.Lint where
 
@@ -18,6 +18,8 @@ import Debug.Trace (traceM)
 import Org.Data
 import Org.Print
 import Org.Types
+import Text.Regex.TDFA
+import Text.Regex.TDFA.String ()
 import Text.Show.Pretty
 
 data LintMessageKind = LintDebug | LintInfo | LintWarn | LintError
@@ -217,9 +219,9 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
     ruleTodoMustHaveIdAndCreated = do
       let mkw = e ^? entryKeyword . _Just . keywordString
       when (isJust mkw || isJust (e ^? entryCategory)) $ do
-        when (isNothing (e ^? entryId)) $
+        when (isNothing (e ^? property "ID")) $
           report LintWarn (TodoMissingProperty "ID")
-        when (isNothing (e ^? createdTime)) $
+        when (isNothing (e ^? property "CREATED")) $
           report LintWarn (TodoMissingProperty "CREATED")
 
     ruleCategoryNameCannotBeTooLong =
@@ -227,54 +229,37 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
         when (length cat > 10) $
           report LintWarn (CategoryTooLong cat)
 
+    paragraphs = bodyString (has _Paragraph)
+
     rulePropertiesDrawerNeverInBody =
       when
         ( any
-            ((":properties:" `isInfixOf`) . map toLower)
-            (bodyString (has _Paragraph))
+            (=~ ("(:properties:|:PROPERTIES:)" :: String))
+            paragraphs
         )
         $ report LintError MisplacedProperty
 
     ruleTimestampsNeverInBody =
       when
         ( any
-            ( \t ->
-                "SCHEDULED:" `isInfixOf` t
-                  || "DEADLINE:" `isInfixOf` t
-                  || "CLOSED:" `isInfixOf` t
-            )
-            (bodyString (has _Paragraph))
+            (=~ ("(SCHEDULED:|DEADLINE:|CLOSED:)" :: String))
+            paragraphs
         )
         $ report LintError MisplacedTimestamp
 
     ruleLogEntriesNeverInBody =
       when
         ( any
-            ( \t ->
-                "- CLOSING NOTE " `isInfixOf` t
-                  || "- State " `isInfixOf` t
-                  || "- Note taken on " `isInfixOf` t
-                  || "- Rescheduled from " `isInfixOf` t
-                  || "- Not scheduled, was " `isInfixOf` t
-                  || "- New deadline from " `isInfixOf` t
-                  || "- Removed deadline, was " `isInfixOf` t
-                  || "- Refiled on " `isInfixOf` t
-                  || ":logbook:" `isInfixOf` map toLower t
-            )
-            (bodyString (has _Paragraph))
+            (=~ ("(- (CLOSING NOTE|State|Note taken on|Rescheduled from|Not scheduled, was|New deadline from|Removed deadline, was|Refiled on) |:LOGBOOK:|:logbook:)" :: String))
+            paragraphs
         )
         $ report LintError MisplacedLogEntry
 
     ruleMisplacedDrawerEnd =
       when
         ( any
-            ( ( \t ->
-                  ":end:" `isInfixOf` t
-                    || "#+end" `isInfixOf` t
-              )
-                . map toLower
-            )
-            (bodyString (has _Paragraph))
+            (=~ ("(:end:|:END:|#\\+end|#\\+END)" :: String))
+            paragraphs
         )
         $ report LintError MisplacedDrawerEnd
 
