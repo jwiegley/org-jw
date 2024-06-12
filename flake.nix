@@ -36,8 +36,8 @@
                 withHoogle = true;
               };
               modules = [{
-                enableLibraryProfiling = false;
-                enableProfiling = false;
+                enableLibraryProfiling = true;
+                enableProfiling = true;
               }];
             };
         })

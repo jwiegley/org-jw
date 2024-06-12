@@ -43,15 +43,15 @@ main = do
           exitWith (ExitFailure 1)
         Right x -> pure x
   let idMsgs :: [(FilePath, [LintMessage])]
-      idMsgs = flip concatMap (M.assocs entriesById) $ \(k, e :| es) ->
-        [ ( e ^. entryLoc . file,
+      idMsgs = flip concatMap (M.assocs entriesById) $ \(k, loc :| locs) ->
+        [ ( loc ^. file,
             [ LintMessage
-                (e ^. entryLoc . pos)
+                (loc ^. pos)
                 LintError
-                (DuplicatedIdentifier k (e :| es))
+                (DuplicatedIdentifier k)
             ]
           )
-          | not (null es)
+          | not (null locs)
         ]
   forM_ idMsgs $ \(path, msgs) ->
     forM_ msgs $ \msg ->
@@ -104,8 +104,8 @@ doLint ::
   LintMessageKind ->
   FilePath ->
   Either String CollectionItem ->
-  (Map String (NonEmpty Entry), Integer) ->
-  ExceptT String IO (Map String (NonEmpty Entry), Integer)
+  (Map String (NonEmpty Loc), Integer) ->
+  ExceptT String IO (Map String (NonEmpty Loc), Integer)
 doLint _ _level path (Left err) (entriesById, n) = liftIO $ do
   putStrLn $ path ++ ": " ++ err
   return (entriesById, succ n)
@@ -113,13 +113,14 @@ doLint _ _level _path (Right (DataItem _item)) (entriesById, n) =
   pure (entriesById, n)
 doLint cfg level path (Right (OrgItem org)) (entriesById, n) = liftIO $ do
   let entriesById' = (\f -> foldr f entriesById (org ^.. allEntries)) $ \e m ->
-        maybe
-          m
-          ( \ident ->
+        let loc = e ^. entryLoc
+         in maybe
               m
-                & at ident %~ Just . maybe (NE.singleton e) (NE.cons e)
-          )
-          (e ^? entryId)
+              ( \ident ->
+                  m
+                    & at ident %~ Just . maybe (NE.singleton loc) (NE.cons loc)
+              )
+              (e ^? entryId)
   let msgs = execWriter $ lintOrgFile cfg level org
   contents <- B.readFile path
   let poss = map (\(LintMessage p _ _) -> FP.Pos p) msgs

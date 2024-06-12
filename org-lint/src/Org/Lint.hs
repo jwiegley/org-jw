@@ -2,9 +2,6 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Org.Lint where
 
@@ -16,10 +13,6 @@ import Data.Char (toLower)
 import Data.Data.Lens
 import Data.Foldable (forM_)
 import Data.List (isInfixOf)
-import Data.List.NonEmpty (NonEmpty (..))
-import Data.List.NonEmpty qualified as NE
-import Data.Map (Map)
-import Data.Map qualified as M
 import Data.Maybe (isJust, isNothing)
 import Debug.Trace (traceM)
 import Org.Data
@@ -55,7 +48,7 @@ data LintMessageCode
   | DuplicateFileProperty String
   | DuplicateProperty String
   | DuplicateTag String
-  | DuplicatedIdentifier String (NonEmpty Entry)
+  | DuplicatedIdentifier String
   | InvalidStateChangeTransitionNotAllowed String (Maybe String) [String]
   | InvalidStateChangeInvalidTransition TransitionKind String String
   | InvalidStateChangeWrongTimeOrder Time Time
@@ -81,37 +74,6 @@ data LintMessage = LintMessage
     lintMsgCode :: LintMessageCode
   }
   deriving (Show, Eq)
-
-lintCollection ::
-  Config ->
-  LintMessageKind ->
-  Collection ->
-  Map FilePath [LintMessage]
-lintCollection cfg level cs =
-  let ids = foldAllEntries cs M.empty $ \e m ->
-        maybe
-          m
-          ( \ident ->
-              m
-                & at ident %~ Just . maybe (NE.singleton e) (NE.cons e)
-          )
-          (e ^? entryId)
-      idMsgs :: [(FilePath, [LintMessage])]
-      idMsgs = flip concatMap (M.assocs ids) $ \(k, e :| es) ->
-        [ ( e ^. entryLoc . file,
-            [ LintMessage
-                (e ^. entryLoc . pos)
-                LintError
-                (DuplicatedIdentifier k (e :| es))
-            ]
-          )
-          | not (null es)
-        ]
-      fileMsgs :: [(FilePath, [LintMessage])]
-      fileMsgs = flip map (cs ^.. items . traverse . _OrgItem) $ \org ->
-        let msgs = execWriter $ lintOrgFile cfg level org
-         in (org ^. orgFilePath, msgs)
-   in M.fromList (filter (not . null . snd) (idMsgs ++ fileMsgs))
 
 lintOrgFile :: Config -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
 lintOrgFile cfg level org = do
@@ -588,7 +550,7 @@ showLintOrg fl (LintMessage ln kind code) =
         "Duplicated property " ++ show nm
       DuplicateTag nm ->
         "Duplicated tag " ++ show nm
-      DuplicatedIdentifier ident (_e :| _es) ->
+      DuplicatedIdentifier ident ->
         "Duplicated identifier " ++ ident
       InvalidStateChangeTransitionNotAllowed kwt mkwf allowed ->
         "Transition not allowed "
