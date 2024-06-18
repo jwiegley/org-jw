@@ -11,11 +11,8 @@ import Control.Monad.Except
 import Data.Foldable (forM_)
 import Data.Map qualified as M
 import Options
-import Org.Data
 import Org.Filter
-import Org.Read
 import Org.TagTrees
-import Org.Types
 import System.Exit
 import Prelude hiding (readFile)
 
@@ -36,7 +33,7 @@ main = do
   case opts ^. command of
     TagsList _ -> doTagsList cs
     TagTrees dryRun dir overwrite depth tagForUntagged _ ->
-      makeTagTrees dryRun dir overwrite depth (PlainTag <$> tagForUntagged) cs
+      makeTagTrees dryRun dir overwrite depth (tagForUntagged) cs
     Filter dryRun dir overwrite expr _ ->
       makeFilter dryRun dir overwrite expr cs
 

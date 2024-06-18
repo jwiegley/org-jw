@@ -11,7 +11,6 @@ import Data.Text.Encoding qualified as T
 import FlatParse.Combinators
 import Options.Applicative as OA
 import Org.Filter
-import Org.Read
 
 version :: String
 version = "0.0.1"

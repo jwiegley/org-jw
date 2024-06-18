@@ -1,34 +1,30 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Org.Filter where
 
-import Control.Lens
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.State
-import Data.Data
+import Data.Char (isAlphaNum)
 import Data.Foldable (forM_)
 import FlatParse.Combinators
 import FlatParse.Stateful hiding (Parser, modify)
 import FlatParse.Stateful qualified as FP hiding (modify)
-import GHC.Generics
-import Org.Data
-import Org.Parse
 import Org.TagTrees
-import Org.Types
 
 data TagExpr
-  = TagVar Tag
+  = TagVar String
   | TagAnd TagExpr TagExpr
   | TagOr TagExpr TagExpr
   | TagNot TagExpr
   | TagTrue
   | TagFalse
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Plated)
+  deriving (Show, Eq, Ord)
+
+tagName :: FP.Parser r String String
+tagName =
+  some (satisfy (\c -> isAlphaNum c || c `elem` ['/', ':', '=', '_', ' ']))
 
 parseTagExpr :: FP.Parser r String TagExpr
 parseTagExpr = f TagAnd TagTrue
@@ -38,14 +34,14 @@ parseTagExpr = f TagAnd TagTrue
       $( switch
            [|
              case _ of
-               "-" -> TagNot . TagVar <$> parseTag
+               "-" -> TagNot . TagVar <$> tagName
                "(" -> parseTagExpr <* $(char ')')
                "(|" -> f TagOr TagFalse <* $(char ')')
-               _ -> TagVar <$> parseTag
+               _ -> TagVar <$> tagName
              |]
        )
 
-tagsMatch :: TagExpr -> [Tag] -> Bool
+tagsMatch :: TagExpr -> [String] -> Bool
 tagsMatch (TagVar tag) ts = tag `elem` ts
 tagsMatch (TagAnd e1 e2) ts = tagsMatch e1 ts && tagsMatch e2 ts
 tagsMatch (TagOr e1 e2) ts = tagsMatch e1 ts || tagsMatch e2 ts
@@ -54,18 +50,19 @@ tagsMatch TagTrue _ = True
 tagsMatch TagFalse _ = False
 
 makeFilter ::
-  Bool -> FilePath -> Bool -> TagExpr -> Collection -> IO ()
-makeFilter dryRun filterDir overwrite expr cs = do
+  Bool -> FilePath -> Bool -> TagExpr -> [FilePath] -> IO ()
+makeFilter dryRun filterDir overwrite expr paths = do
   unless dryRun $
     createEmptyDirectory overwrite filterDir
 
   cnt <- flip execStateT (0 :: Int) $
-    forM_ (cs ^. items) $ \f ->
-      when (tagsMatch expr (f ^.. fileTags . traverse)) $ do
+    forM_ paths $ \path -> do
+      tags <- liftIO $ pathTags path
+      when (tagsMatch expr tags) $ do
         modify succ
         unless dryRun $
           liftIO $
-            createLinkInDirectory (f ^. filePath) filterDir
+            createLinkInDirectory path filterDir
 
   putStrLn $
     (if dryRun then "Would create " else "Created ")

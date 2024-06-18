@@ -1,4 +1,4 @@
-name:        filetags
+name:        org-db
 version:     0.0.1
 license:     BSD3
 author:      John Wiegley
@@ -12,28 +12,24 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
+  - bytestring
   - containers
-  - directory
   - filepath
+  - hashable
   - lens
   - flatparse
   - flatparse-util
   - mtl
+  - split
+  - sqlite-simple
   - text
-  - transformers
+  - time
 
 library:
   source-dirs: src
   exposed-modules:
-    - Org.TagTrees
-    - Org.Filter
-
-executables:
-  filetags:
-    main: Main.hs
-    source-dirs: bin
-    other-modules:
-      - Options
-    dependencies:
-      - filetags
-      - optparse-applicative
+    - Org.Db
+  dependencies:
+    - org-types
+    - org-parse
+    - org-print

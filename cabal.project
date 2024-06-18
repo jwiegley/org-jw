@@ -1,10 +1,11 @@
 packages: org-types/
-          filetags/
           flatparse-util/
           org-data/
           org-lint/
           org-parse/
           org-print/
+          org-db/
+          filetags/
           sitebuilder/
 
 source-repository-package

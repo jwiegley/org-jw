@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           filetags
+name:           org-db
 version:        0.0.1
 description:    Org-mode parser and data drier
 author:         John Wiegley
@@ -15,44 +15,27 @@ build-type:     Simple
 
 library
   exposed-modules:
-      Org.TagTrees
-      Org.Filter
+      Org.Db
   other-modules:
-      Paths_filetags
+      Paths_org_db
   hs-source-dirs:
       src
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
       base >=4.5
+    , bytestring
     , containers
-    , directory
     , filepath
     , flatparse
     , flatparse-util
+    , hashable
     , lens
     , mtl
+    , org-parse
+    , org-print
+    , org-types
+    , split
+    , sqlite-simple
     , text
-    , transformers
-  default-language: Haskell2010
-
-executable filetags
-  main-is: Main.hs
-  other-modules:
-      Options
-  hs-source-dirs:
-      bin
-  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
-  build-depends:
-      base >=4.5
-    , containers
-    , directory
-    , filepath
-    , filetags
-    , flatparse
-    , flatparse-util
-    , lens
-    , mtl
-    , optparse-applicative
-    , text
-    , transformers
+    , time
   default-language: Haskell2010
