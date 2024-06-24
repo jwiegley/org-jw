@@ -98,6 +98,7 @@ globalConfig = Config {..}
       ["A", "B", "C"]
     _propertyColumn = 11
     _tagsColumn = 97
+    _attachmentsDir = "/Users/johnw/org/data"
 
 doLint ::
   Config ->

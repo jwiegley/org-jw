@@ -24,6 +24,7 @@ data Config = Config
     _closedKeywords :: [String],
     _keywordTransitions :: [(String, [String])],
     _priorities :: [String],
+    _attachmentsDir :: FilePath,
     _propertyColumn :: Int,
     _tagsColumn :: Int
   }

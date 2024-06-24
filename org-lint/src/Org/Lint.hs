@@ -18,6 +18,9 @@ import Debug.Trace (traceM)
 import Org.Data
 import Org.Print
 import Org.Types
+import System.Directory (doesDirectoryExist)
+import System.FilePath.Posix
+import System.IO.Unsafe (unsafePerformIO)
 import Text.Regex.TDFA
 import Text.Regex.TDFA.String ()
 import Text.Show.Pretty
@@ -42,6 +45,9 @@ data TransitionKind
 data LintMessageCode
   = TodoMissingProperty String
   | FileMissingProperty String
+  | TodoLinkDoesNotMatchUrl
+  | TodoFileDoesNotMatchAttachment
+  | TodoLinkKeywordImpliesLinkTag
   | FileSlugMismatch String
   | MisplacedProperty
   | MisplacedTimestamp
@@ -181,6 +187,12 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
   --
   -- RULE: All TODO entries have ID and CREATED properties
   ruleTodoMustHaveIdAndCreated
+  -- RULE: A :LINK: tag implies a URL property, and vice versa
+  ruleLinkTagMatchesUrlProperty
+  -- RULE: A LINK keyword implies a :LINK: tag
+  ruleLinkKeywordImpliesLinkTag
+  -- RULE: A :FILE: tag implies an attachment, and vice versa
+  ruleFileTagMatchesAttachment
   -- RULE: Category name should be no longer than 10 characters
   ruleCategoryNameCannotBeTooLong
   -- RULE: PROPERTIES drawer must be at start of entry
@@ -223,6 +235,47 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
           report LintWarn (TodoMissingProperty "ID")
         when (isNothing (e ^? property "CREATED")) $
           report LintWarn (TodoMissingProperty "CREATED")
+
+    ruleLinkTagMatchesUrlProperty =
+      if e ^? entryKeyword . _Just . keywordString == Just "LINK"
+        then
+          unless
+            ("URL" `elem` e ^.. entryProperties . traverse . name)
+            $ report LintWarn TodoLinkDoesNotMatchUrl
+        else
+          when
+            ( (PlainTag "LINK" `elem` e ^. entryTags)
+                /= ("URL" `elem` e ^.. entryProperties . traverse . name)
+            )
+            $ report LintWarn TodoLinkDoesNotMatchUrl
+
+    ruleLinkKeywordImpliesLinkTag = do
+      when
+        ( (e ^? entryKeyword . _Just . keywordString == Just "LINK")
+            && (PlainTag "LINK" `elem` e ^. entryTags)
+        )
+        $ report LintWarn TodoLinkKeywordImpliesLinkTag
+
+    ruleFileTagMatchesAttachment = do
+      when
+        ( ("Attachments" `elem` e ^.. entryProperties . traverse . name)
+            && (PlainTag "FILE" `notElem` e ^. entryTags)
+        )
+        $ report LintWarn TodoFileDoesNotMatchAttachment
+      forM_ (e ^? property "ID") $ \ident ->
+        when
+          ( ( (PlainTag "FILE" `elem` e ^. entryTags)
+                || ( "Attachments"
+                       `elem` e ^.. entryProperties . traverse . name
+                   )
+            )
+              && let dir =
+                       (cfg ^. attachmentsDir)
+                         </> take 2 ident
+                         </> drop 2 ident
+                  in not (unsafePerformIO (doesDirectoryExist dir))
+          )
+          $ report LintWarn TodoFileDoesNotMatchAttachment
 
     ruleCategoryNameCannotBeTooLong =
       forM_ (e ^? entryCategory) $ \cat ->
@@ -517,6 +570,12 @@ showLintOrg fl (LintMessage ln kind code) =
         "Open todo missing property " ++ show nm
       FileMissingProperty nm ->
         "File missing property " ++ show nm
+      TodoLinkDoesNotMatchUrl ->
+        ":LINK: tag does not match URL property"
+      TodoFileDoesNotMatchAttachment ->
+        ":FILE: tag does not match presence of attachments"
+      TodoLinkKeywordImpliesLinkTag ->
+        "LINK keyword implies :LINK: tag, therefore it is not needed"
       MisplacedProperty ->
         "Misplaced :PROPERTIES: block"
       MisplacedTimestamp ->
