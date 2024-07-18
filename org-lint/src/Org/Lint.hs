@@ -74,6 +74,7 @@ data LintMessageCode
   | CategoryTooLong String
   | FileCreatedTimeMismatch Time Time
   | TitlePropertyNotLast
+  | InvalidLocation String
   deriving (Show, Eq)
 
 data LintMessage = LintMessage
@@ -124,9 +125,10 @@ lintOrgFile cfg level org = do
           (FileMissingProperty "CREATED")
 
     ruleSlugMustMatchTitle =
-      forM_ (OrgItem org ^? fileSlug) $ \slug ->
-        unless (OrgItem org ^? fileActualSlug == OrgItem org ^? fileSlug) $
-          report LintInfo (FileSlugMismatch slug)
+      unless (isJust (org ^? orgFileProperty "NOSLUG")) $
+        forM_ (OrgItem org ^? fileSlug) $ \slug ->
+          unless (OrgItem org ^? fileActualSlug == OrgItem org ^? fileSlug) $
+            report LintInfo (FileSlugMismatch slug)
 
     ruleCreationTimeMatchesCreated = do
       forM_
@@ -227,6 +229,8 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
   ruleAtMostOneLogBook
   -- RULE: If there is a logbook, it should contain all CLOCK entries
   ruleConsistentLogBook
+  -- RULE: If there is a LOCATION, it is a valid one
+  ruleLocationIsValid
   where
     ruleTodoMustHaveIdAndCreated = do
       let mkw = e ^? entryKeyword . _Just . keywordString
@@ -517,6 +521,11 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
         )
         $ report LintError MixedLogbooks
 
+    ruleLocationIsValid =
+      forM_ (e ^? property "LOCATION") $ \loc ->
+        when (loc == "0.0,0.0") $
+          report LintError (InvalidLocation loc)
+
     bodyString f =
       e
         ^. entryString
@@ -645,3 +654,5 @@ showLintOrg fl (LintMessage ln kind code) =
           ++ show (showTime t2)
       TitlePropertyNotLast ->
         "Title is not the last file property"
+      InvalidLocation l ->
+        "Location is not valid: " ++ l
