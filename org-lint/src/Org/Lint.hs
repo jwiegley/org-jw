@@ -377,7 +377,7 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
               forM_ mkwf $ \kwf ->
                 case mprev of
                   Nothing ->
-                    unless (kwf `elem` ["TODO", "APPT", "PROJECT"]) $
+                    unless (kwf `elem` ["TODO", "PROJECT"]) $
                       report
                         LintWarn
                         ( InvalidStateChangeInvalidTransition

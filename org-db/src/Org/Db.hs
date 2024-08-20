@@ -610,8 +610,8 @@ isTodo kw =
              "WAIT",
              "DEFER",
              "DELEGATED",
-             "APPT",
              "DONE",
+             "COMPLETE",
              "CANCELED"
            ]
 
