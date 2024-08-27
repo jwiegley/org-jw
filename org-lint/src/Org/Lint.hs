@@ -18,7 +18,7 @@ import Debug.Trace (traceM)
 import Org.Data
 import Org.Print
 import Org.Types
-import System.Directory (doesDirectoryExist)
+import System.Directory (doesDirectoryExist, doesFileExist)
 import System.FilePath.Posix
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Regex.TDFA
@@ -47,6 +47,7 @@ data LintMessageCode
   | FileMissingProperty String
   | TodoLinkDoesNotMatchUrl
   | TodoFileDoesNotMatchAttachment
+  | ArchiveTagFileDoesNotExist FilePath
   | TodoLinkKeywordImpliesLinkTag
   | FileSlugMismatch String
   | MisplacedProperty
@@ -107,9 +108,9 @@ lintOrgFile cfg level org = do
     [] -> pure ()
     e : es -> do
       mapM_
-        (lintOrgEntry cfg inArchive False ignoreWhitespace level)
+        (lintOrgEntry cfg org False ignoreWhitespace level)
         (reverse es)
-      lintOrgEntry cfg inArchive True ignoreWhitespace level e
+      lintOrgEntry cfg org True ignoreWhitespace level e
   where
     ignoreWhitespace = org ^? orgFileProperty "WHITESPACE" == Just "ignore"
 
@@ -153,7 +154,6 @@ lintOrgFile cfg level org = do
           unless (lastProp == "title") $
             report LintWarn TitlePropertyNotLast
 
-    inArchive = isArchive org
     props =
       org ^. orgFileHeader . headerPropertiesDrawer
         ++ org ^. orgFileHeader . headerFileProperties
@@ -168,13 +168,13 @@ lintOrgFile cfg level org = do
 
 lintOrgEntry ::
   Config ->
-  Bool ->
+  OrgFile ->
   Bool ->
   Bool ->
   LintMessageKind ->
   Entry ->
   Writer [LintMessage] ()
-lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
+lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
   -- jww (2024-05-28): NYI
   -- RULE: No open keywords in archives
   -- RULE: No CREATED date lies in the future
@@ -193,6 +193,8 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
   ruleLinkTagMatchesUrlProperty
   -- RULE: A LINK keyword implies a :LINK: tag
   ruleLinkKeywordImpliesLinkTag
+  -- RULE: An :ARCHIVE: tag refers to an existing file
+  ruleArchiveTagFileExists
   -- RULE: A :FILE: tag implies an attachment, and vice versa
   ruleFileTagMatchesAttachment
   -- RULE: Category name should be no longer than 10 characters
@@ -232,6 +234,8 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
   -- RULE: If there is a LOCATION, it is a valid one
   ruleLocationIsValid
   where
+    inArchive = isArchive org
+
     ruleTodoMustHaveIdAndCreated = do
       let mkw = e ^? entryKeyword . _Just . keywordString
       when (isJust mkw || isJust (e ^? entryCategory)) $ do
@@ -259,6 +263,15 @@ lintOrgEntry cfg inArchive lastEntry ignoreWhitespace level e = do
             && (PlainTag "LINK" `elem` e ^. entryTags)
         )
         $ report LintWarn TodoLinkKeywordImpliesLinkTag
+
+    ruleArchiveTagFileExists = do
+      forM_ (e ^? property "ARCHIVE") $ \path -> do
+        let path' = takeWhile (/= ':') path
+        unless
+          ( unsafePerformIO
+              (doesFileExist (takeDirectory (org ^. orgFilePath) </> path'))
+          )
+          $ report LintWarn (ArchiveTagFileDoesNotExist path')
 
     ruleFileTagMatchesAttachment = do
       when
@@ -585,6 +598,8 @@ showLintOrg fl (LintMessage ln kind code) =
         ":FILE: tag does not match presence of attachments"
       TodoLinkKeywordImpliesLinkTag ->
         "LINK keyword implies :LINK: tag, therefore it is not needed"
+      ArchiveTagFileDoesNotExist path ->
+        ":ARCHIVE: tag refers to a non-existent file: " ++ path
       MisplacedProperty ->
         "Misplaced :PROPERTIES: block"
       MisplacedTimestamp ->
