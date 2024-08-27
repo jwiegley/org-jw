@@ -8,10 +8,9 @@ module Main where
 
 import Control.Lens
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Except
 import Control.Monad.Writer
 import Data.ByteString qualified as B
-import Data.Foldable (forM_)
+import Data.Foldable (foldrM, forM_)
 import Data.List (genericLength)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
@@ -29,19 +28,12 @@ import Prelude hiding (readFile)
 main :: IO ()
 main = do
   opts <- getOptions
+  Collection items <- readCollectionIO globalConfig (opts ^. inputs)
   (entriesById, n) <-
-    runExceptT
-      ( foldCollection
-          globalConfig
-          (opts ^. inputs)
-          (M.empty, 0)
-          (doLint globalConfig (opts ^. kind))
-      )
-      >>= \case
-        Left msg -> do
-          putStrLn $ "Error: " ++ msg
-          exitWith (ExitFailure 1)
-        Right x -> pure x
+    foldrM
+      (doLint globalConfig (opts ^. kind))
+      (M.empty, 0)
+      items
   let idMsgs :: [(FilePath, [LintMessage])]
       idMsgs = flip concatMap (M.assocs entriesById) $ \(k, loc :| locs) ->
         [ ( loc ^. file,
@@ -103,16 +95,12 @@ globalConfig = Config {..}
 doLint ::
   Config ->
   LintMessageKind ->
-  FilePath ->
-  Either String CollectionItem ->
+  CollectionItem ->
   (Map String (NonEmpty Loc), Integer) ->
-  ExceptT String IO (Map String (NonEmpty Loc), Integer)
-doLint _ _level path (Left err) (entriesById, n) = liftIO $ do
-  putStrLn $ path ++ ": " ++ err
-  return (entriesById, succ n)
-doLint _ _level _path (Right (DataItem _item)) (entriesById, n) =
+  IO (Map String (NonEmpty Loc), Integer)
+doLint _ _level (DataItem _item) (entriesById, n) =
   pure (entriesById, n)
-doLint cfg level path (Right (OrgItem org)) (entriesById, n) = liftIO $ do
+doLint cfg level (OrgItem org) (entriesById, n) = liftIO $ do
   let entriesById' = (\f -> foldr f entriesById (org ^.. allEntries)) $ \e m ->
         let loc = e ^. entryLoc
          in maybe
@@ -123,7 +111,7 @@ doLint cfg level path (Right (OrgItem org)) (entriesById, n) = liftIO $ do
               )
               (e ^? entryId)
   let msgs = execWriter $ lintOrgFile cfg level org
-  contents <- B.readFile path
+  contents <- B.readFile (org ^. orgFilePath)
   let poss = map (\(LintMessage p _ _) -> FP.Pos p) msgs
       linesCols = FP.posLineCols contents poss
       msgs' =
@@ -135,5 +123,5 @@ doLint cfg level path (Right (OrgItem org)) (entriesById, n) = liftIO $ do
           )
           linesCols
           msgs
-  forM_ msgs' $ putStrLn . showLintOrg path
+  forM_ msgs' $ putStrLn . showLintOrg (org ^. orgFilePath)
   pure (entriesById', n + genericLength msgs)

@@ -12,15 +12,15 @@ import Data.Char (isAlphaNum)
 import FlatParse.Stateful hiding (Parser)
 import FlatParse.Stateful qualified as FP
 
-liftResult :: (MonadError e m) => Result e a -> m a
-liftResult (OK res _ _) = pure res
-liftResult (Err e) = throwError e
-liftResult Fail = error "The worst happened"
+liftResult :: (MonadError e m) => FilePath -> Result e a -> m a
+liftResult _ (OK res _ _) = pure res
+liftResult _ (Err e) = throwError e
+liftResult path Fail = error $ "Fatal error parsing " ++ path
 
-resultToEither :: Result e a -> Either e a
-resultToEither (OK res _ _) = Right res
-resultToEither (Err e) = Left e
-resultToEither Fail = error "The worst happened"
+resultToEither :: FilePath -> Result e a -> Either e a
+resultToEither _ (OK res _ _) = Right res
+resultToEither _ (Err e) = Left e
+resultToEither path Fail = error $ "Fatal error parsing " ++ path
 
 parseMaybe :: FP.Parser () e a -> ByteString -> Maybe a
 parseMaybe p s = case runParser p () 0 s of

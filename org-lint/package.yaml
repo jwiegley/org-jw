@@ -37,6 +37,7 @@ executables:
   org-lint:
     main: Main.hs
     source-dirs: bin
+    ghc-options: -threaded -rtsopts -with-rtsopts=-N
     other-modules:
       - Options
     dependencies:

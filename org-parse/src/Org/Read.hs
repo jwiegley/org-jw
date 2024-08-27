@@ -4,6 +4,7 @@
 
 module Org.Read where
 
+import Control.Concurrent.ParallelIO qualified as PIO
 import Control.Monad (foldM)
 import Control.Monad.Except
 import Control.Monad.IO.Class
@@ -11,6 +12,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
+import Data.Traversable (forM)
 import FlatParse.Combinators
 import Org.Parse
 import Org.Types
@@ -34,7 +36,7 @@ readOrgFile cfg path = do
     liftIO $
       withFile path ReadMode $
         fmap (readOrgFile_ cfg path) . B.hGetContents
-  liftResult res
+  liftResult path res
 
 readStdin :: (MonadIO m) => m ByteString
 readStdin = liftIO B.getContents
@@ -82,3 +84,31 @@ readCollection cfg inputs = Collection <$> foldCollection cfg inputs [] go
   where
     go _path (Left err) _ = throwError err
     go _path (Right x) acc = pure (x : acc)
+
+mapCollection ::
+  Config ->
+  InputFiles ->
+  IO [IO CollectionItem]
+mapCollection cfg inputs = do
+  paths <- case inputs of
+    FileFromStdin -> pure ["<stdin>"]
+    Paths paths -> pure paths
+    ListFromStdin -> map T.unpack . T.lines . T.decodeUtf8 <$> readStdin
+    FilesFromFile path -> readLines path
+  forM paths $ \path ->
+    pure $ do
+      eres <- runExceptT (tryError (readCollectionItem cfg path))
+      case eres of
+        Left err -> error err
+        Right (Left err) -> error err
+        Right (Right x) -> pure x
+
+readCollectionIO ::
+  Config ->
+  InputFiles ->
+  IO Collection
+readCollectionIO cfg inputs = do
+  actions <- mapCollection cfg inputs
+  coll <- Collection <$> PIO.parallelInterleaved actions
+  PIO.stopGlobalPool
+  pure coll

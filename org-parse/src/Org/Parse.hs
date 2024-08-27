@@ -41,7 +41,10 @@ parseOrgFile = do
   -- traceM "parseOrgFile..1"
   (path, _) <- ask
   -- traceM $ "parseOrgFile..2: " ++ show path
-  OrgFile path <$> parseHeader <*> many (parseEntry 1) <* eof
+  OrgFile path
+    <$> parseHeader
+    <*> many (parseEntry 1)
+    <* (eof <|> err ("Trailing text in Org file " ++ path))
 
 parseProperties :: Parser [Property]
 parseProperties = do
@@ -150,14 +153,23 @@ parseEntry :: Int -> Parser Entry
 parseEntry parseAtDepth = do
   -- traceM "parseEntry..1"
   _entryLoc <- getLoc
+  -- traceM "parseEntry..2"
   _entryDepth <- do
+    -- traceM "parseEntry..3"
     depth <- parseHeaderStars
+    -- traceM $ "parseEntry..4: " ++ show depth ++ " == " ++ show parseAtDepth
     guard $ depth == parseAtDepth
+    -- traceM "parseEntry..5"
     pure depth
+  -- traceM "parseEntry..6"
   _entryHeadline <- lookahead restOfLine
+  -- traceM "parseEntry..7"
   _entryKeyword <- optional (parseKeyword <* some singleSpace)
+  -- traceM "parseEntry..8"
   _entryPriority <- optional parseEntryPriority
+  -- traceM "parseEntry..9"
   _entryContext <- optional parseEntryContext
+  -- traceM "parseEntry..10"
   (_entryTitle, (_entryLocator, _entryTags)) <-
     manyTill_ anyChar parseTitleSuffix
   stamps <-

@@ -18,6 +18,7 @@ dependencies:
   - flatparse
   - flatparse-util
   - mtl
+  - parallel-io
   - text
   - time
   - transformers

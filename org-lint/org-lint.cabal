@@ -46,7 +46,7 @@ executable org-lint
       Options
   hs-source-dirs:
       bin
-  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
+  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.5
     , bytestring

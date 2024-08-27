@@ -26,7 +26,7 @@ _OrgFile cfg path =
         . intercalate "\n"
         . showOrgFile (cfg ^. propertyColumn) (cfg ^. tagsColumn)
     )
-    (left (T.encodeUtf8 . T.pack) . resultToEither . readOrgFile_ cfg path)
+    (left (T.encodeUtf8 . T.pack) . resultToEither path . readOrgFile_ cfg path)
 
 showStamp :: Stamp -> String
 showStamp (ClosedStamp _ tm) = "CLOSED: " <> showTime tm
