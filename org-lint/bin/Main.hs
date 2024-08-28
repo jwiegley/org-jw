@@ -50,7 +50,7 @@ main = do
       putStrLn $ showLintOrg path msg
   if n == 0
     then do
-      putStrLn $ show items ++ " files passed lint."
+      putStrLn $ show (length items) ++ " files passed lint."
       exitSuccess
     else do
       exitWith (ExitFailure (fromInteger n))
