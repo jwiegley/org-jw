@@ -98,6 +98,8 @@ lintOrgFile cfg level org = do
   -- RULE: Title file property is always last. This is needed for the sake of
   --       xeft and how it displays entry text.
   ruleTitleProperyAlwaysLast
+  -- RULE: :ARCHIVE: or #+archive: property alwayos refers to existing file
+  ruleArchiveTagFileExists
   forM_ (findDuplicates (props ^.. traverse . name . to (map toLower))) $ \nm ->
     unless (nm `elem` ["link", "tags"]) $
       report LintError (DuplicateFileProperty nm)
@@ -154,6 +156,15 @@ lintOrgFile cfg level org = do
           unless (lastProp == "title") $
             report LintWarn TitlePropertyNotLast
 
+    ruleArchiveTagFileExists = do
+      forM_ (org ^? orgFileProperty "ARCHIVE") $ \path -> do
+        let path' = takeWhile (/= ':') path
+        unless
+          ( unsafePerformIO
+              (doesFileExist (takeDirectory (org ^. orgFilePath) </> path'))
+          )
+          $ report LintWarn (ArchiveTagFileDoesNotExist path')
+
     props =
       org ^. orgFileHeader . headerPropertiesDrawer
         ++ org ^. orgFileHeader . headerFileProperties
@@ -193,7 +204,7 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
   ruleLinkTagMatchesUrlProperty
   -- RULE: A LINK keyword implies a :LINK: tag
   ruleLinkKeywordImpliesLinkTag
-  -- RULE: An :ARCHIVE: tag refers to an existing file
+  -- RULE: An :ARCHIVE: property always refers to an existing file
   ruleArchiveTagFileExists
   -- RULE: A :FILE: tag implies an attachment, and vice versa
   ruleFileTagMatchesAttachment

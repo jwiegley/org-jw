@@ -28,12 +28,9 @@ import Prelude hiding (readFile)
 main :: IO ()
 main = do
   opts <- getOptions
-  Collection items <- readCollectionIO globalConfig (opts ^. inputs)
+  Collection xs <- readCollectionIO globalConfig (opts ^. inputs)
   (entriesById, n) <-
-    foldrM
-      (doLint globalConfig (opts ^. kind))
-      (M.empty, 0)
-      items
+    foldrM (doLint globalConfig (opts ^. kind)) (M.empty, 0) xs
   let idMsgs :: [(FilePath, [LintMessage])]
       idMsgs = flip concatMap (M.assocs entriesById) $ \(k, loc :| locs) ->
         [ ( loc ^. file,
@@ -50,7 +47,7 @@ main = do
       putStrLn $ showLintOrg path msg
   if n == 0
     then do
-      putStrLn $ show (length items) ++ " files passed lint."
+      putStrLn $ show (length xs) ++ " files passed lint"
       exitSuccess
     else do
       exitWith (ExitFailure (fromInteger n))
