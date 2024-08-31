@@ -14,6 +14,7 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Traversable (forM)
 import FlatParse.Combinators
+import FlatParse.Stateful qualified as FP
 import Org.Parse
 import Org.Types
 import System.FilePath.Posix
@@ -27,7 +28,7 @@ data InputFiles
   deriving (Show, Eq)
 
 readOrgFile ::
-  (MonadError String m, MonadIO m) =>
+  (MonadError (Loc, String) m, MonadIO m) =>
   Config ->
   FilePath ->
   m OrgFile
@@ -48,7 +49,7 @@ readLines :: (MonadIO m) => FilePath -> m [String]
 readLines path = lines <$> liftIO (System.IO.readFile path)
 
 readCollectionItem ::
-  (MonadError String m, MonadIO m) =>
+  (MonadError (Loc, String) m, MonadIO m) =>
   Config ->
   FilePath ->
   m CollectionItem
@@ -58,11 +59,11 @@ readCollectionItem cfg path = do
     else pure $ DataItem path
 
 foldCollection ::
-  (MonadError String m, MonadIO m) =>
+  (MonadError (Loc, String) m, MonadIO m) =>
   Config ->
   InputFiles ->
   a ->
-  (FilePath -> Either String CollectionItem -> a -> m a) ->
+  (FilePath -> Either (Loc, String) CollectionItem -> a -> m a) ->
   m a
 foldCollection cfg inputs z f = do
   paths <- case inputs of
@@ -76,11 +77,12 @@ foldCollection cfg inputs z f = do
       Right x -> f path (Right x) acc
 
 readCollection ::
-  (MonadError String m, MonadIO m) =>
+  (MonadError (Loc, String) m, MonadIO m) =>
   Config ->
   InputFiles ->
   m Collection
-readCollection cfg inputs = Collection <$> foldCollection cfg inputs [] go
+readCollection cfg inputs =
+  Collection <$> foldCollection cfg inputs [] go
   where
     go _path (Left err) _ = throwError err
     go _path (Right x) acc = pure (x : acc)
@@ -88,7 +90,7 @@ readCollection cfg inputs = Collection <$> foldCollection cfg inputs [] go
 mapCollection ::
   Config ->
   InputFiles ->
-  IO [IO CollectionItem]
+  IO [IO (Either (Loc, String) CollectionItem)]
 mapCollection cfg inputs = do
   paths <- case inputs of
     FileFromStdin -> pure ["<stdin>"]
@@ -98,10 +100,10 @@ mapCollection cfg inputs = do
   forM paths $ \path ->
     pure $ do
       eres <- runExceptT (tryError (readCollectionItem cfg path))
-      case eres of
-        Left err -> error err
-        Right (Left err) -> error err
-        Right (Right x) -> pure x
+      pure $ case eres of
+        Left err -> Left err
+        Right (Left err) -> Left err
+        Right (Right x) -> Right x
 
 readCollectionIO ::
   Config ->
@@ -109,6 +111,21 @@ readCollectionIO ::
   IO Collection
 readCollectionIO cfg inputs = do
   actions <- mapCollection cfg inputs
-  coll <- Collection <$> PIO.parallelInterleaved actions
+  coll <- PIO.parallelInterleaved actions
   PIO.stopGlobalPool
-  pure coll
+  fmap (Collection . concat) $ forM coll $ \case
+    Left (loc, err) -> do
+      contents <- B.readFile (_file loc)
+      case FP.posLineCols contents [FP.Pos (_pos loc)] of
+        [(line, col)] -> do
+          putStrLn $
+            _file loc
+              ++ ":"
+              ++ show (succ line)
+              ++ ":"
+              ++ show col
+              ++ ": PARSE ERROR: "
+              ++ err
+          pure []
+        _ -> error "impossible"
+    Right x -> pure [x]

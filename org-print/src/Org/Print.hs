@@ -6,27 +6,10 @@
 
 module Org.Print where
 
-import Control.Arrow (left)
 import Control.Lens
-import Data.ByteString (ByteString)
-import Data.List (intercalate)
 import Data.Maybe (maybeToList)
-import Data.Text qualified as T
-import Data.Text.Encoding qualified as T
 import Data.Time
-import FlatParse.Combinators
-import Org.Parse
 import Org.Types
-
-_OrgFile :: Config -> FilePath -> Prism' ByteString OrgFile
-_OrgFile cfg path =
-  prism
-    ( T.encodeUtf8
-        . T.pack
-        . intercalate "\n"
-        . showOrgFile (cfg ^. propertyColumn) (cfg ^. tagsColumn)
-    )
-    (left (T.encodeUtf8 . T.pack) . resultToEither path . readOrgFile_ cfg path)
 
 showStamp :: Stamp -> String
 showStamp (ClosedStamp _ tm) = "CLOSED: " <> showTime tm

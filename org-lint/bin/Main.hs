@@ -68,18 +68,20 @@ globalConfig = Config {..}
     _closedKeywords =
       [ "DONE",
         "COMPLETE",
+        "ABORTED",
         "CANCELED",
         "NOTE",
         "LINK"
       ]
     _keywordTransitions =
       [ ("TODO", ["DOING", "WAIT", "DEFER", "DELEGATED", "CANCELED", "DONE"]),
-        ("PROJECT", ["CANCELED", "COMPLETE"]),
+        ("PROJECT", ["ABORTED", "COMPLETE"]),
         ("DOING", ["TODO", "WAIT", "DEFER", "DELEGATED", "CANCELED", "DONE"]),
         ("WAIT", ["DOING", "TODO", "DEFER", "DELEGATED", "CANCELED", "DONE"]),
         ("DEFER", ["DOING", "WAIT", "TODO", "DELEGATED", "CANCELED", "DONE"]),
         ("DELEGATED", ["DOING", "WAIT", "DEFER", "TODO", "CANCELED", "DONE"]),
         ("DONE", ["TODO"]),
+        ("ABORTED", ["PROJECT"]),
         ("COMPLETE", ["PROJECT"]),
         ("CANCELED", ["DOING", "WAIT", "DEFER", "DELEGATED", "TODO", "DONE"])
       ]

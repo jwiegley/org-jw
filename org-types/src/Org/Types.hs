@@ -32,6 +32,18 @@ data Config = Config
 
 makeClassy ''Config
 
+emptyConfig :: Config
+emptyConfig =
+  Config
+    { _openKeywords = [],
+      _closedKeywords = [],
+      _keywordTransitions = [],
+      _priorities = [],
+      _attachmentsDir = "",
+      _propertyColumn = 0,
+      _tagsColumn = 0
+    }
+
 data Loc = Loc
   { _file :: FilePath,
     _pos :: Int

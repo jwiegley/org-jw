@@ -22,41 +22,41 @@ resultToEither _ (OK res _ _) = Right res
 resultToEither _ (Err e) = Left e
 resultToEither path Fail = error $ "Fatal error parsing " ++ path
 
-parseMaybe :: FP.Parser () e a -> ByteString -> Maybe a
-parseMaybe p s = case runParser p () 0 s of
+parseMaybe :: r -> FP.Parser r e a -> ByteString -> Maybe a
+parseMaybe r p s = case runParser p r 0 s of
   OK res _ _ -> Just res
   Err _ -> Nothing
   Fail -> Nothing
 
 count ::
   Int ->
-  FP.Parser r String a ->
-  FP.Parser r String [a]
+  FP.Parser r e a ->
+  FP.Parser r e [a]
 count cnt p = go cnt
   where
     go 0 = pure []
     go n = (:) <$> p <*> go (pred n)
 
 between ::
-  FP.Parser r String () ->
-  FP.Parser r String () ->
-  FP.Parser r String a ->
-  FP.Parser r String a
+  FP.Parser r e () ->
+  FP.Parser r e () ->
+  FP.Parser r e a ->
+  FP.Parser r e a
 between s e p = s *> p <* e
 
 endBy1 ::
-  FP.Parser r String a ->
-  FP.Parser r String sep ->
-  FP.Parser r String [a]
+  FP.Parser r e a ->
+  FP.Parser r e sep ->
+  FP.Parser r e [a]
 endBy1 p sep = some $ do
   x <- p
   _ <- sep
   return x
 
 sepBy1 ::
-  FP.Parser r String a ->
-  FP.Parser r String sep ->
-  FP.Parser r String [a]
+  FP.Parser r e a ->
+  FP.Parser r e sep ->
+  FP.Parser r e [a]
 sepBy1 p sep = do
   x <- p
   xs <- many (sep >> p)
@@ -64,9 +64,9 @@ sepBy1 p sep = do
 
 manyTill ::
   (Show a) =>
-  FP.Parser r String a ->
-  FP.Parser r String () ->
-  FP.Parser r String [a]
+  FP.Parser r e a ->
+  FP.Parser r e () ->
+  FP.Parser r e [a]
 manyTill p e = go []
   where
     go acc =
@@ -74,9 +74,9 @@ manyTill p e = go []
         <|> (go . (: acc) =<< p)
 
 manyTill_ ::
-  FP.Parser r String a ->
-  FP.Parser r String end ->
-  FP.Parser r String ([a], end)
+  FP.Parser r e a ->
+  FP.Parser r e end ->
+  FP.Parser r e ([a], end)
 manyTill_ p e = go []
   where
     go !acc = do
@@ -84,9 +84,9 @@ manyTill_ p e = go []
         <|> (go . (: acc) =<< p)
 
 someTill ::
-  FP.Parser r String a ->
-  FP.Parser r String () ->
-  FP.Parser r String [a]
+  FP.Parser r e a ->
+  FP.Parser r e () ->
+  FP.Parser r e [a]
 someTill p e = go []
   where
     go acc = do
@@ -94,29 +94,29 @@ someTill p e = go []
       ((x : acc) <$ e)
         <|> go (x : acc)
 
-newline :: FP.Parser r String ()
+newline :: FP.Parser r e ()
 newline = $(char '\n')
 
-singleSpace :: FP.Parser r String ()
+singleSpace :: FP.Parser r e ()
 singleSpace = $(char ' ')
 
-spaces_ :: FP.Parser r String ()
+spaces_ :: FP.Parser r e ()
 spaces_ = skipSome singleSpace
 
-digitChar :: FP.Parser r String Char
+digitChar :: FP.Parser r e Char
 digitChar = satisfy isDigit
 
-trailingSpace :: FP.Parser r String ()
+trailingSpace :: FP.Parser r e ()
 trailingSpace = skipMany singleSpace <* newline
 
-lineOrEof :: FP.Parser r String String
+lineOrEof :: FP.Parser r e String
 lineOrEof = takeLine
 
-wholeLine :: FP.Parser r String String
+wholeLine :: FP.Parser r e String
 wholeLine = takeLine
 
-restOfLine :: FP.Parser r String String
+restOfLine :: FP.Parser r e String
 restOfLine = takeLine
 
-identifier :: FP.Parser r String String
+identifier :: FP.Parser r e String
 identifier = some (satisfy (\c -> isAlphaNum c || c == '_' || c == ' '))

@@ -612,6 +612,7 @@ isTodo kw =
              "DELEGATED",
              "DONE",
              "COMPLETE",
+             "ABORTED",
              "CANCELED"
            ]
 

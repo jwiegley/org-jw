@@ -25,7 +25,7 @@ import Org.Types
 
 -- import Debug.Trace
 
-type Parser = FP.Parser (FilePath, Config) String
+type Parser = FP.Parser (FilePath, Config) (Loc, String)
 
 getLoc :: Parser Loc
 getLoc = do
@@ -33,7 +33,7 @@ getLoc = do
   (path, _) <- ask
   pure $ Loc path (unPos p)
 
-readOrgFile_ :: Config -> FilePath -> ByteString -> Result String OrgFile
+readOrgFile_ :: Config -> FilePath -> ByteString -> Result (Loc, String) OrgFile
 readOrgFile_ cfg path = runParser parseOrgFile (path, cfg) 0
 
 parseOrgFile :: Parser OrgFile
@@ -44,7 +44,10 @@ parseOrgFile = do
   OrgFile path
     <$> parseHeader
     <*> many (parseEntry 1)
-    <* (eof <|> err ("Trailing text in Org file " ++ path))
+    <* ( eof <|> do
+           !loc <- getLoc
+           err (loc, "Trailing text in Org file")
+       )
 
 parseProperties :: Parser [Property]
 parseProperties = do
@@ -131,7 +134,7 @@ parseFileProperty = do
 parseKeyword :: Parser Keyword
 parseKeyword = do
   -- traceM "parseKeyword..1"
-  loc <- getLoc
+  !loc <- getLoc
   $( switch
        [|
          case _ of
@@ -143,6 +146,7 @@ parseKeyword = do
            "DELEGATED" -> pure $ OpenKeyword loc "DELEGATED"
            "DONE" -> pure $ ClosedKeyword loc "DONE"
            "COMPLETE" -> pure $ ClosedKeyword loc "COMPLETE"
+           "ABORTED" -> pure $ ClosedKeyword loc "ABORTED"
            "CANCELED" -> pure $ ClosedKeyword loc "CANCELED"
            "NOTE" -> pure $ ClosedKeyword loc "NOTE"
            "LINK" -> pure $ ClosedKeyword loc "LINK"
@@ -179,7 +183,7 @@ parseEntry parseAtDepth = do
     join . maybeToList
       <$> optional parseProperties
   activeStamp <- optional $ do
-    loc <- getLoc
+    !loc <- getLoc
     lookahead $(char '<')
     ActiveStamp loc <$> parseTime <* trailingSpace
   let _entryStamps = stamps ++ maybeToList activeStamp
@@ -262,10 +266,10 @@ parseTags = do
   where
     colon = $(char ':')
 
-parseTag :: FP.Parser r String Tag
+parseTag :: FP.Parser r e Tag
 parseTag = PlainTag <$> tag
   where
-    tag :: FP.Parser r String String
+    tag :: FP.Parser r e String
     tag =
       many
         ( satisfy $ \ch ->
@@ -281,7 +285,7 @@ parseStamps = do
 parseStamp :: Parser Stamp
 parseStamp = do
   -- traceM "parseStamp..1"
-  loc <- getLoc
+  !loc <- getLoc
   $( switch
        [|
          case _ of
@@ -298,7 +302,7 @@ blendTimes start Time {..} =
       _timeEnd = _timeStart
     }
 
-parseTime :: FP.Parser r String Time
+parseTime :: Parser Time
 parseTime = do
   -- traceM "parseTime..1"
   start <- parseTimeSingle
@@ -306,15 +310,18 @@ parseTime = do
   case mend of
     Nothing -> pure start
     Just tm@Time {..} -> do
-      forM_ _timeDayEnd $ \_ ->
-        err $ "Invalid ending time (has day end): " ++ show tm
-      forM_ _timeEnd $ \_ ->
-        err $ "Invalid ending time (has end): " ++ show tm
-      forM_ _timeSuffix $ \_ ->
-        err $ "Invalid ending time (has suffix): " ++ show tm
+      forM_ _timeDayEnd $ \_ -> do
+        !loc <- getLoc
+        err (loc, "Invalid ending time (has day end): " ++ show tm)
+      forM_ _timeEnd $ \_ -> do
+        !loc <- getLoc
+        err (loc, "Invalid ending time (has end): " ++ show tm)
+      forM_ _timeSuffix $ \_ -> do
+        !loc <- getLoc
+        err (loc, "Invalid ending time (has suffix): " ++ show tm)
       pure $ blendTimes start tm
 
-parseTimeSingle :: FP.Parser r String Time
+parseTimeSingle :: Parser Time
 parseTimeSingle = do
   -- traceM "parseTimeSingle..1"
   _timeKind <-
@@ -326,26 +333,38 @@ parseTimeSingle = do
            |]
      )
   -- traceM "parseTimeSingle..2"
-  year <- count 4 digitChar
+  year <- read <$> count 4 digitChar
   -- traceM "parseTimeSingle..3"
+  unless (year >= 1970 && year <= 2200) $ do
+    !loc <- getLoc
+    err (loc, "Year out of range: " ++ show year)
   _ <- $(char '-')
   -- traceM "parseTimeSingle..4"
-  month <- count 2 digitChar
+  month <- read <$> count 2 digitChar
+  unless (month >= 1 && month <= 12) $ do
+    !loc <- getLoc
+    err (loc, "Month out of range: " ++ show month)
   -- traceM "parseTimeSingle..5"
   _ <- $(char '-')
   -- traceM "parseTimeSingle..6"
-  day <- count 2 digitChar
+  day <- read <$> count 2 digitChar
+  unless (day >= 1 && month <= 31) $ do
+    !loc <- getLoc
+    err (loc, "Day out of range: " ++ show day)
   -- traceM "parseTimeSingle..7"
-  _timeDay <- case fromGregorianValid (read year) (read month) (read day) of
+  _timeDay <- case fromGregorianValid year month day of
     Just d -> pure $ fromInteger $ toModifiedJulianDay d
-    Nothing ->
-      err $
-        "Could not parse gregorian date: "
-          ++ year
-          ++ "-"
-          ++ month
-          ++ "-"
-          ++ day
+    Nothing -> do
+      !loc <- getLoc
+      err
+        ( loc,
+          "Could not parse gregorian date: "
+            ++ show year
+            ++ "-"
+            ++ show month
+            ++ "-"
+            ++ show day
+        )
   -- traceM "parseTimeSingle..8"
   let _timeDayEnd = Nothing
   -- traceM "parseTimeSingle..9"
@@ -367,18 +386,30 @@ parseTimeSingle = do
   -- traceM "parseTimeSingle..11"
   _timeStart <- optional $ do
     _ <- $(char ' ')
-    hour <- count 2 digitChar
+    hour <- read <$> count 2 digitChar
+    unless (hour >= 0 && hour <= 23) $ do
+      !loc <- getLoc
+      err (loc, "Hour out of range: " ++ show hour)
     _ <- $(char ':')
-    minute <- count 2 digitChar
-    pure $ read hour * 60 + read minute
+    minute <- read <$> count 2 digitChar
+    unless (minute >= 0 && minute <= 59) $ do
+      !loc <- getLoc
+      err (loc, "Minute out of range: " ++ show minute)
+    pure $ hour * 60 + minute
   -- traceM "parseTimeSingle..12"
   _timeEnd <- optional $ do
     guard $ isJust _timeStart
     _ <- $(char '-')
-    hour <- count 2 digitChar
+    hour <- read <$> count 2 digitChar
+    unless (hour >= 0 && hour <= 23) $ do
+      !loc <- getLoc
+      err (loc, "Hour out of range: " ++ show hour)
     _ <- $(char ':')
-    minute <- count 2 digitChar
-    pure $ read hour * 60 + read minute
+    minute <- read <$> count 2 digitChar
+    unless (minute >= 0 && minute <= 59) $ do
+      !loc <- getLoc
+      err (loc, "Minute out of range: " ++ show minute)
+    pure $ hour * 60 + minute
   -- traceM "parseTimeSingle..13"
   _timeSuffix <- optional $ do
     _ <- $(char ' ')
@@ -396,6 +427,9 @@ parseTimeSingle = do
              |]
        )
     _suffixNum <- read <$> some digitChar
+    unless (_suffixNum >= -100 && _suffixNum < 100) $ do
+      !loc <- getLoc
+      err (loc, "Time suffix out of range: " ++ show _suffixNum)
     _suffixSpan <-
       $( switch
            [|
@@ -429,7 +463,7 @@ parseTimeSingle = do
 parseLogEntry :: Parser LogEntry
 parseLogEntry = do
   -- traceM "parseLogEntry..1"
-  loc <- getLoc
+  !loc <- getLoc
   $( switch
        [|
          case _ of
@@ -590,7 +624,7 @@ parseBody leader terminus = do
 parseBlock :: Parser a -> Parser Block
 parseBlock leader = do
   -- traceM "parseBlock..1"
-  loc <- getLoc
+  !loc <- getLoc
   parseWhitespaceBlock loc
     <|> parseDrawerBlock loc
     <|> parseParagraphBlock loc
