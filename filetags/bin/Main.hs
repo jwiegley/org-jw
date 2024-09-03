@@ -11,8 +11,11 @@ import Control.Monad.Except
 import Data.Foldable (forM_)
 import Data.Map qualified as M
 import Options
+import Org.Data
 import Org.Filter
+import Org.Read
 import Org.TagTrees
+import Org.Types
 import System.Exit
 import Prelude hiding (readFile)
 
@@ -26,16 +29,22 @@ main = do
           (opts ^. command . commandInput)
       )
       >>= \case
-        Left msg -> do
+        Left (_, msg) -> do
           putStrLn $ "Error: " ++ msg
           exitWith (ExitFailure 1)
         Right x -> pure x
   case opts ^. command of
     TagsList _ -> doTagsList cs
     TagTrees dryRun dir overwrite depth tagForUntagged _ ->
-      makeTagTrees dryRun dir overwrite depth (tagForUntagged) cs
+      makeTagTrees
+        dryRun
+        dir
+        overwrite
+        depth
+        (tagForUntagged)
+        (collectionPaths cs)
     Filter dryRun dir overwrite expr _ ->
-      makeFilter dryRun dir overwrite expr cs
+      makeFilter dryRun dir overwrite expr (collectionPaths cs)
 
 globalConfig :: Config
 globalConfig = Config {..}
@@ -74,6 +83,7 @@ globalConfig = Config {..}
       ["A", "B", "C"]
     _propertyColumn = 11
     _tagsColumn = 97
+    _attachmentsDir = "/Users/johnw/org/data"
 
 doTagsList :: Collection -> IO ()
 doTagsList cs = do

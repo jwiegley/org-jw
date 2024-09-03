@@ -194,7 +194,7 @@ fileNameReTest = do
       ) ->
       IO ()
     test path expect = do
-      let res = parseMaybe fileNameRe (T.encodeUtf8 (T.pack path))
+      let res = parseMaybe () fileNameRe (T.encodeUtf8 (T.pack path))
       unless (res == Just expect) $
         error $
           "Failed to parse " ++ show path ++ ", got: " ++ show res
@@ -442,7 +442,15 @@ endSpace :: Traversal' Body String
 endSpace = blocks . _last . _Whitespace . _2
 
 _Time :: Prism' String Time
-_Time = prism' showTime (parseMaybe parseTime . T.encodeUtf8 . T.pack)
+_Time =
+  prism'
+    showTime
+    ( parseMaybe
+        ("<time>", emptyConfig)
+        parseTime
+        . T.encodeUtf8
+        . T.pack
+    )
 
 data TimestampFormat
   = HourMinSec

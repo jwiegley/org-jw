@@ -6,7 +6,7 @@
 
 module Main where
 
-import Control.Lens
+import Control.Lens hiding ((<.>))
 import Control.Monad.IO.Class
 import Control.Monad.Writer
 import Data.ByteString qualified as B
@@ -19,10 +19,12 @@ import Data.Map qualified as M
 import FlatParse.Stateful qualified as FP
 import Options
 import Org.Data
+import Org.JSON
 import Org.Lint
 import Org.Read
 import Org.Types
 import System.Exit
+import System.FilePath
 import Prelude hiding (readFile)
 
 main :: IO ()
@@ -30,7 +32,14 @@ main = do
   opts <- getOptions
   Collection xs <- readCollectionIO globalConfig (opts ^. inputs)
   (entriesById, n) <-
-    foldrM (doLint globalConfig (opts ^. kind)) (M.empty, 0) xs
+    foldrM
+      ( doLint
+          globalConfig
+          (opts ^. jsonDir)
+          (opts ^. kind)
+      )
+      (M.empty, 0)
+      xs
   let idMsgs :: [(FilePath, [LintMessage])]
       idMsgs = flip concatMap (M.assocs entriesById) $ \(k, loc :| locs) ->
         [ ( loc ^. file,
@@ -93,13 +102,16 @@ globalConfig = Config {..}
 
 doLint ::
   Config ->
+  Maybe FilePath ->
   LintMessageKind ->
   CollectionItem ->
   (Map String (NonEmpty Loc), Integer) ->
   IO (Map String (NonEmpty Loc), Integer)
-doLint _ _level (DataItem _item) (entriesById, n) =
+doLint _ _ _level (DataItem _item) (entriesById, n) =
   pure (entriesById, n)
-doLint cfg level (OrgItem org) (entriesById, n) = liftIO $ do
+doLint cfg mdir level (OrgItem org) (entriesById, n) = liftIO $ do
+  forM_ mdir $ \dir ->
+    orgFileToJSON (dir </> takeBaseName (org ^. orgFilePath) <.> "json") org
   let entriesById' = (\f -> foldr f entriesById (org ^.. allEntries)) $ \e m ->
         let loc = e ^. entryLoc
          in maybe

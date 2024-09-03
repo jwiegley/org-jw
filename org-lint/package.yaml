@@ -42,4 +42,5 @@ executables:
       - Options
     dependencies:
       - org-lint
+      - org-json
       - optparse-applicative

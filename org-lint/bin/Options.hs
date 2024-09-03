@@ -27,6 +27,7 @@ orgLintSummary =
 data Options = Options
   { _verbose :: !Bool,
     _kind :: !LintMessageKind,
+    _jsonDir :: !(Maybe FilePath),
     _inputs :: InputFiles
   }
   deriving (Show, Eq)
@@ -47,6 +48,12 @@ orgLintOpts =
           <> long "level"
           <> value LintInfo
           <> help "Log level to report"
+      )
+    <*> optional
+      ( strOption
+          ( long "to-json"
+              <> help "Output Org-mode files as JSON to DIR"
+          )
       )
     <*> filesOptions
   where

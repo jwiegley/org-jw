@@ -410,3 +410,7 @@ newtype Collection = Collection
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
 makeClassy ''Collection
+
+collectionPaths :: Collection -> [FilePath]
+collectionPaths (Collection cs) =
+  map (^. failing (_OrgItem . orgFilePath) _DataItem) cs

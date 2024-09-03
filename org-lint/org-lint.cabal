@@ -58,6 +58,7 @@ executable org-lint
     , mtl
     , optparse-applicative
     , org-data
+    , org-json
     , org-lint
     , org-parse
     , org-print

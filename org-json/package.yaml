@@ -1,4 +1,4 @@
-name:        filetags
+name:        org-json
 version:     0.0.1
 license:     BSD3
 author:      John Wiegley
@@ -12,31 +12,22 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
+  - aeson
+  - bytestring
   - containers
-  - directory
   - filepath
+  - hashable
   - lens
   - flatparse
   - flatparse-util
   - mtl
+  - split
   - text
-  - transformers
+  - time
 
 library:
   source-dirs: src
   exposed-modules:
-    - Org.TagTrees
-    - Org.Filter
-
-executables:
-  filetags:
-    main: Main.hs
-    source-dirs: bin
-    other-modules:
-      - Options
-    dependencies:
-      - filetags
-      - org-data
-      - org-parse
-      - org-types
-      - optparse-applicative
+    - Org.JSON
+  dependencies:
+    - org-types
