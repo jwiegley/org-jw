@@ -17,96 +17,116 @@ module Org.JSON where
 
 import Data.Aeson
 import Data.Aeson qualified as JSON
+import Data.Char (toLower)
 import Org.Types
 import Prelude hiding (readFile)
 
-instance ToJSON Time where
-  toEncoding = genericToEncoding JSON.defaultOptions
+lowerFirst :: String -> String
+lowerFirst [] = []
+lowerFirst (x : xs) = (toLower x : xs)
 
-instance FromJSON Time
+instance ToJSON Time where
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
+        { fieldLabelModifier = lowerFirst . drop 5 -- _time
+        }
 
 instance ToJSON TimeKind where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON TimeKind
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
 
 instance ToJSON TimeSuffix where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON TimeSuffix
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
+        { fieldLabelModifier = lowerFirst . drop 7 -- _suffix
+        }
 
 instance ToJSON TimeSuffixKind where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON TimeSuffixKind
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
 
 instance ToJSON TimeSpan where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON TimeSpan
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
 
 instance ToJSON Stamp where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON Stamp
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
 
 instance ToJSON Duration where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON Duration
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
+        { fieldLabelModifier = lowerFirst . drop 1 -- _
+        }
 
 instance ToJSON Property where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON Property
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
+        { fieldLabelModifier = lowerFirst . drop 1 -- _
+        }
 
 instance ToJSON Tag where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON Tag
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
 
 instance ToJSON Keyword where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON Keyword
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
 
 instance ToJSON Loc where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON Loc
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
+        { fieldLabelModifier = lowerFirst . drop 1 -- _
+        }
 
 instance ToJSON LogEntry where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON LogEntry
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
 
 instance ToJSON Block where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON Block
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
 
 instance ToJSON Body where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON Body
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
+        { fieldLabelModifier = lowerFirst . drop 1 -- _
+        }
 
 instance ToJSON Entry where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON Entry
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
+        { fieldLabelModifier = lowerFirst . drop 6 -- _entry
+        }
 
 instance ToJSON Header where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON Header
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
+        { fieldLabelModifier = lowerFirst . drop 7 -- _header
+        }
 
 instance ToJSON OrgFile where
-  toEncoding = genericToEncoding JSON.defaultOptions
-
-instance FromJSON OrgFile
-
-orgFileFromJSON :: FilePath -> IO (Maybe OrgFile)
-orgFileFromJSON = decodeFileStrict
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
+        { fieldLabelModifier = lowerFirst . drop 8 -- _orgFile
+        }
 
 orgFileToJSON :: FilePath -> OrgFile -> IO ()
 orgFileToJSON = encodeFile
