@@ -331,7 +331,7 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
     ruleLogEntriesNeverInBody =
       when
         ( any
-            (=~ ("(- (CLOSING NOTE|State|Note taken on|Rescheduled from|Not scheduled, was|New deadline from|Removed deadline, was|Refiled on) |:LOGBOOK:|:logbook:)" :: String))
+            (=~ ("(- (CLOSING NOTE|State \"|Note taken on|Rescheduled from|Not scheduled, was|New deadline from|Removed deadline, was|Refiled on) |:LOGBOOK:|:logbook:)" :: String))
             paragraphs
         )
         $ report LintError MisplacedLogEntry
