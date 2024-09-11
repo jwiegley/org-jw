@@ -604,7 +604,9 @@ parseLogEntry = do
 parseEntryBody :: Parser Body
 parseEntryBody = do
   -- traceM "parseEntryBody..1"
-  parseBody (pure ()) parseHeaderStars
+  parseBody (pure ()) $ do
+    depth <- parseHeaderStars
+    guard $ depth < 15
 
 parseNoteBody :: Parser Body
 parseNoteBody = do
@@ -667,6 +669,8 @@ parseDrawer leader = do
       -- traceM "parsePlainDrawer..1"
       txt <- do
         -- traceM "parsePlainDrawer..2"
+        -- jww (2024-09-11): Draw name should be included as:
+        -- @Drawer Loc String [String]@
         ident <- identifier <* $(char ':') <* trailingSpace
         -- traceM "parsePlainDrawer..3"
         pure $ prefix <> ":" <> ident <> ":"
