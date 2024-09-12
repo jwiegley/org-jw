@@ -18,12 +18,11 @@ import Data.Maybe (isJust, maybeToList)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Time
+-- import Debug.Trace
 import FlatParse.Combinators
 import FlatParse.Stateful hiding (Parser)
 import FlatParse.Stateful qualified as FP
 import Org.Types
-
--- import Debug.Trace
 
 type Parser = FP.Parser (FilePath, Config) (Loc, String)
 
@@ -113,7 +112,7 @@ parseHeader = do
   --     <$> stampFromProperty CreatedStamp "created" _headerPropertiesDrawer
   --     <*> stampFromProperty EditedStamp "edited" _headerPropertiesDrawer
   --     <*> stampFromProperty DateStamp "date" _headerFileProperties
-  _headerPreamble <- parseEntryBody
+  _headerPreamble <- parseEntryBody 1
   pure Header {..}
 
 parseHeaderStars :: Parser Int
@@ -167,6 +166,9 @@ parseEntry parseAtDepth = do
     pure depth
   -- traceM "parseEntry..6"
   _entryHeadline <- lookahead restOfLine
+  -- In order to support parsing of inline tasks, we do not parse entries
+  -- whole whole headline is "END".
+  guard $ _entryHeadline /= "END"
   -- traceM "parseEntry..7"
   _entryKeyword <- optional (parseKeyword <* some singleSpace)
   -- traceM "parseEntry..8"
@@ -176,12 +178,15 @@ parseEntry parseAtDepth = do
   -- traceM "parseEntry..10"
   (_entryTitle, (_entryLocator, _entryTags)) <-
     manyTill_ anyChar parseTitleSuffix
+  -- traceM "parseEntry..11"
   stamps <-
     join . maybeToList
       <$> optional (parseStamps <* trailingSpace)
+  -- traceM "parseEntry..12"
   _entryProperties <-
     join . maybeToList
       <$> optional parseProperties
+  -- traceM "parseEntry..13"
   activeStamp <- optional $ do
     !loc <- getLoc
     lookahead $(char '<')
@@ -191,9 +196,12 @@ parseEntry parseAtDepth = do
   --   (\x y -> stamps ++ maybeToList activeStamp ++ x ++ y)
   --     <$> stampFromProperty CreatedStamp "created" _entryProperties
   --     <*> stampFromProperty EditedStamp "edited" _entryProperties
+  -- traceM "parseEntry..14"
   logEntries <- many parseLogEntry
-  text <- parseEntryBody
-  let (_entryLogEntries, _entryString) =
+  -- traceM "parseEntry..15"
+  text <- parseEntryBody parseAtDepth
+  -- traceM "parseEntry..16"
+  let (_entryLogEntries, _entryBody) =
         let dflt = (logEntries, text)
          in case reverse logEntries of
               [] -> dflt
@@ -210,7 +218,9 @@ parseEntry parseAtDepth = do
                         )
                       _ -> dflt
                   _ -> dflt
+  -- traceM "parseEntry..17"
   _entryItems <- many (parseEntry (succ _entryDepth))
+  -- traceM "parseEntry..18"
   pure Entry {..}
 
 parseEntryPriority :: Parser String
@@ -601,12 +611,20 @@ parseLogEntry = do
       spaces_
       LogRefiling loc <$> parseTimeSingle
 
-parseEntryBody :: Parser Body
-parseEntryBody = do
+parseEntryBody :: Int -> Parser Body
+parseEntryBody parseAtDepth = do
   -- traceM "parseEntryBody..1"
-  parseBody (pure ()) $ do
-    depth <- parseHeaderStars
-    guard $ depth < 15
+  parseBody (pure ()) $
+    -- This special logic is needed to support parsing of inline tasks, since
+    -- they end not in another entry, but a special marker of 15 stars
+    -- followed by the word "END".
+    if parseAtDepth < 15
+      then do
+        depth <- parseHeaderStars
+        -- traceM $ "parseEntryBody..2: " ++ show depth
+        guard $ depth < 15
+      else -- traceM $ "parseEntryBody..3: " ++ show depth
+        void parseHeaderStars
 
 parseNoteBody :: Parser Body
 parseNoteBody = do
@@ -629,6 +647,7 @@ parseBlock leader = do
   !loc <- getLoc
   parseWhitespaceBlock loc
     <|> parseDrawerBlock loc
+    <|> parseInlineTask loc
     <|> parseParagraphBlock loc
   where
     parseWhitespaceBlock loc = do
@@ -638,6 +657,23 @@ parseBlock leader = do
     parseDrawerBlock loc = do
       -- traceM "parseDrawerBlock..1"
       Drawer loc <$> (leader *> parseDrawer leader)
+
+    parseInlineTask loc = do
+      -- traceM "parseInlineTask..1"
+      InlineTask loc
+        <$> try
+          ( parseEntry 15 <* do
+              -- traceM "parseInlineTask..2"
+              depth <- parseHeaderStars
+              -- traceM $ "parseInlineTask..3: " ++ show depth
+              guard $ depth == 15
+              -- traceM "parseInlineTask..4"
+              $(string "END")
+              -- traceM "parseInlineTask..5"
+              _ <- restOfLine
+              -- traceM "parseInlineTask..6"
+              pure ()
+          )
 
     parseParagraphBlock loc = do
       -- traceM "parseParagraphBlock..1"

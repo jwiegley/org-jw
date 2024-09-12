@@ -73,14 +73,13 @@ data Block
   = Whitespace Loc String
   | Paragraph Loc [String]
   | Drawer Loc [String]
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
-
-makePrisms ''Block
+  | InlineTask Loc Entry
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
 newtype Body = Body
   { _blocks :: [Block]
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
 instance Semigroup Body where
   Body [] <> ys = ys
@@ -97,16 +96,12 @@ instance Monoid Body where
   mempty = Body []
   mappend = (<>)
 
-makeClassy ''Body
-
 emptyBody :: Body -> Bool
 emptyBody = (== mempty)
 {-# INLINE emptyBody #-}
 
 newtype Tag = PlainTag String
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
-
-makePrisms ''Tag
 
 data TimeSpan
   = DaySpan
@@ -125,8 +120,6 @@ data TimeSpan
       Plated
     )
 
-makePrisms ''TimeSpan
-
 data TimeKind
   = ActiveTime
   | InactiveTime
@@ -142,8 +135,6 @@ data TimeKind
       Hashable,
       Plated
     )
-
-makePrisms ''TimeKind
 
 data TimeSuffixKind
   = TimeRepeat
@@ -162,8 +153,6 @@ data TimeSuffixKind
       Plated
     )
 
-makePrisms ''TimeSuffixKind
-
 data TimeSuffix = TimeSuffix
   { _suffixKind :: TimeSuffixKind,
     _suffixNum :: Integer,
@@ -171,8 +160,6 @@ data TimeSuffix = TimeSuffix
     _suffixLargerSpan :: Maybe (Integer, TimeSpan)
   }
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
-
-makeLenses ''TimeSuffix
 
 data Time = Time
   { _timeKind :: TimeKind,
@@ -185,8 +172,6 @@ data Time = Time
     _timeSuffix :: Maybe TimeSuffix
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
-
-makeClassy ''Time
 
 timeStartToUTCTime :: Time -> UTCTime
 timeStartToUTCTime Time {..} =
@@ -227,8 +212,6 @@ data Duration = Duration
   }
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
-makeClassy ''Duration
-
 {-
 _duration :: Traversal' Time Duration
 _duration f tm@Time {..} = do
@@ -261,8 +244,6 @@ data Stamp
   | ActiveStamp Loc Time
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
 
-makePrisms ''Stamp
-
 isLeadingStamp :: Stamp -> Bool
 isLeadingStamp (ClosedStamp _ _) = True
 isLeadingStamp (ScheduledStamp _ _) = True
@@ -278,14 +259,10 @@ data Header = Header
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
-makeClassy ''Header
-
 data Keyword
   = OpenKeyword Loc String
   | ClosedKeyword Loc String
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
-
-makePrisms ''Keyword
 
 data LogEntry
   = LogClosing Loc Time (Maybe Body)
@@ -298,9 +275,7 @@ data LogEntry
   | LogRefiling Loc Time (Maybe Body)
   | LogClock Loc Time (Maybe Duration)
   | LogBook Loc [LogEntry]
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
-
-makePrisms ''LogEntry
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
 _LogLoc :: Lens' LogEntry Loc
 _LogLoc f e = case e of
@@ -381,10 +356,36 @@ data Entry = Entry
     _entryStamps :: [Stamp],
     _entryProperties :: [Property],
     _entryLogEntries :: [LogEntry],
-    _entryString :: Body,
+    _entryBody :: Body,
     _entryItems :: [Entry]
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+
+makePrisms ''Block
+
+makeClassy ''Body
+
+makePrisms ''Tag
+
+makePrisms ''TimeSpan
+
+makePrisms ''TimeKind
+
+makePrisms ''TimeSuffixKind
+
+makeLenses ''TimeSuffix
+
+makeClassy ''Time
+
+makeClassy ''Duration
+
+makePrisms ''Stamp
+
+makeClassy ''Header
+
+makePrisms ''Keyword
+
+makePrisms ''LogEntry
 
 makeClassy ''Entry
 

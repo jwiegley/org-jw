@@ -233,7 +233,7 @@ showEntry propCol tagCol Entry {..} =
     activeStamp = case _entryStamps ^? traverse . _ActiveStamp . _2 of
       Nothing -> []
       Just stamp -> [showTime stamp]
-    entryLines = showBody "" _entryString
+    entryLines = showBody "" _entryBody
 
 showBody :: String -> Body -> [String]
 showBody leader (Body b) = concatMap (showBlock leader) b
@@ -321,8 +321,8 @@ summarizeEntry Entry {..} =
                  _entryLoc
                  False
                  "BODY_LEN"
-                 (show (bodyLength _entryString))
-               | not (emptyBody _entryString)
+                 (show (bodyLength _entryBody))
+               | not (emptyBody _entryBody)
              ]
           ++ case _entryTags of
             [] -> []

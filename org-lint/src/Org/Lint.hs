@@ -462,7 +462,7 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
             forM_ (l ^? _LogBody) $ \logBody -> do
               let good =
                     if last ents == l
-                      then case e ^. entryString of
+                      then case e ^. entryBody of
                         Body [] -> True
                         Body (Whitespace _ _ : _) -> True
                         _ -> logBody ^? endSpace == Just txt
@@ -474,7 +474,7 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
                   (UnevenWhitespace "log entry")
         _ -> pure ()
       when
-        ( not lastEntry && case e ^. entryString of
+        ( not lastEntry && case e ^. entryBody of
             Body [Whitespace _ _] -> False
             b -> b ^? leadSpace /= b ^? endSpace
         )
@@ -490,7 +490,7 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
     --       )
     --       $ report' (b ^. _LogLoc) LintInfo EmptyBodyWhitespace
     --   when
-    --     ( case e ^. entryString of
+    --     ( case e ^. entryBody of
     --         Body [Whitespace _ _] ->
     --           maybe False isTodo (e ^? keyword)
     --         _ -> False
@@ -507,7 +507,7 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
           )
           $ report' (b ^. _LogLoc) LintInfo UnnecessaryWhitespace
       when
-        ( case e ^. entryString of
+        ( case e ^. entryBody of
             Body (Paragraph _ ((' ' : _) : _) : _) -> True
             _ -> False
         )
@@ -552,7 +552,7 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
 
     bodyString f =
       e
-        ^. entryString
+        ^. entryBody
           . blocks
           . traverse
           . filtered f

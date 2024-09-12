@@ -512,7 +512,15 @@ foldEntries _ _ z [] = z
 foldEntries props f z (e : es) =
   f
     (inheritProperties props e)
-    (foldEntries props f z (e ^. entryItems ++ es))
+    ( foldEntries
+        props
+        f
+        z
+        ( e ^. entryItems
+            ++ e ^.. entryBody . blocks . traverse . _InlineTask . _2
+            ++ es
+        )
+    )
 
 hardCodedInheritedProperties :: [String]
 hardCodedInheritedProperties = ["COLUMNS", "CATEGORY", "ARCHIVE", "LOGGING"]
