@@ -403,6 +403,7 @@ specialProperties =
     ("KEYWORD", Fold (entryKeyword . _Just . keywordString)),
     ("TITLE", Fold entryTitle),
     ("CONTEXT", Fold (entryContext . _Just)),
+    ("VERB", Fold (entryVerb . _Just)),
     ("LOCATOR", Fold (entryLocator . _Just))
   ]
 

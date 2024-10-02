@@ -69,10 +69,15 @@ lookupProperty' n =
 lookupProperty :: String -> Traversal' [Property] String
 lookupProperty n = lookupProperty' n . value
 
+data DrawerType
+  = PlainDrawer String
+  | BeginDrawer String
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+
 data Block
   = Whitespace Loc String
   | Paragraph Loc [String]
-  | Drawer Loc [String]
+  | Drawer Loc DrawerType [String]
   | InlineTask Loc Entry
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
@@ -349,6 +354,7 @@ data Entry = Entry
     _entryKeyword :: Maybe Keyword,
     _entryPriority :: Maybe String,
     _entryHeadline :: String,
+    _entryVerb :: Maybe String,
     _entryTitle :: String,
     _entryContext :: Maybe String,
     _entryLocator :: Maybe String,
@@ -360,6 +366,8 @@ data Entry = Entry
     _entryItems :: [Entry]
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+
+makePrisms ''DrawerType
 
 makePrisms ''Block
 

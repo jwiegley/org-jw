@@ -89,7 +89,7 @@ globalConfig = Config {..}
         ("WAIT", ["DOING", "TODO", "DEFER", "TASK", "CANCELED", "DONE"]),
         ("DEFER", ["DOING", "WAIT", "TODO", "TASK", "CANCELED", "DONE"]),
         ("TASK", ["DOING", "WAIT", "DEFER", "TODO", "CANCELED", "DONE"]),
-        ("DONE", ["TODO"]),
+        ("DONE", ["TODO", "TASK"]),
         ("ABORTED", ["PROJECT"]),
         ("COMPLETE", ["PROJECT"]),
         ("CANCELED", ["DOING", "WAIT", "DEFER", "TASK", "TODO", "DONE"])

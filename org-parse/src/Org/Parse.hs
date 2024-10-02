@@ -13,7 +13,7 @@ import Control.Arrow (second)
 import Control.Lens
 import Control.Monad
 import Data.ByteString (ByteString)
-import Data.Char (isAlphaNum, isPrint, isSpace)
+import Data.Char (isAlpha, isAlphaNum, isPrint, isSpace)
 import Data.Maybe (isJust, maybeToList)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
@@ -175,6 +175,8 @@ parseEntry parseAtDepth = do
   _entryPriority <- optional parseEntryPriority
   -- traceM "parseEntry..9"
   _entryContext <- optional parseEntryContext
+  -- traceM "parseEntry..9.5"
+  _entryVerb <- optional parseEntryVerb
   -- traceM "parseEntry..10"
   (_entryTitle, (_entryLocator, _entryTags)) <-
     manyTill_ anyChar parseTitleSuffix
@@ -234,6 +236,14 @@ parseEntryPriority = do
            "[#C]" -> pure "C"
          |]
    )
+
+parseEntryVerb :: Parser String
+parseEntryVerb = do
+  -- traceM "parseEntryVerb..1"
+  verb <- some (satisfy (\c -> isAlpha c))
+  $(char ':')
+  spaces_
+  pure verb
 
 parseEntryContext :: Parser String
 parseEntryContext = do
@@ -656,7 +666,7 @@ parseBlock leader = do
 
     parseDrawerBlock loc = do
       -- traceM "parseDrawerBlock..1"
-      Drawer loc <$> (leader *> parseDrawer leader)
+      uncurry (Drawer loc) <$> (leader *> parseDrawer leader)
 
     parseInlineTask loc = do
       -- traceM "parseInlineTask..1"
@@ -679,7 +689,7 @@ parseBlock leader = do
       -- traceM "parseParagraphBlock..1"
       Paragraph loc . (: []) <$> (leader *> lineOrEof)
 
-parseDrawer :: Parser a -> Parser [String]
+parseDrawer :: Parser a -> Parser (DrawerType, [String])
 parseDrawer leader = do
   -- traceM "parseDrawer..1"
   prefix <- many (satisfy (== ' '))
@@ -732,7 +742,7 @@ parseDrawer leader = do
         -- traceM "parsePlainDrawer..8"
         pure $ prefix <> ending
       -- traceM "parsePlainDrawer..9"
-      pure $ txt : content ++ [endLine]
+      pure (PlainDrawer txt, txt : content ++ [endLine])
 
     endBlockString =
       $( switch
@@ -765,4 +775,4 @@ parseDrawer leader = do
         ending <- endBlockString
         suffix <- wholeLine
         pure $ prefix <> ending <> suffix
-      pure $ txt : content ++ [endLine]
+      pure (BeginDrawer txt, txt : content ++ [endLine])

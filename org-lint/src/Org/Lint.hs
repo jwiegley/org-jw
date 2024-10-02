@@ -75,6 +75,7 @@ data LintMessageCode
   | CategoryTooLong String
   | FileCreatedTimeMismatch Time Time
   | TitlePropertyNotLast
+  | FileTagsTodoMismatch
   | InvalidLocation String
   deriving (Show, Eq)
 
@@ -100,9 +101,13 @@ lintOrgFile cfg level org = do
   ruleTitleProperyAlwaysLast
   -- RULE: :ARCHIVE: or #+archive: property alwayos refers to existing file
   ruleArchiveTagFileExists
+  -- RULE: A filetags of :todo: should indicate open TODO entries
+  ruleFileTagsTodo
+  -- RULE: No duplicated file properties outside of link and tags
   forM_ (findDuplicates (props ^.. traverse . name . to (map toLower))) $ \nm ->
     unless (nm `elem` ["link", "tags"]) $
       report LintError (DuplicateFileProperty nm)
+  -- RULE: Whitespace before and after body should match
   -- checkFor LintInfo (UnevenFilePreambleWhitespace org) $
   --   org ^? fileHeader . headerPreamble . leadSpace
   --     /= org ^? fileHeader . headerPreamble . endSpace
@@ -133,7 +138,7 @@ lintOrgFile cfg level org = do
           unless (OrgItem org ^? fileActualSlug == OrgItem org ^? fileSlug) $
             report LintInfo (FileSlugMismatch slug)
 
-    ruleCreationTimeMatchesCreated = do
+    ruleCreationTimeMatchesCreated =
       forM_
         ( (,)
             <$> OrgItem org ^? fileTimestamp
@@ -156,7 +161,7 @@ lintOrgFile cfg level org = do
           unless (lastProp == "title") $
             report LintWarn TitlePropertyNotLast
 
-    ruleArchiveTagFileExists = do
+    ruleArchiveTagFileExists =
       forM_ (org ^? orgFileProperty "ARCHIVE") $ \path -> do
         let path' = takeWhile (/= ':') path
         unless
@@ -164,6 +169,18 @@ lintOrgFile cfg level org = do
               (doesFileExist (takeDirectory (org ^. orgFilePath) </> path'))
           )
           $ report LintWarn (ArchiveTagFileDoesNotExist path')
+
+    ruleFileTagsTodo =
+      unless (isJust (org ^? orgFileProperty "HAS_TODO")) $
+        forM_ (OrgItem org ^? fileTags) $ \tags ->
+          unless
+            ( ( if PlainTag "todo" `elem` tags
+                  then id
+                  else not
+              )
+                $ any id (org ^.. allEntries . keyword . to isOpenTodo)
+            )
+            $ report LintWarn FileTagsTodoMismatch
 
     props =
       org ^. orgFileHeader . headerPropertiesDrawer
@@ -401,7 +418,7 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
               forM_ mkwf $ \kwf ->
                 case mprev of
                   Nothing ->
-                    unless (kwf `elem` ["TODO", "PROJECT"]) $
+                    unless (kwf `elem` ["TODO", "TASK", "PROJECT"]) $
                       report
                         LintWarn
                         ( InvalidStateChangeInvalidTransition
@@ -680,5 +697,7 @@ showLintOrg fl (LintMessage ln kind code) =
           ++ show (showTime t2)
       TitlePropertyNotLast ->
         "Title is not the last file property"
+      FileTagsTodoMismatch ->
+        "Filetags :todo: does not reflect todo entries in file"
       InvalidLocation l ->
         "Location is not valid: " ++ l

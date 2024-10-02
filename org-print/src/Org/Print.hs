@@ -208,6 +208,9 @@ showEntry propCol tagCol Entry {..} =
               ++ [ "(" <> c <> ") "
                    | c <- maybeToList _entryContext
                  ]
+              ++ [ c <> ": "
+                   | c <- maybeToList _entryVerb
+                 ]
               ++ [_entryTitle]
               ++ [ " {" <> c <> "}"
                    | c <- maybeToList _entryLocator
@@ -241,11 +244,12 @@ showBody leader (Body b) = concatMap (showBlock leader) b
 showBlock :: String -> Block -> [String]
 showBlock _leader (Whitespace _ txt) = [txt]
 showBlock leader (Paragraph _ xs) = map (leader <>) xs
-showBlock leader (Drawer _ xs) = map (leader <>) xs
+showBlock leader (Drawer _ _ xs) = map (leader <>) xs
+showBlock _leader (InlineTask _ _xs) =
+  error "showBlock not implemented for InlineTask"
 
 bodyLength :: Body -> Int
-bodyLength =
-  sum . Prelude.map (fromIntegral . length) . showBody ""
+bodyLength = sum . Prelude.map (fromIntegral . length) . showBody ""
 
 showOrgFile :: Int -> Int -> OrgFile -> [String]
 showOrgFile propCol tagCol OrgFile {..} =
@@ -306,6 +310,9 @@ summarizeEntry Entry {..} =
              ]
           ++ [ Property _entryLoc False "CONTEXT" x
                | x <- maybeToList _entryContext
+             ]
+          ++ [ Property _entryLoc False "VERB" x
+               | x <- maybeToList _entryVerb
              ]
           ++ [ Property _entryLoc False "LOCATOR" x
                | x <- maybeToList _entryLocator

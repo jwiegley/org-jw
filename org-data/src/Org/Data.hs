@@ -407,6 +407,7 @@ specialProperties =
     ("KEYWORD", Fold (entryKeyword . _Just . keywordString)),
     ("TITLE", Fold entryTitle),
     ("CONTEXT", Fold (entryContext . _Just)),
+    ("VERB", Fold (entryVerb . _Just)),
     ("LOCATOR", Fold (entryLocator . _Just))
   ]
 
@@ -634,6 +635,17 @@ isTodo kw =
              "COMPLETE",
              "ABORTED",
              "CANCELED"
+           ]
+
+isOpenTodo :: String -> Bool
+isOpenTodo kw =
+  kw
+    `elem` [ "TODO",
+             "PROJECT",
+             "DOING",
+             "WAIT",
+             "DEFER",
+             "TASK"
            ]
 
 isArchive :: OrgFile -> Bool

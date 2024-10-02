@@ -95,6 +95,11 @@ instance ToJSON LogEntry where
     genericToEncoding
       JSON.defaultOptions
 
+instance ToJSON DrawerType where
+  toEncoding =
+    genericToEncoding
+      JSON.defaultOptions
+
 instance ToJSON Block where
   toEncoding =
     genericToEncoding
