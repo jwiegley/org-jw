@@ -76,6 +76,7 @@ data LintMessageCode
   | FileCreatedTimeMismatch Time Time
   | TitlePropertyNotLast
   | FileTagsTodoMismatch
+  | VerbInFileUnknown String
   | TagInFileUnknown String
   | InvalidLocation String
   deriving (Show, Eq)
@@ -106,6 +107,8 @@ lintOrgFile cfg level org = do
   ruleFileTagsTodo
   -- RULE: All tags are part of the tags vocabulary, if specified
   ruleTagsVocabulary
+  -- RULE: All verbs are part of the verb vocabulary, if specified
+  ruleVerbVocabulary
   -- RULE: No duplicated file properties outside of link and tags
   forM_ (findDuplicates (props ^.. traverse . name . to (map toLower))) $ \nm ->
     unless (nm `elem` ["link", "tags"]) $
@@ -193,6 +196,15 @@ lintOrgFile cfg level org = do
             unless (entryTag `elem` tags') $
               report' (e ^. entryLoc . pos) LintWarn $
                 TagInFileUnknown entryTag
+
+    ruleVerbVocabulary =
+      forM_ (org ^? orgFileProperty "VERB_ALL") $ \verbs -> do
+        let verbs' = words verbs
+        forM_ (org ^.. allEntries) $ \e ->
+          forM_ (e ^.. entryVerb . _Just) $ \verb ->
+            unless (verb `elem` verbs') $
+              report' (e ^. entryLoc . pos) LintWarn $
+                VerbInFileUnknown verb
 
     props =
       org ^. orgFileHeader . headerPropertiesDrawer
@@ -715,5 +727,7 @@ showLintOrg fl (LintMessage ln kind code) =
         "Filetags :todo: does not reflect todo entries in file"
       TagInFileUnknown tag ->
         "Tag in file is not part of tags vocabulary: " ++ tag
+      VerbInFileUnknown tag ->
+        "Verb in file is not part of verb vocabulary: " ++ tag
       InvalidLocation l ->
         "Location is not valid: " ++ l
