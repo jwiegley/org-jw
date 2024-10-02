@@ -76,6 +76,7 @@ data LintMessageCode
   | FileCreatedTimeMismatch Time Time
   | TitlePropertyNotLast
   | FileTagsTodoMismatch
+  | TagInFileUnknown String
   | InvalidLocation String
   deriving (Show, Eq)
 
@@ -103,6 +104,8 @@ lintOrgFile cfg level org = do
   ruleArchiveTagFileExists
   -- RULE: A filetags of :todo: should indicate open TODO entries
   ruleFileTagsTodo
+  -- RULE: All tags are part of the tags vocabulary, if specified
+  ruleTagsVocabulary
   -- RULE: No duplicated file properties outside of link and tags
   forM_ (findDuplicates (props ^.. traverse . name . to (map toLower))) $ \nm ->
     unless (nm `elem` ["link", "tags"]) $
@@ -182,17 +185,28 @@ lintOrgFile cfg level org = do
             )
             $ report LintWarn FileTagsTodoMismatch
 
+    ruleTagsVocabulary =
+      forM_ (org ^? orgFileProperty "TAGS_ALL") $ \tags -> do
+        let tags' = words tags
+        forM_ (org ^.. allEntries) $ \e ->
+          forM_ (e ^.. entryTags . traverse) $ \(PlainTag entryTag) ->
+            unless (entryTag `elem` tags') $
+              report' (e ^. entryLoc . pos) LintWarn $
+                TagInFileUnknown entryTag
+
     props =
       org ^. orgFileHeader . headerPropertiesDrawer
         ++ org ^. orgFileHeader . headerFileProperties
 
-    report kind code
+    report' loc kind code
       | kind >= level = do
           when (level == LintDebug) $
             traceM $
               "file: " ++ ppShow org
-          tell [LintMessage 1 kind code]
+          tell [LintMessage loc kind code]
       | otherwise = pure ()
+
+    report = report' 1
 
 lintOrgEntry ::
   Config ->
@@ -699,5 +713,7 @@ showLintOrg fl (LintMessage ln kind code) =
         "Title is not the last file property"
       FileTagsTodoMismatch ->
         "Filetags :todo: does not reflect todo entries in file"
+      TagInFileUnknown tag ->
+        "Tag in file is not part of tags vocabulary: " ++ tag
       InvalidLocation l ->
         "Location is not valid: " ++ l
