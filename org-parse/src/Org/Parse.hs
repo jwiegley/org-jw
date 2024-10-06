@@ -148,6 +148,7 @@ parseKeyword = do
            "ABORTED" -> pure $ ClosedKeyword loc "ABORTED"
            "CANCELED" -> pure $ ClosedKeyword loc "CANCELED"
            "NOTE" -> pure $ ClosedKeyword loc "NOTE"
+           "FEEDBACK" -> pure $ ClosedKeyword loc "FEEDBACK"
            "LINK" -> pure $ ClosedKeyword loc "LINK"
          |]
    )

@@ -65,6 +65,7 @@ globalConfig = Config {..}
         "ABORTED",
         "CANCELED",
         "NOTE",
+        "FEEDBACK",
         "LINK"
       ]
     _keywordTransitions =
