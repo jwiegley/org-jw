@@ -444,7 +444,7 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
               forM_ mkwf $ \kwf ->
                 case mprev of
                   Nothing ->
-                    unless (kwf `elem` ["TODO", "TASK", "PROJECT"]) $
+                    unless (kwf `elem` ["TODO", "TASK", "HABIT", "PROJECT"]) $
                       report
                         LintWarn
                         ( InvalidStateChangeInvalidTransition
@@ -510,6 +510,21 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
                         Body (Whitespace _ _ : _) -> True
                         _ -> logBody ^? endSpace == Just txt
                       else logBody ^? endSpace == Just txt
+              unless good $
+                report'
+                  (l ^. _LogLoc)
+                  LintWarn
+                  (UnevenWhitespace "log entry")
+        Just (Paragraph _ _) -> do
+          let ents = e ^.. entryLogEntries . traverse . biplate
+          forM_ ents $ \l ->
+            forM_ (l ^? _LogBody) $ \logBody -> do
+              let good =
+                    if last ents == l
+                      then case e ^. entryBody of
+                        Body [] -> True
+                        _ -> logBody ^? endSpace == Nothing
+                      else logBody ^? endSpace == Nothing
               unless good $
                 report'
                   (l ^. _LogLoc)

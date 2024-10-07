@@ -57,7 +57,8 @@ globalConfig = Config {..}
         "DOING",
         "WAIT",
         "DEFER",
-        "TASK"
+        "TASK",
+        "HABIT"
       ]
     _closedKeywords =
       [ "DONE",
@@ -69,16 +70,23 @@ globalConfig = Config {..}
         "LINK"
       ]
     _keywordTransitions =
-      [ ("TODO", ["DOING", "WAIT", "DEFER", "TASK", "CANCELED", "DONE"]),
+      [ ( "TODO",
+          ["DOING", "WAIT", "DEFER", "TASK", "HABIT", "CANCELED", "DONE"]
+        ),
         ("PROJECT", ["ABORTED", "COMPLETE"]),
         ("DOING", ["TODO", "WAIT", "DEFER", "TASK", "CANCELED", "DONE"]),
         ("WAIT", ["DOING", "TODO", "DEFER", "TASK", "CANCELED", "DONE"]),
         ("DEFER", ["DOING", "WAIT", "TODO", "TASK", "CANCELED", "DONE"]),
-        ("TASK", ["DOING", "WAIT", "DEFER", "TODO", "CANCELED", "DONE"]),
-        ("DONE", ["TODO", "TASK"]),
+        ( "TASK",
+          ["DOING", "WAIT", "DEFER", "TODO", "HABIT", "CANCELED", "DONE"]
+        ),
+        ("HABIT", ["CANCELED", "DONE"]),
+        ("DONE", ["TODO", "TASK", "HABIT"]),
         ("ABORTED", ["PROJECT"]),
         ("COMPLETE", ["PROJECT"]),
-        ("CANCELED", ["DOING", "WAIT", "DEFER", "TASK", "TODO", "DONE"])
+        ( "CANCELED",
+          ["DOING", "WAIT", "DEFER", "TASK", "TODO", "HABIT", "DONE"]
+        )
       ]
     _priorities =
       ["A", "B", "C"]

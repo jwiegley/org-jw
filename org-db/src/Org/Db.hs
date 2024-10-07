@@ -619,6 +619,7 @@ isTodo kw =
              "WAIT",
              "DEFER",
              "TASK",
+             "HABIT",
              "DONE",
              "COMPLETE",
              "ABORTED",

@@ -631,6 +631,7 @@ isTodo kw =
              "WAIT",
              "DEFER",
              "TASK",
+             "HABIT",
              "DONE",
              "COMPLETE",
              "ABORTED",
@@ -645,7 +646,8 @@ isOpenTodo kw =
              "DOING",
              "WAIT",
              "DEFER",
-             "TASK"
+             "TASK",
+             "HABIT"
            ]
 
 isArchive :: OrgFile -> Bool

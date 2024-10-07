@@ -143,6 +143,7 @@ parseKeyword = do
            "WAIT" -> pure $ OpenKeyword loc "WAIT"
            "DEFER" -> pure $ OpenKeyword loc "DEFER"
            "TASK" -> pure $ OpenKeyword loc "TASK"
+           "HABIT" -> pure $ OpenKeyword loc "HABIT"
            "DONE" -> pure $ ClosedKeyword loc "DONE"
            "COMPLETE" -> pure $ ClosedKeyword loc "COMPLETE"
            "ABORTED" -> pure $ ClosedKeyword loc "ABORTED"
