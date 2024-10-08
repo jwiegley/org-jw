@@ -25,6 +25,10 @@ import Text.Regex.TDFA
 import Text.Regex.TDFA.String ()
 import Text.Show.Pretty
 
+consistent :: (Eq a) => [a] -> Bool
+consistent [] = True
+consistent (x : xs) = foldl' (\b y -> b && x == y) True xs
+
 data LintMessageKind = LintDebug | LintInfo | LintWarn | LintError
   deriving (Show, Eq, Ord)
 
@@ -67,8 +71,8 @@ data LintMessageCode
   | WhitespaceAtStartOfLogEntry
   | TitleWithExcessiveWhitespace
   | TimestampsOnNonTodo
-  | UnevenWhitespace String
-  | UnevenFilePreambleWhitespace
+  | InconsistentWhitespace String
+  | InconsistentFilePreambleWhitespace
   | UnnecessaryWhitespace
   | EmptyBodyWhitespace
   | MultipleBlankLines
@@ -114,7 +118,7 @@ lintOrgFile cfg level org = do
     unless (nm `elem` ["link", "tags"]) $
       report LintError (DuplicateFileProperty nm)
   -- RULE: Whitespace before and after body should match
-  -- checkFor LintInfo (UnevenFilePreambleWhitespace org) $
+  -- checkFor LintInfo (InconsistentFilePreambleWhitespace org) $
   --   org ^? fileHeader . headerPreamble . leadSpace
   --     /= org ^? fileHeader . headerPreamble . endSpace
   case reverse (org ^.. allEntries) of
@@ -228,7 +232,7 @@ lintOrgEntry ::
   LintMessageKind ->
   Entry ->
   Writer [LintMessage] ()
-lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
+lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   -- jww (2024-05-28): NYI
   -- RULE: No open keywords in archives
   -- RULE: No CREATED date lies in the future
@@ -274,7 +278,7 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
   -- RULE: Only TODO items have SCHEDULED/DEADLINE/CLOSED timestamps
   ruleNoTimestampsOnNonTodos
   -- RULE: Whitespace before and after body and log entries should match
-  unless ignoreWhitespace ruleNoUnevenWhitespace
+  unless ignoreWhitespace ruleNoInconsistentWhitespace
   -- RULE: Body and log entry text should never contain only whitespace
   -- ruleNoEmptyBodyWhitespace
   -- RULE: No unnecessary leading or trailing whitespace
@@ -491,52 +495,50 @@ lintOrgEntry cfg org lastEntry ignoreWhitespace level e = do
         )
         $ report LintWarn TimestampsOnNonTodo
 
-    ruleNoUnevenWhitespace = do
-      case e
-        ^? entryLogEntries
-          . traverse
-          . cosmos
-          . _LogBody
-          . blocks
-          . _last of
-        Just (Whitespace _ txt) -> do
-          let ents = e ^.. entryLogEntries . traverse . biplate
-          forM_ ents $ \l ->
-            forM_ (l ^? _LogBody) $ \logBody -> do
-              let good =
-                    if last ents == l
-                      then case e ^. entryBody of
-                        Body [] -> True
-                        Body (Whitespace _ _ : _) -> True
-                        _ -> logBody ^? endSpace == Just txt
-                      else logBody ^? endSpace == Just txt
-              unless good $
-                report'
-                  (l ^. _LogLoc)
-                  LintWarn
-                  (UnevenWhitespace "log entry")
-        Just (Paragraph _ _) -> do
-          let ents = e ^.. entryLogEntries . traverse . biplate
-          forM_ ents $ \l ->
-            forM_ (l ^? _LogBody) $ \logBody -> do
-              let good =
-                    if last ents == l
-                      then case e ^. entryBody of
-                        Body [] -> True
-                        _ -> logBody ^? endSpace == Nothing
-                      else logBody ^? endSpace == Nothing
-              unless good $
-                report'
-                  (l ^. _LogLoc)
-                  LintWarn
-                  (UnevenWhitespace "log entry")
-        _ -> pure ()
-      when
-        ( not lastEntry && case e ^. entryBody of
-            Body [Whitespace _ _] -> False
-            b -> b ^? leadSpace /= b ^? endSpace
+    ruleNoInconsistentWhitespace = do
+      unless (consistent logLeading) $
+        report LintWarn (InconsistentWhitespace "before log entries")
+      unless (consistent logTrailing) $
+        report LintWarn (InconsistentWhitespace "after log entries")
+      -- when
+      --   ( isBodyEmpty
+      --       && has (_last . _Just) logTrailing'
+      --   )
+      --   $ report LintInfo EmptyBodyWhitespace
+      unless
+        ( (isLastEntry && bodyTrailing == Nothing)
+            || bodyLeading == bodyTrailing
         )
-        $ report LintInfo (UnevenWhitespace "body")
+        $ report LintInfo (InconsistentWhitespace "surrounding body")
+      where
+        bodyLeading = do
+          ws <- bodyWhitespace _head
+          ws ^? _Whitespace . _2
+        bodyTrailing = do
+          ws <- bodyWhitespace _last
+          ws ^? _Whitespace . _2
+        bodyWhitespace f = e ^? entryBody . blocks . f
+        isBodyEmpty = null (e ^. entryBody . blocks)
+        logLeading = map (^? _Whitespace . _2) (logWhitespace _head)
+        logTrailing =
+          logTrailing'
+            & _last %~ \case
+              Nothing
+                | isBodyEmpty -> logTrailing' ^? _head . _Just
+                | Just ws <- bodyLeading -> do
+                    _ <- logTrailing' ^? _head . _Just
+                    pure ws
+                | otherwise -> Nothing
+              x -> x
+        logTrailing' = map (^? _Whitespace . _2) (logWhitespace _last)
+        logWhitespace f =
+          e
+            ^.. entryLogEntries
+              . traverse
+              . cosmos
+              . _LogBody
+              . blocks
+              . f
 
     -- ruleNoEmptyBodyWhitespace = do
     --   forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
@@ -719,10 +721,10 @@ showLintOrg fl (LintMessage ln kind code) =
         "Log entries inside and outside of logbooks found"
       TimestampsOnNonTodo ->
         "Timestamps found on non-todo entry"
-      UnevenWhitespace desc ->
-        "Whitespace surrounding " ++ desc ++ " is not even"
-      UnevenFilePreambleWhitespace ->
-        "Whitespace surrounding file preamble is not even"
+      InconsistentWhitespace desc ->
+        "Whitespace " ++ desc ++ " is inconsistent"
+      InconsistentFilePreambleWhitespace ->
+        "Whitespace surrounding file preamble is inconsistent"
       EmptyBodyWhitespace ->
         "Whitespace only body"
       UnnecessaryWhitespace ->
