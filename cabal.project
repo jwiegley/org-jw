@@ -5,7 +5,6 @@ packages: org-types/
           org-lint/
           org-parse/
           org-print/
-          org-db/
           filetags/
           sitebuilder/
 
