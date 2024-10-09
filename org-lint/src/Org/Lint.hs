@@ -69,6 +69,7 @@ data LintMessageCode
   | MultipleLogbooks
   | MixedLogbooks
   | WhitespaceAtStartOfLogEntry
+  | FileTitleMissing
   | TitleWithExcessiveWhitespace
   | TimestampsOnNonTodo
   | InconsistentWhitespace String
@@ -96,6 +97,8 @@ lintOrgFile :: Config -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
 lintOrgFile cfg level org = do
   when (level == LintDebug) $ do
     traceM $ "Linting " ++ (org ^. orgFilePath)
+  -- RULE: All files must have titles
+  ruleFileShouldHaveTitle
   -- RULE: All files must have ID and CREATED properties
   ruleFileShouldHaveIdAndCreated
   -- RULE: File slugs should reflect the file's title
@@ -130,6 +133,10 @@ lintOrgFile cfg level org = do
       lintOrgEntry cfg org True ignoreWhitespace level e
   where
     ignoreWhitespace = org ^? orgFileProperty "WHITESPACE" == Just "ignore"
+
+    ruleFileShouldHaveTitle =
+      when (isNothing (org ^? orgFileProperty "title")) $
+        report LintInfo FileTitleMissing
 
     ruleFileShouldHaveIdAndCreated = do
       when (isNothing (org ^? orgFileProperty "ID")) $
@@ -681,6 +688,8 @@ showLintOrg fl (LintMessage ln kind code) =
         "Misplaced end of drawer"
       WhitespaceAtStartOfLogEntry ->
         "Log entry begins with whitespace"
+      FileTitleMissing ->
+        "Title is missing"
       TitleWithExcessiveWhitespace ->
         "Title with excessive whitespace"
       DuplicateFileProperty nm ->

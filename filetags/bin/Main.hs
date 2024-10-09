@@ -51,48 +51,13 @@ globalConfig = Config {..}
   where
     -- jww (2024-05-10): These details need to be read from a file, or from
     -- command-line options.
-    _openKeywords =
-      [ "TODO",
-        "PROJECT",
-        "DOING",
-        "WAIT",
-        "DEFER",
-        "TASK",
-        "HABIT"
-      ]
-    _closedKeywords =
-      [ "DONE",
-        "COMPLETE",
-        "ABORTED",
-        "CANCELED",
-        "NOTE",
-        "FEEDBACK",
-        "LINK"
-      ]
-    _keywordTransitions =
-      [ ( "TODO",
-          ["DOING", "WAIT", "DEFER", "TASK", "HABIT", "CANCELED", "DONE"]
-        ),
-        ("PROJECT", ["ABORTED", "COMPLETE"]),
-        ("DOING", ["TODO", "WAIT", "DEFER", "TASK", "CANCELED", "DONE"]),
-        ("WAIT", ["DOING", "TODO", "DEFER", "TASK", "CANCELED", "DONE"]),
-        ("DEFER", ["DOING", "WAIT", "TODO", "TASK", "CANCELED", "DONE"]),
-        ( "TASK",
-          ["DOING", "WAIT", "DEFER", "TODO", "HABIT", "CANCELED", "DONE"]
-        ),
-        ("HABIT", ["CANCELED", "DONE"]),
-        ("DONE", ["TODO", "TASK", "HABIT"]),
-        ("ABORTED", ["PROJECT"]),
-        ("COMPLETE", ["PROJECT"]),
-        ( "CANCELED",
-          ["DOING", "WAIT", "DEFER", "TASK", "TODO", "HABIT", "DONE"]
-        )
-      ]
-    _priorities =
-      ["A", "B", "C"]
-    _propertyColumn = 11
-    _tagsColumn = 97
-    _attachmentsDir = "/Users/johnw/org/data"
+    _openKeywords = []
+    _closedKeywords = []
+    _keywordTransitions = []
+    _priorities = []
+    _propertyColumn = 0
+    _tagsColumn = 0
+    _attachmentsDir = ""
 
 doTagsList :: Collection -> IO ()
 doTagsList cs = do
