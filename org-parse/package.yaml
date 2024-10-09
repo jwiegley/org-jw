@@ -17,7 +17,6 @@ dependencies:
   - lens
   - flatparse
   - flatparse-util
-  - graphviz
   - mtl
   - parallel-io
   - text
