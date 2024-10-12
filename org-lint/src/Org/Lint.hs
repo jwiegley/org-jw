@@ -287,7 +287,7 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   -- RULE: Whitespace before and after body and log entries should match
   unless ignoreWhitespace ruleNoInconsistentWhitespace
   -- RULE: Body and log entry text should never contain only whitespace
-  -- ruleNoEmptyBodyWhitespace
+  ruleNoEmptyBodyWhitespace
   -- RULE: No unnecessary leading or trailing whitespace
   ruleNoUnnecessaryWhitespace
   -- RULE: There should never be multiple blank lines
@@ -507,11 +507,19 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
         report LintWarn (InconsistentWhitespace "before log entries")
       unless (consistent logTrailing) $
         report LintWarn (InconsistentWhitespace "after log entries")
-      -- when
-      --   ( isBodyEmpty
-      --       && has (_last . _Just) logTrailing'
-      --   )
-      --   $ report LintInfo EmptyBodyWhitespace
+      when
+        ( isBodyEmpty
+            && isJust
+              ( e
+                  ^? entryLogEntries
+                    . _last
+                    . _LogBody
+                    . blocks
+                    . _last
+                    . _Whitespace
+              )
+        )
+        $ report LintInfo EmptyBodyWhitespace
       unless
         ( (isLastEntry && bodyTrailing == Nothing)
             || bodyLeading == bodyTrailing
@@ -547,22 +555,17 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
               . blocks
               . f
 
-    -- ruleNoEmptyBodyWhitespace = do
-    --   forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
-    --     when
-    --       ( case b ^? _LogBody of
-    --           Just (Body [Whitespace _ _]) ->
-    --             maybe False isTodo (e ^? keyword)
-    --           _ -> False
-    --       )
-    --       $ report' (b ^. _LogLoc) LintInfo EmptyBodyWhitespace
-    --   when
-    --     ( case e ^. entryBody of
-    --         Body [Whitespace _ _] ->
-    --           maybe False isTodo (e ^? keyword)
-    --         _ -> False
-    --     )
-    --     $ report LintInfo EmptyBodyWhitespace
+    ruleNoEmptyBodyWhitespace =
+      when
+        ( case e ^. entryBody of
+            Body [Whitespace _ _] ->
+              ( e ^. entryTitle `elem` ["Notes", "Transcript"]
+                  && null (e ^. entryItems)
+              )
+                || maybe False isTodo (e ^? keyword)
+            _ -> False
+        )
+        $ report LintInfo EmptyBodyWhitespace
 
     ruleNoUnnecessaryWhitespace = do
       forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->

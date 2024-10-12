@@ -77,6 +77,7 @@ globalConfig = Config {..}
       ]
     _closedKeywords =
       [ "DONE",
+        "FINISHED",
         "COMPLETE",
         "ABORTED",
         "CANCELED",
@@ -95,7 +96,8 @@ globalConfig = Config {..}
         ( "TASK",
           ["DOING", "WAIT", "DEFER", "TODO", "HABIT", "CANCELED", "DONE"]
         ),
-        ("HABIT", ["CANCELED", "DONE"]),
+        ("HABIT", ["FINISHED"]),
+        ("FINISHED", ["HABIT"]),
         ("DONE", ["TODO", "TASK", "HABIT"]),
         ("ABORTED", ["PROJECT"]),
         ("COMPLETE", ["PROJECT"]),

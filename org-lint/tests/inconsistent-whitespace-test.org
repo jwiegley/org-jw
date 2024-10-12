@@ -1,0 +1,310 @@
+:PROPERTIES:
+:ID:       D5DDF562-6905-48E7-9BA8-42BB6DEEAF5B
+:CREATED:  [2024-10-07 Mon 20:15]
+:END:
+#+filetags: :todo:
+#+title: Inconsistent whitespace test
+
+* Trailing whitespace
+** TODO Test 1
+:PROPERTIES:
+:ID:       985479B7-EFB6-4390-8C03-F5796EF09BA8
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+  alpha
+
+- Note taken on [2018-06-10 Sun 08:57] \\
+  beta
+
+- Note taken on [2018-06-10 Sun 08:56] \\
+  gamma
+** TODO Test 2
+:PROPERTIES:
+:ID:       868B41BE-153C-457A-B013-B691A076485C
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+  alpha
+
+- Note taken on [2018-06-10 Sun 08:57] \\
+  beta
+
+- Note taken on [2018-06-10 Sun 08:56] \\
+  gamma
+
+** CANCELED Test 3: Whitespace after log entries is inconsistent
+:PROPERTIES:
+:ID:       C4AA131C-8BE8-4CDB-8F97-B6C4EEB15D3B
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+  alpha
+
+- Note taken on [2018-06-10 Sun 08:57] \\
+  beta
+
+- Note taken on [2018-06-10 Sun 08:56] \\
+  gamma
+Body
+** TODO Test 4
+:PROPERTIES:
+:ID:       014B6B00-A826-4707-829C-B96E95DDEE7F
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+  alpha
+
+- Note taken on [2018-06-10 Sun 08:57] \\
+  beta
+
+- Note taken on [2018-06-10 Sun 08:56] \\
+  gamma
+
+Body
+** CANCELED Test 5: Body space inconsistent
+:PROPERTIES:
+:ID:       7B32CDEF-C108-4231-81C3-0C6BE2014D65
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+  alpha
+
+- Note taken on [2018-06-10 Sun 08:57] \\
+  beta
+
+- Note taken on [2018-06-10 Sun 08:56] \\
+  gamma
+Body
+
+** TODO Test 6
+:PROPERTIES:
+:ID:       6175A916-D19C-471E-9213-5F7F3CE58268
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+  alpha
+
+- Note taken on [2018-06-10 Sun 08:57] \\
+  beta
+
+- Note taken on [2018-06-10 Sun 08:56] \\
+  gamma
+
+Body
+
+* Leading whitespace
+** TODO Test 7
+:PROPERTIES:
+:ID:       BB4B77B1-7BC4-444D-B90A-72CECD60DFA2
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  alpha
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  beta
+- Note taken on [2018-06-10 Sun 08:56] \\
+
+  gamma
+** TODO Test 8
+:PROPERTIES:
+:ID:       CB47E412-10E1-4271-A7E0-C84ED31BCE63
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  alpha
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  beta
+- Note taken on [2018-06-10 Sun 08:56] \\
+
+  gamma
+Body
+** CANCELED Test 9: Whitespace after log entries is inconsistent
+:PROPERTIES:
+:ID:       54B58057-BA0C-40FF-BB8E-76C20275C18D
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  alpha
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  beta
+- Note taken on [2018-06-10 Sun 08:56] \\
+
+  gamma
+
+Body
+** CANCELED Test 10: Body space inconsistent
+:PROPERTIES:
+:ID:       2FBDCD2A-41EB-4099-AB29-FD462F70C52E
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  alpha
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  beta
+- Note taken on [2018-06-10 Sun 08:56] \\
+
+  gamma
+Body
+
+** TODO Test 11
+:PROPERTIES:
+:ID:       C12721FA-CEF1-4E63-B7C4-3EAF8542507F
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  alpha
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  beta
+- Note taken on [2018-06-10 Sun 08:56] \\
+
+  gamma
+
+Body
+
+* Trailing and trailing whitespace
+** TODO Test 12
+:PROPERTIES:
+:ID:       6F7106B5-CACD-4AF4-913E-18AB65BAD95E
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  alpha
+
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  beta
+
+- Note taken on [2018-06-10 Sun 08:56] \\
+
+  gamma
+** TODO Test 13
+:PROPERTIES:
+:ID:       10552068-24EC-490F-84D5-3B6E7C160DF8
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  alpha
+
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  beta
+
+- Note taken on [2018-06-10 Sun 08:56] \\
+
+  gamma
+
+** TODO Test 14
+:PROPERTIES:
+:ID:       8C07784B-AC22-4B7F-AE06-75189AA98582
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  alpha
+
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  beta
+
+- Note taken on [2018-06-10 Sun 08:56] \\
+
+  gamma
+
+Body
+** TODO Test 15
+:PROPERTIES:
+:ID:       8D7A089A-E54E-4A72-9DB2-306A7E9DED11
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  alpha
+
+- Note taken on [2018-06-10 Sun 08:57] \\
+
+  beta
+
+- Note taken on [2018-06-10 Sun 08:56] \\
+
+  gamma
+
+Body
+
+* No whitespace
+** TODO Test 16
+:PROPERTIES:
+:ID:       6D012E33-920B-4193-A4E1-41F3A1AA6D63
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+  alpha
+- Note taken on [2018-06-10 Sun 08:57] \\
+  beta
+- Note taken on [2018-06-10 Sun 08:56] \\
+  gamma
+** TODO Test 17
+:PROPERTIES:
+:ID:       C47CBD09-AA45-4452-8765-912453EE85E9
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+  alpha
+- Note taken on [2018-06-10 Sun 08:57] \\
+  beta
+- Note taken on [2018-06-10 Sun 08:56] \\
+  gamma
+Body
+** CANCELED Test 18: Whitespace after log entries is inconsistent
+:PROPERTIES:
+:ID:       687A50D4-9F43-4A2D-AE91-D47391B5952B
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+  alpha
+- Note taken on [2018-06-10 Sun 08:57] \\
+  beta
+- Note taken on [2018-06-10 Sun 08:56] \\
+  gamma
+
+Body
+** CANCELED Test 19: Body space inconsistent
+:PROPERTIES:
+:ID:       7F2D472D-2F51-41F6-9B2A-1020742691E2
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+  alpha
+- Note taken on [2018-06-10 Sun 08:57] \\
+  beta
+- Note taken on [2018-06-10 Sun 08:56] \\
+  gamma
+Body
+
+** TODO Test 20
+:PROPERTIES:
+:ID:       A9E8EA2F-DE19-4E24-8A84-D9435D4192EE
+:CREATED:  [2018-06-01 Fri 16:02]
+:END:
+- Note taken on [2018-06-10 Sun 08:57] \\
+  alpha
+- Note taken on [2018-06-10 Sun 08:57] \\
+  beta
+- Note taken on [2018-06-10 Sun 08:56] \\
+  gamma
+
+Body
+
+* End

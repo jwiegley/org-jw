@@ -633,6 +633,7 @@ isTodo kw =
              "TASK",
              "HABIT",
              "DONE",
+             "FINISHED",
              "COMPLETE",
              "ABORTED",
              "CANCELED"
