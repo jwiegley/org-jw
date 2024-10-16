@@ -9,7 +9,7 @@ import Control.Applicative
 import Control.Lens
 import Control.Monad (foldM, unless, when)
 import Control.Monad.Writer
-import Data.Char (toLower)
+import Data.Char (isLower, isUpper, toLower)
 import Data.Data.Lens
 import Data.Foldable (forM_)
 import Data.List (isInfixOf)
@@ -84,6 +84,7 @@ data LintMessageCode
   | VerbInFileUnknown String
   | TagInFileUnknown String
   | InvalidLocation String
+  | InvalidDrawerCase DrawerType
   deriving (Show, Eq)
 
 data LintMessage = LintMessage
@@ -298,6 +299,8 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   ruleConsistentLogBook
   -- RULE: If there is a LOCATION, it is a valid one
   ruleLocationIsValid
+  -- RULE: Plain drawers are uppercase, begin/end drawers are lowercase
+  ruleDrawerCase
   where
     inArchive = isArchive org
 
@@ -620,6 +623,30 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
         when (loc == "0.0,0.0") $
           report LintError (InvalidLocation loc)
 
+    ruleDrawerCase =
+      forM_
+        ( e
+            ^.. entryBody
+              . blocks
+              . traverse
+              . _Drawer
+              . _2
+        )
+        $ \drawerType ->
+          unless
+            ( case drawerType of
+                PlainDrawer nm ->
+                  all (\c -> c == ':' || isUpper c) (words nm ^?! _head)
+                BeginDrawer nm ->
+                  all
+                    ( \c ->
+                        c `elem` ['#', '+', '_', ':']
+                          || isLower c
+                    )
+                    (words nm ^?! _head)
+            )
+            $ report LintInfo (InvalidDrawerCase drawerType)
+
     bodyString f =
       e
         ^. entryBody
@@ -760,3 +787,5 @@ showLintOrg fl (LintMessage ln kind code) =
         "Verb in file is not part of verb vocabulary: " ++ tag
       InvalidLocation l ->
         "Location is not valid: " ++ l
+      InvalidDrawerCase d ->
+        "Drawer has invalid case: " ++ show d
