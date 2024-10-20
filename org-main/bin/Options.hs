@@ -13,7 +13,7 @@ import Org.Lint.Options
 import Org.Parse.Options
 import Org.Read
 import Org.Site.Options
-import Org.Tags.Options
+import Org.FileTags.Options
 
 version :: String
 version = "0.0.1"
@@ -149,7 +149,7 @@ tradeJournalOpts =
     tagsCommand =
       OA.command
         "tags"
-        (info (Tags <$> tagsOptions) (progDesc "Tags Org-mode file"))
+        (info (Tags <$> tagsOptions) (progDesc "Org-mode filetags"))
 
     testCommand :: Mod CommandFields Command
     testCommand =

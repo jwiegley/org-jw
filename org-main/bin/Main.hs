@@ -15,7 +15,7 @@ import Org.Parse.Options
 import Org.Print
 import Org.Read
 import Org.Site.Exec
-import Org.Tags.Exec
+import Org.FileTags.Exec
 import Org.Types
 import System.FilePath
 import Text.Show.Pretty

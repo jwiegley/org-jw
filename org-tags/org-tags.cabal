@@ -15,10 +15,10 @@ build-type:     Simple
 
 library
   exposed-modules:
-      Org.Tags.TagTrees
-      Org.Tags.Filter
-      Org.Tags.Options
-      Org.Tags.Exec
+      Org.FileTags.TagTrees
+      Org.FileTags.Filter
+      Org.FileTags.Options
+      Org.FileTags.Exec
   other-modules:
       Paths_org_tags
   hs-source-dirs:
