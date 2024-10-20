@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.36.1.
 --
 -- see: https://github.com/sol/hpack
 
@@ -16,6 +16,8 @@ build-type:     Simple
 library
   exposed-modules:
       Org.Lint
+      Org.Lint.Options
+      Org.Lint.Exec
   other-modules:
       Paths_org_lint
   hs-source-dirs:
@@ -30,36 +32,8 @@ library
     , flatparse
     , lens
     , mtl
-    , org-data
-    , org-parse
-    , org-print
-    , org-types
-    , pretty-show
-    , regex-tdfa
-    , text
-    , transformers
-  default-language: Haskell2010
-
-executable org-lint
-  main-is: Main.hs
-  other-modules:
-      Options
-  hs-source-dirs:
-      bin
-  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      base >=4.5
-    , bytestring
-    , containers
-    , directory
-    , filepath
-    , flatparse
-    , lens
-    , mtl
     , optparse-applicative
     , org-data
-    , org-json
-    , org-lint
     , org-parse
     , org-print
     , org-types

@@ -27,16 +27,3 @@ library:
   exposed-modules:
     - Org.TagTrees
     - Org.Filter
-
-executables:
-  filetags:
-    main: Main.hs
-    source-dirs: bin
-    other-modules:
-      - Options
-    dependencies:
-      - filetags
-      - org-data
-      - org-parse
-      - org-types
-      - optparse-applicative

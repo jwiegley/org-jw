@@ -43,6 +43,6 @@
           })
         ];
       in flake // {
-        packages.default = flake.packages."org-lint:exe:org-lint";
+        packages.default = flake.packages."org-main:exe:org";
       });
 }

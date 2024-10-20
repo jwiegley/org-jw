@@ -29,6 +29,7 @@ dependencies:
   - time
   - yaml
 
-executables:
-  sitebuilder:
-    main: Main.hs
+library:
+  source-dirs: src
+  exposed-modules:
+    - Org.Site

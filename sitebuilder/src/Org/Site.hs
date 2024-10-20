@@ -10,7 +10,7 @@
 
 {-# HLINT ignore "Use lambda-case" #-}
 
-module Main where
+module Org.Site where
 
 import Control.Applicative
 import Control.Arrow ((***))

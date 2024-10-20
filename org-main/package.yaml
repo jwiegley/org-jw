@@ -1,0 +1,56 @@
+name:        org-main
+version:     0.0.1
+license:     BSD3
+author:      John Wiegley
+maintainer:  johnw@newartisans.com
+description: Implementation of expression language used by the Tinderbox application
+
+ghc-options:
+   - -Wall
+   - -Wno-missing-home-modules
+
+dependencies:
+  - base >= 4.5
+  # - aeson
+  # - bytestring
+  # - cassava
+  # - comonad
+  # - constraints
+  - containers
+  # - data-default
+  - filepath
+  # - free
+  # - hashable
+  - lens
+  # - megaparsec
+  # - mtl
+  # - pretty
+  - pretty-show
+  # - profunctors
+  # - row-types
+  # - semigroupoids
+  # - simple-amount >= 0.2.0
+  # - split
+  - text
+  # - time
+  # - transformers
+  # - unordered-containers
+  # - vector
+
+executables:
+  org:
+    main: Main.hs
+    source-dirs: bin
+    ghc-options: -threaded -rtsopts -with-rtsopts=-N
+    other-modules:
+      - Options
+    dependencies:
+      - org-types
+      - org-parse
+      - org-print
+      - org-data
+      - org-lint
+      - org-json
+      - filetags
+      - sitebuilder
+      - optparse-applicative

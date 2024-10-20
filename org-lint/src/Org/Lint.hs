@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -10,11 +12,14 @@ import Control.Lens
 import Control.Monad (foldM, unless, when)
 import Control.Monad.Writer
 import Data.Char (isLower, isUpper, toLower)
+import Data.Data (Data)
 import Data.Data.Lens
 import Data.Foldable (forM_)
 import Data.List (isInfixOf)
 import Data.Maybe (isJust, isNothing)
+import Data.Typeable (Typeable)
 import Debug.Trace (traceM)
+import GHC.Generics (Generic)
 import Org.Data
 import Org.Print
 import Org.Types
@@ -30,7 +35,7 @@ consistent [] = True
 consistent (x : xs) = foldl' (\b y -> b && x == y) True xs
 
 data LintMessageKind = LintDebug | LintInfo | LintWarn | LintError
-  deriving (Show, Eq, Ord)
+  deriving (Data, Show, Eq, Typeable, Generic, Enum, Bounded, Ord)
 
 parseLintMessageKind :: String -> Maybe LintMessageKind
 parseLintMessageKind = \case

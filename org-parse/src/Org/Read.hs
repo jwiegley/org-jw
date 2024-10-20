@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
@@ -10,11 +12,14 @@ import Control.Monad.Except
 import Control.Monad.IO.Class
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
+import Data.Data (Data)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Traversable (forM)
+import Data.Typeable (Typeable)
 import FlatParse.Combinators
 import FlatParse.Stateful qualified as FP
+import GHC.Generics
 import Org.Parse
 import Org.Types
 import System.FilePath.Posix
@@ -25,7 +30,7 @@ data InputFiles
   | ListFromStdin -- '-F -'
   | Paths [FilePath] -- '<path>...'
   | FilesFromFile FilePath -- '-F <path>'
-  deriving (Show, Eq)
+  deriving (Data, Show, Eq, Typeable, Generic, Ord)
 
 readOrgFile ::
   (MonadError (Loc, String) m, MonadIO m) =>

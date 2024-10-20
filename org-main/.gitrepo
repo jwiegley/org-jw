@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = /Users/johnw/src/tinderbox
+	branch = main
+	commit = 4c9652ee5df3bf57ad19cd28ce2750b10052fb53
+	parent = 09c7d3d5c323bc8ae54606300fd4665a7653454c
+	method = merge
+	cmdver = 0.4.6

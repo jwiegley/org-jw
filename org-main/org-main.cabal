@@ -4,37 +4,36 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           org-parse
+name:           org-main
 version:        0.0.1
-description:    Org-mode parser
+description:    Implementation of expression language used by the Tinderbox application
 author:         John Wiegley
 maintainer:     johnw@newartisans.com
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
 
-library
-  exposed-modules:
-      Org.Parse
-      Org.Parse.Options
-      Org.Read
+executable org
+  main-is: Main.hs
   other-modules:
-      Paths_org_parse
+      Options
   hs-source-dirs:
-      src
-  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
+      bin
+  ghc-options: -Wall -Wno-missing-home-modules -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.5
-    , bytestring
+    , containers
     , filepath
-    , flatparse
-    , flatparse-util
+    , filetags
     , lens
-    , mtl
     , optparse-applicative
+    , org-data
+    , org-json
+    , org-lint
+    , org-parse
+    , org-print
     , org-types
-    , parallel-io
+    , pretty-show
+    , sitebuilder
     , text
-    , time
-    , transformers
   default-language: Haskell2010

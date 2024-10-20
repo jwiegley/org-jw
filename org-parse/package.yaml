@@ -22,11 +22,13 @@ dependencies:
   - text
   - time
   - transformers
+  - optparse-applicative
 
 library:
   source-dirs: src
   exposed-modules:
     - Org.Parse
+    - Org.Parse.Options
     - Org.Read
   dependencies:
     - org-types
