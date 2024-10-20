@@ -15,10 +15,18 @@ import Options.Applicative as OA
 import Org.Site
 
 data SiteOptions = SiteOptions
+  { _configFile :: FilePath
+  }
   deriving (Data, Show, Eq, Typeable, Generic)
 
 makeLenses ''SiteOptions
 
 siteOptions :: Parser SiteOptions
 siteOptions =
-  pure SiteOptions
+  SiteOptions
+    <$> strOption
+      ( short 'c'
+          <> long "config"
+          <> value "config.yaml"
+          <> help "Config file"
+      )

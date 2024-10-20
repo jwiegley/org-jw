@@ -6,6 +6,7 @@
 
 module Org.Site.Exec where
 
+import Control.Lens
 import Data.Time
 import Hakyll
 import Org.Site
@@ -14,9 +15,9 @@ import Org.Types
 import Prelude hiding (readFile)
 
 execSite :: Config -> SiteOptions -> Collection -> IO ()
-execSite _cfg _opts (Collection _xs) = do
+execSite _cfg opts (Collection _xs) = do
   now <- getCurrentTime
-  siteConfig <- readSiteConfiguration "config.yaml"
+  siteConfig <- readSiteConfiguration (opts ^. configFile)
   hakyllWith
     defaultConfiguration
       { provideMetadata = pandocMetadata (Just (siteName siteConfig)),
