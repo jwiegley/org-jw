@@ -6,23 +6,21 @@
 
 module Org.Site.Exec where
 
-import Control.Lens hiding ((<.>))
-import Control.Monad.IO.Class
-import Control.Monad.Writer
-import Data.ByteString qualified as B
-import Data.Foldable (foldrM, forM_)
-import Data.List (genericLength)
-import Data.List.NonEmpty (NonEmpty (..))
-import Data.List.NonEmpty qualified as NE
-import Data.Map (Map)
-import Data.Map qualified as M
-import FlatParse.Stateful qualified as FP
+import Data.Time
+import Hakyll
 import Org.Site
 import Org.Site.Options
 import Org.Types
-import System.Exit
-import System.FilePath
 import Prelude hiding (readFile)
 
 execSite :: Config -> SiteOptions -> Collection -> IO ()
-execSite cfg opts (Collection xs) = undefined
+execSite _cfg _opts (Collection _xs) = do
+  now <- getCurrentTime
+  siteConfig <- readSiteConfiguration "config.yaml"
+  hakyllWith
+    defaultConfiguration
+      { provideMetadata = pandocMetadata (Just (siteName siteConfig)),
+        inMemoryCache = True,
+        deployCommand = siteDeploy siteConfig
+      }
+    (siteRules now siteConfig)

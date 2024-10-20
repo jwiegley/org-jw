@@ -29,13 +29,11 @@ import Data.List.Split hiding (oneOf)
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import Data.Monoid
-import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.Time
 import Data.Time.Format.ISO8601
 import Data.Yaml (decodeFileEither)
-import Debug.Trace
 import Hakyll
 import Hakyll.Images (loadImage, resizeImageCompiler)
 import System.Directory
@@ -43,9 +41,7 @@ import System.FilePath
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process (readProcess)
 import qualified Text.Pandoc as P
-import qualified Text.Pandoc.Options as P
 import Text.Regex.Posix hiding (empty, match)
-import Text.Show.Pretty
 import Prelude hiding (all, any, concatMap)
 
 siteRules :: UTCTime -> SiteConfiguration -> Rules ()
@@ -323,18 +319,6 @@ yuiCompressor :: Compiler (Item String)
 yuiCompressor = do
   path <- getResourceFilePath
   makeItem $ unsafePerformIO $ readProcess "yuicompressor" [path] ""
-
-main :: IO ()
-main = do
-  now <- getCurrentTime
-  siteConfig <- readSiteConfiguration "config.yaml"
-  hakyllWith
-    defaultConfiguration
-      { provideMetadata = pandocMetadata (Just (siteName siteConfig)),
-        inMemoryCache = True,
-        deployCommand = siteDeploy siteConfig
-      }
-    (siteRules now siteConfig)
 
 {------------------------------------------------------------------------}
 -- Site configuration

@@ -28,22 +28,16 @@ library
   build-depends:
       aeson
     , base >=4.12
-    , bytestring
     , containers
     , directory >=1.2.7.0
     , filepath >=1.3
-    , flatparse
     , hakyll >=4.16.2.1
     , hakyll-images
     , lens
-    , mtl
     , optparse-applicative
-    , org-data
-    , org-lint
     , org-types
     , pandoc >=2.11 && <2.20 || >=3.0 && <3.3
     , pandoc-types
-    , pretty-show
     , process
     , regex-posix
     , split

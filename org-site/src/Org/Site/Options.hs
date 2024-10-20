@@ -12,7 +12,7 @@ import Data.Data (Data)
 import Data.Typeable (Typeable)
 import GHC.Generics
 import Options.Applicative as OA
-import Org.Lint
+import Org.Site
 
 data SiteOptions = SiteOptions
   deriving (Data, Show, Eq, Typeable, Generic)
