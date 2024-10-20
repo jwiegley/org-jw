@@ -12,7 +12,6 @@ import Data.Data (Data)
 import Data.Typeable (Typeable)
 import GHC.Generics
 import Options.Applicative as OA
-import Org.Site
 
 data SiteOptions = SiteOptions
   { _configFile :: FilePath
