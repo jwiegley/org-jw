@@ -8,6 +8,7 @@ description: Implementation of expression language used by the Tinderbox applica
 ghc-options:
    - -Wall
    - -Wno-missing-home-modules
+   - -fprof-auto
 
 dependencies:
   - base >= 4.5
@@ -52,5 +53,5 @@ executables:
       - org-lint
       - org-json
       - org-tags
-      - sitebuilder
+      - org-site
       - optparse-applicative

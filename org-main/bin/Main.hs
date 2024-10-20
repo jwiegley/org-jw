@@ -14,6 +14,7 @@ import Org.Lint.Exec
 import Org.Parse.Options
 import Org.Print
 import Org.Read
+import Org.Site.Exec
 import Org.Tags.Exec
 import Org.Types
 import System.FilePath
@@ -70,6 +71,7 @@ main = do
           pPrint $ e ^? anyProperty "TITLE"
           pPrint $ e ^? anyProperty "ITEM"
           pPrint $ e ^? anyProperty "FOOBAR"
+    Site siteOpts -> execSite globalConfig siteOpts coll
 
 globalConfig :: Config
 globalConfig = Config {..}

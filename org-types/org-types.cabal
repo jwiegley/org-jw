@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.36.1.
 --
 -- see: https://github.com/sol/hpack
 
@@ -20,7 +20,7 @@ library
       Paths_org_types
   hs-source-dirs:
       src
-  ghc-options: -Wall -Wno-missing-home-modules
+  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
       base >=4.5
     , hashable

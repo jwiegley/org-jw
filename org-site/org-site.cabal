@@ -4,38 +4,43 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           sitebuilder
+name:           org-site
 version:        1.0.0
 synopsis:       A Hakyll site builder
 description:    A Hakyll site builder
 category:       System
-homepage:       https://github.com/jwiegley/sitebuilder#readme
-bug-reports:    https://github.com/jwiegley/sitebuilder/issues
 author:         John Wiegley
 maintainer:     johnw@newartisans.com
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
 
-source-repository head
-  type: git
-  location: https://github.com/jwiegley/sitebuilder
-
 library
   exposed-modules:
       Org.Site
+      Org.Site.Options
+      Org.Site.Exec
   other-modules:
-      Paths_sitebuilder
+      Paths_org_site
   hs-source-dirs:
       src
+  ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
       aeson
     , base >=4.12
+    , bytestring
     , containers
     , directory >=1.2.7.0
     , filepath >=1.3
+    , flatparse
     , hakyll >=4.16.2.1
     , hakyll-images
+    , lens
+    , mtl
+    , optparse-applicative
+    , org-data
+    , org-lint
+    , org-types
     , pandoc >=2.11 && <2.20 || >=3.0 && <3.3
     , pandoc-types
     , pretty-show

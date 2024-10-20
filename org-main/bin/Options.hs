@@ -12,6 +12,7 @@ import Options.Applicative as OA
 import Org.Lint.Options
 import Org.Parse.Options
 import Org.Read
+import Org.Site.Options
 import Org.Tags.Options
 
 version :: String
@@ -37,6 +38,7 @@ data Command
   | Lint LintOptions
   | Tags TagsOptions
   | Test
+  | Site SiteOptions
   deriving (Data, Show, Eq, Typeable, Generic)
 
 makeLenses ''Command
@@ -67,6 +69,7 @@ tradeJournalOpts =
           <> lintCommand
           <> tagsCommand
           <> testCommand
+          <> siteCommand
       )
     <*> filesOptions
   where
@@ -157,6 +160,12 @@ tradeJournalOpts =
         testOptions :: Parser Command
         testOptions =
           pure Test
+
+    siteCommand :: Mod CommandFields Command
+    siteCommand =
+      OA.command
+        "site"
+        (info (Site <$> siteOptions) (progDesc "Org-mode website builder"))
 
 optionsDefinition :: ParserInfo Options
 optionsDefinition =

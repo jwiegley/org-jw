@@ -6,7 +6,7 @@ packages: org-types/
           org-parse/
           org-print/
           org-tags/
-          sitebuilder/
+          org-site/
           org-main/
 
 source-repository-package

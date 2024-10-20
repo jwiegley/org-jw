@@ -8,6 +8,7 @@ description: Types that represent Org-mode data
 ghc-options:
    - -Wall
    - -Wno-missing-home-modules
+   - -fprof-auto
 
 dependencies:
   - base >= 4.5
