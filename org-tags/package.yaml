@@ -1,4 +1,4 @@
-name:        filetags
+name:        org-tags
 version:     0.0.1
 license:     BSD3
 author:      John Wiegley
@@ -19,11 +19,17 @@ dependencies:
   - flatparse
   - flatparse-util
   - mtl
+  - org-data
+  - org-parse
+  - org-types
+  - optparse-applicative
   - text
   - transformers
 
 library:
   source-dirs: src
   exposed-modules:
-    - Org.TagTrees
-    - Org.Filter
+    - Org.Tags.TagTrees
+    - Org.Tags.Filter
+    - Org.Tags.Options
+    - Org.Tags.Exec

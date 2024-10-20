@@ -51,6 +51,6 @@ executables:
       - org-data
       - org-lint
       - org-json
-      - filetags
+      - org-tags
       - sitebuilder
       - optparse-applicative

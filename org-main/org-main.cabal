@@ -24,7 +24,6 @@ executable org
       base >=4.5
     , containers
     , filepath
-    , filetags
     , lens
     , optparse-applicative
     , org-data
@@ -32,6 +31,7 @@ executable org
     , org-lint
     , org-parse
     , org-print
+    , org-tags
     , org-types
     , pretty-show
     , sitebuilder

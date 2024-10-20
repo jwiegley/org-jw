@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           filetags
+name:           org-tags
 version:        0.0.1
 description:    Org-mode parser and data drier
 author:         John Wiegley
@@ -15,10 +15,12 @@ build-type:     Simple
 
 library
   exposed-modules:
-      Org.TagTrees
-      Org.Filter
+      Org.Tags.TagTrees
+      Org.Tags.Filter
+      Org.Tags.Options
+      Org.Tags.Exec
   other-modules:
-      Paths_filetags
+      Paths_org_tags
   hs-source-dirs:
       src
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
@@ -31,6 +33,10 @@ library
     , flatparse-util
     , lens
     , mtl
+    , optparse-applicative
+    , org-data
+    , org-parse
+    , org-types
     , text
     , transformers
   default-language: Haskell2010

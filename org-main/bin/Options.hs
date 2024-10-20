@@ -12,6 +12,7 @@ import Options.Applicative as OA
 import Org.Lint.Options
 import Org.Parse.Options
 import Org.Read
+import Org.Tags.Options
 
 version :: String
 version = "0.0.1"
@@ -34,6 +35,7 @@ data Command
   | Outline
   | Stats
   | Lint LintOptions
+  | Tags TagsOptions
   | Test
   deriving (Data, Show, Eq, Typeable, Generic)
 
@@ -63,6 +65,7 @@ tradeJournalOpts =
           <> outlineCommand
           <> statsCommand
           <> lintCommand
+          <> tagsCommand
           <> testCommand
       )
     <*> filesOptions
@@ -138,6 +141,12 @@ tradeJournalOpts =
       OA.command
         "lint"
         (info (Lint <$> lintOptions) (progDesc "Lint Org-mode file"))
+
+    tagsCommand :: Mod CommandFields Command
+    tagsCommand =
+      OA.command
+        "tags"
+        (info (Tags <$> tagsOptions) (progDesc "Tags Org-mode file"))
 
     testCommand :: Mod CommandFields Command
     testCommand =

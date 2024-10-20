@@ -14,6 +14,7 @@ import Org.Lint.Exec
 import Org.Parse.Options
 import Org.Print
 import Org.Read
+import Org.Tags.Exec
 import Org.Types
 import System.FilePath
 import Text.Show.Pretty
@@ -59,6 +60,7 @@ main = do
         (mapM_ putStrLn . concatMap summarizeEntry . _orgFileEntries)
         (coll ^.. items . traverse . _OrgItem)
     Lint lintOpts -> execLint globalConfig lintOpts coll
+    Tags tagsOpts -> execTags globalConfig tagsOpts coll
     Test -> do
       case coll ^.. items . traverse . _OrgItem . allEntries of
         [] -> pure ()
