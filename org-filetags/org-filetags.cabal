@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           org-tags
+name:           org-filetags
 version:        0.0.1
 description:    Org-mode parser and data drier
 author:         John Wiegley
@@ -20,7 +20,7 @@ library
       Org.FileTags.Options
       Org.FileTags.Exec
   other-modules:
-      Paths_org_tags
+      Paths_org_filetags
   hs-source-dirs:
       src
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto

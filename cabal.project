@@ -5,7 +5,7 @@ packages: org-types/
           org-lint/
           org-parse/
           org-print/
-          org-tags/
+          org-filetags/
           org-site/
           org-main/
 

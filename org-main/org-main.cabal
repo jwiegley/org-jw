@@ -27,12 +27,12 @@ executable org
     , lens
     , optparse-applicative
     , org-data
+    , org-filetags
     , org-json
     , org-lint
     , org-parse
     , org-print
     , org-site
-    , org-tags
     , org-types
     , pretty-show
     , text
