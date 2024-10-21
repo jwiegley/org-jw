@@ -14,7 +14,7 @@ import Control.Monad.Writer
 import Data.Char (isLower, isUpper, toLower)
 import Data.Data (Data)
 import Data.Data.Lens
-import Data.Foldable (forM_)
+import Data.Foldable (foldl', forM_)
 import Data.List (isInfixOf)
 import Data.Maybe (isJust, isNothing)
 import Data.Typeable (Typeable)
