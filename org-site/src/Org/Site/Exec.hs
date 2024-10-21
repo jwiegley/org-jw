@@ -24,9 +24,8 @@ execSite verbose _cfg opts (Collection _xs) = do
         inMemoryCache = True,
         deployCommand = siteDeploy siteConfig
       }
-    ( Options
-        { verbosity = verbose,
-          optCommand = opts ^. hakyllCommand
-        }
-    )
+    Options
+      { verbosity = verbose,
+        optCommand = opts ^. hakyllCommand
+      }
     (siteRules now siteConfig)

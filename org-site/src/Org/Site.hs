@@ -310,7 +310,7 @@ siteRules now site@SiteConfiguration {..} = do
 mapMaybeM :: (Applicative m) => (a -> m (Maybe b)) -> [a] -> m [b]
 mapMaybeM f = foldr g (pure [])
   where
-    g a = liftA2 (maybe id (:)) (f a)
+    g = liftA2 (maybe id (:)) . f
 
 ($$=) :: Identifier -> Context a -> Item a -> Compiler (Item String)
 ($$=) = loadAndApplyTemplate
