@@ -6,20 +6,17 @@ maintainer:  johnw@newartisans.com
 description: Org-mode parser and data drier
 
 ghc-options:
-   - -Wall
-   - -Wno-missing-home-modules
-   - -fprof-auto
+  - -Wall
+  - -Wno-missing-home-modules
+  - -fprof-auto
 
 dependencies:
   - base >= 4.5
-  - bytestring
   - containers
   - filepath
-  - hashable
   - lens
   - flatparse
   - flatparse-util
-  - mtl
   - split
   - text
   - time

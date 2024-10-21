@@ -6,37 +6,15 @@ maintainer:  johnw@newartisans.com
 description: Implementation of expression language used by the Tinderbox application
 
 ghc-options:
-   - -Wall
-   - -Wno-missing-home-modules
-   - -fprof-auto
+  - -Wall
+  - -Wno-missing-home-modules
+  - -fprof-auto
 
 dependencies:
   - base >= 4.5
-  # - aeson
-  # - bytestring
-  # - cassava
-  # - comonad
-  # - constraints
-  - containers
-  # - data-default
-  - filepath
-  # - free
-  # - hashable
   - lens
-  # - megaparsec
-  # - mtl
-  # - pretty
   - pretty-show
-  # - profunctors
-  # - row-types
-  # - semigroupoids
-  # - simple-amount >= 0.2.0
-  # - split
-  - text
-  # - time
-  # - transformers
-  # - unordered-containers
-  # - vector
+  - optparse-applicative
 
 executables:
   org:
@@ -54,4 +32,3 @@ executables:
       - org-json
       - org-filetags
       - org-site
-      - optparse-applicative

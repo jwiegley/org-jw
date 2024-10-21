@@ -7,9 +7,9 @@ category:   System
 license:    BSD3
 
 ghc-options:
-   - -Wall
-   - -Wno-missing-home-modules
-   - -fprof-auto
+  - -Wall
+  - -Wno-missing-home-modules
+  - -fprof-auto
 
 description:
   A Hakyll site builder
@@ -24,7 +24,6 @@ dependencies:
   - hakyll-images
   - lens
   - optparse-applicative
-  - org-types
   - pandoc       >= 2.11 && < 2.20 || >= 3.0 && < 3.3
   - pandoc-types
   - process
@@ -41,3 +40,5 @@ library:
     - Org.Site
     - Org.Site.Options
     - Org.Site.Exec
+  dependencies:
+    - org-types

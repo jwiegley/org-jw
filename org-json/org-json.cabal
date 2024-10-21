@@ -30,14 +30,9 @@ library
     , containers
     , filepath
     , flatparse
-    , flatparse-util
-    , hashable
     , lens
     , mtl
     , optparse-applicative
     , org-data
     , org-types
-    , split
-    , text
-    , time
   default-language: Haskell2010

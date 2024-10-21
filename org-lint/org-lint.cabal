@@ -39,6 +39,4 @@ library
     , org-types
     , pretty-show
     , regex-tdfa
-    , text
-    , transformers
   default-language: Haskell2010

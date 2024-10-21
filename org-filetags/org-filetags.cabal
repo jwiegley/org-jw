@@ -32,7 +32,6 @@ library
     , flatparse
     , flatparse-util
     , lens
-    , mtl
     , optparse-applicative
     , org-data
     , org-parse

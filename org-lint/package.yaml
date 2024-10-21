@@ -6,9 +6,9 @@ maintainer:  johnw@newartisans.com
 description: Org-mode parser and data drier
 
 ghc-options:
-   - -Wall
-   - -Wno-missing-home-modules
-   - -fprof-auto
+  - -Wall
+  - -Wno-missing-home-modules
+  - -fprof-auto
 
 dependencies:
   - base >= 4.5
@@ -18,15 +18,9 @@ dependencies:
   - filepath
   - lens
   - mtl
-  - transformers
   - flatparse
   - pretty-show
   - regex-tdfa
-  - text
-  - org-types
-  - org-parse
-  - org-print
-  - org-data
   - optparse-applicative
 
 library:
@@ -35,3 +29,8 @@ library:
     - Org.Lint
     - Org.Lint.Options
     - Org.Lint.Exec
+  dependencies:
+    - org-types
+    - org-parse
+    - org-print
+    - org-data
