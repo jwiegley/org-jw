@@ -14,14 +14,19 @@ import Org.Site.Options
 import Org.Types
 import Prelude hiding (readFile)
 
-execSite :: Config -> SiteOptions -> Collection -> IO ()
-execSite _cfg opts (Collection _xs) = do
+execSite :: Bool -> Config -> SiteOptions -> Collection -> IO ()
+execSite verbose _cfg opts (Collection _xs) = do
   now <- getCurrentTime
   siteConfig <- readSiteConfiguration (opts ^. configFile)
-  hakyllWith
+  hakyllWithArgs
     defaultConfiguration
       { provideMetadata = pandocMetadata (Just (siteName siteConfig)),
         inMemoryCache = True,
         deployCommand = siteDeploy siteConfig
       }
+    ( Options
+        { verbosity = verbose,
+          optCommand = opts ^. hakyllCommand
+        }
+    )
     (siteRules now siteConfig)

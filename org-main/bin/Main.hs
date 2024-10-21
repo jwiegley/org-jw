@@ -60,7 +60,7 @@ main = do
           pPrint $ e ^? anyProperty "TITLE"
           pPrint $ e ^? anyProperty "ITEM"
           pPrint $ e ^? anyProperty "FOOBAR"
-    Site siteOpts -> execSite globalConfig siteOpts coll
+    Site siteOpts -> execSite (opts ^. verbose) globalConfig siteOpts coll
 
 globalConfig :: Config
 globalConfig = Config {..}

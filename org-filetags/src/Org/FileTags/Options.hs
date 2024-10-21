@@ -8,7 +8,6 @@
 module Org.FileTags.Options where
 
 import Control.Lens hiding (List, argument)
-import Data.Data (Data)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Typeable (Typeable)
@@ -32,14 +31,14 @@ data TagsCommand
         filterOverwrite :: Bool,
         filterExpr :: TagExpr
       }
-  deriving (Data, Show, Eq, Typeable, Generic)
+  deriving (Show, Typeable, Generic)
 
 makePrisms ''TagsCommand
 
 data TagsOptions = TagsOptions
   { _command :: !TagsCommand
   }
-  deriving (Data, Show, Eq, Typeable, Generic)
+  deriving (Show, Typeable, Generic)
 
 makeLenses ''TagsOptions
 

@@ -8,15 +8,16 @@
 module Org.Site.Options where
 
 import Control.Lens hiding (argument)
-import Data.Data (Data)
 import Data.Typeable (Typeable)
 import GHC.Generics
+import Hakyll qualified as H
 import Options.Applicative as OA
 
 data SiteOptions = SiteOptions
-  { _configFile :: FilePath
+  { _configFile :: FilePath,
+    _hakyllCommand :: H.Command
   }
-  deriving (Data, Show, Eq, Typeable, Generic)
+  deriving (Show, Typeable, Generic)
 
 makeLenses ''SiteOptions
 
@@ -29,3 +30,4 @@ siteOptions =
           <> value "config.yaml"
           <> help "Config file"
       )
+    <*> H.commandParser H.defaultConfiguration

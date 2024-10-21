@@ -8,7 +8,6 @@
 module Org.JSON.Options where
 
 import Control.Lens hiding (argument)
-import Data.Data (Data)
 import Data.Typeable (Typeable)
 import GHC.Generics
 import Options.Applicative as OA
@@ -16,7 +15,7 @@ import Options.Applicative as OA
 data JsonOptions = JsonOptions
   { _jsonDir :: !(Maybe FilePath)
   }
-  deriving (Data, Show, Eq, Typeable, Generic)
+  deriving (Show, Typeable, Generic)
 
 makeLenses ''JsonOptions
 
