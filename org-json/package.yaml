@@ -24,10 +24,14 @@ dependencies:
   - split
   - text
   - time
+  - optparse-applicative
 
 library:
   source-dirs: src
   exposed-modules:
     - Org.JSON
+    - Org.JSON.Options
+    - Org.JSON.Exec
   dependencies:
+    - org-data
     - org-types

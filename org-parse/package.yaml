@@ -21,14 +21,13 @@ dependencies:
   - parallel-io
   - text
   - time
-  - transformers
-  - optparse-applicative
+  # - transformers
+  - template-haskell
 
 library:
   source-dirs: src
   exposed-modules:
     - Org.Parse
-    - Org.Parse.Options
     - Org.Read
   dependencies:
     - org-types

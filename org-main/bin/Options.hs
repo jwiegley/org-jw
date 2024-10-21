@@ -9,11 +9,11 @@ import Data.Data (Data)
 import Data.Typeable (Typeable)
 import GHC.Generics
 import Options.Applicative as OA
+import Org.FileTags.Options
+import Org.JSON.Options
 import Org.Lint.Options
-import Org.Parse.Options
 import Org.Read
 import Org.Site.Options
-import Org.FileTags.Options
 
 version :: String
 version = "0.0.1"
@@ -30,7 +30,8 @@ tradeJournalSummary =
     ++ " John Wiegley"
 
 data Command
-  = Parse ParseOptions
+  = Parse
+  | Json JsonOptions
   | Print
   | Dump
   | Outline
@@ -62,6 +63,7 @@ tradeJournalOpts =
       )
     <*> hsubparser
       ( parseCommand
+          <> jsonCommand
           <> printCommand
           <> dumpCommand
           <> outlineCommand
@@ -97,7 +99,13 @@ tradeJournalOpts =
     parseCommand =
       OA.command
         "parse"
-        (info (Parse <$> parseOptions) (progDesc "Parse Org-mode file"))
+        (info (pure Parse) (progDesc "Parse Org-mode file"))
+
+    jsonCommand :: Mod CommandFields Command
+    jsonCommand =
+      OA.command
+        "json"
+        (info (Json <$> jsonOptions) (progDesc "Output Org-mode file to JSON"))
 
     printCommand :: Mod CommandFields Command
     printCommand =

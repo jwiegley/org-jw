@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.36.1.
 --
 -- see: https://github.com/sol/hpack
 
@@ -16,6 +16,8 @@ build-type:     Simple
 library
   exposed-modules:
       Org.JSON
+      Org.JSON.Options
+      Org.JSON.Exec
   other-modules:
       Paths_org_json
   hs-source-dirs:
@@ -32,6 +34,8 @@ library
     , hashable
     , lens
     , mtl
+    , optparse-applicative
+    , org-data
     , org-types
     , split
     , text

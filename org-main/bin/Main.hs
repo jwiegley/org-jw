@@ -9,15 +9,13 @@ import Control.Lens hiding ((<.>))
 import Data.Foldable (forM_)
 import Options
 import Org.Data
-import Org.JSON
+import Org.FileTags.Exec
+import Org.JSON.Exec
 import Org.Lint.Exec
-import Org.Parse.Options
 import Org.Print
 import Org.Read
 import Org.Site.Exec
-import Org.FileTags.Exec
 import Org.Types
-import System.FilePath
 import Text.Show.Pretty
 import Prelude hiding (readFile)
 
@@ -26,7 +24,7 @@ main = do
   opts <- getOptions
   coll <- readCollectionIO globalConfig (opts ^. inputs)
   case opts ^. command of
-    Parse parseOpts -> do
+    Parse -> do
       putStrLn $
         "There are a total of "
           ++ show (length (coll ^.. items . traverse . _OrgItem . allEntries))
@@ -37,16 +35,7 @@ main = do
           Just (OpenKeyword _ kw) -> kw
           Just (ClosedKeyword _ kw) -> kw
       pPrint $ countEntries coll $ \e m k -> foldr (flip k) m (e ^. entryTags)
-      forM_ (coll ^.. items . traverse . _OrgItem) $ \org -> do
-        putStrLn $
-          org ^. orgFilePath
-            ++ ": "
-            ++ show (length (org ^.. entries []))
-            ++ " entries"
-        forM_ (parseOpts ^. jsonDir) $ \dir ->
-          orgFileToJSON
-            (dir </> takeBaseName (org ^. orgFilePath) <.> "json")
-            org
+    Json jsonOpts -> execJson globalConfig jsonOpts coll
     Print -> do
       let Config {..} = globalConfig
       forM_ (coll ^.. items . traverse . _OrgItem) $ \org -> do
