@@ -476,7 +476,7 @@ getMatchesToPublishBefore moment pat = do
         ( \(date, _) ->
             -- Only posts intended to be published have the "published"
             -- metadata field; this requires the Org file be tagged with
-            -- :publish=NAME: and that it have a :CREATED: or :PUBLISH: date
+            -- :publish/NAME: and that it have a :CREATED: or :PUBLISH: date
             -- in its properties.
             diffUTCTime date moment < 0
         )
@@ -579,7 +579,7 @@ buildMetadata file meta@(P.Meta metadata) =
         map (\(f, ex, wr) -> (f, inlinesTo wr (ex meta))) $
           [ ("published", publishDate, P.writePlain),
             ("edited", editedDate file, P.writePlain),
-            ("route", publishRoute, P.writePlain),
+            ("route", publishRoute file, P.writePlain),
             ("titleHtml", metaField "title", P.writeHtml5String)
           ]
             ++ M.foldMapWithKey
@@ -595,7 +595,7 @@ cleanupMetadata mname = M.foldMapWithKey ((M.fromList .) . go)
     go "filetags" (P.MetaString value) =
       [ ( "shouldPublish",
           P.MetaBool
-            (T.unpack value =~ (":publish=" ++ name ++ ":" :: String))
+            (T.unpack value =~ (":publish/" ++ name ++ ":" :: String))
         )
         | Just name <- [mname]
       ]
@@ -604,7 +604,7 @@ cleanupMetadata mname = M.foldMapWithKey ((M.fromList .) . go)
                  ( T.intercalate ", "
                      . filter
                        ( \(T.unpack -> s) ->
-                           not (s =~ ("^publish=" :: String))
+                           not (s =~ ("^publish/" :: String))
                        )
                      . filter (not . T.null)
                      . T.splitOn ":"
@@ -614,13 +614,18 @@ cleanupMetadata mname = M.foldMapWithKey ((M.fromList .) . go)
            ]
     go key value = [(key, value)]
 
-publishRoute :: P.Meta -> [P.Inline]
-publishRoute meta =
+getSlug :: FilePath -> P.Meta -> [P.Inline]
+getSlug filepath meta = case metaField "slug" meta of
+  [] -> [P.Str (T.pack (dropExtension (takeBaseName filepath)))]
+  slug -> slug
+
+publishRoute :: FilePath -> P.Meta -> [P.Inline]
+publishRoute filepath meta =
   datePath
     ++ slugPath
     ++ [P.Str "index.html"]
   where
-    slugPath = metaField "slug" meta ++ [P.Str "/"]
+    slugPath = getSlug filepath meta ++ [P.Str "/"]
     datePath =
       case T.unpack (stringify (publishDate meta))
         =~ ("([0-9]+)-([0-9]+)-" :: String) of
@@ -633,16 +638,15 @@ publishRoute meta =
         _ -> []
 
 getRouteFromMeta :: Metadata -> FilePath
-getRouteFromMeta meta =
-  case lookupString "route" meta of
-    Nothing -> error $ "missing route: " ++ show meta
-    Just rte -> rte
+getRouteFromMeta meta = case lookupString "route" meta of
+  Nothing -> error $ "missing route: " ++ show meta
+  Just rte@('/' : _) -> error $ "route is absolute path: " ++ rte
+  Just rte -> rte
 
 publishDateOrDocDate :: P.Meta -> [P.Inline]
-publishDateOrDocDate meta =
-  case publishDate meta of
-    [] -> P.docDate meta
-    xs -> xs
+publishDateOrDocDate meta = case publishDate meta of
+  [] -> P.docDate meta
+  xs -> xs
 
 publishDate :: P.Meta -> [P.Inline]
 publishDate meta =
