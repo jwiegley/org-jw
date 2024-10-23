@@ -90,6 +90,8 @@ data LintMessageCode
   | TagInFileUnknown String
   | InvalidLocation String
   | InvalidDrawerCase DrawerType
+  | TodoMissingReviewProperties
+  | NonTodoWithReviewProperties
   deriving (Show, Eq)
 
 data LintMessage = LintMessage
@@ -118,6 +120,8 @@ lintOrgFile cfg level org = do
   ruleArchiveTagFileExists
   -- RULE: A filetags of :todo: should indicate open TODO entries
   ruleFileTagsTodo
+  -- RULE: Files do not have NEXT/LAST_REVIEW properties
+  ruleOnlyTodosReview
   -- RULE: All tags are part of the tags vocabulary, if specified
   ruleTagsVocabulary
   -- RULE: All verbs are part of the verb vocabulary, if specified
@@ -205,6 +209,13 @@ lintOrgFile cfg level org = do
             )
             $ report LintWarn FileTagsTodoMismatch
 
+    ruleOnlyTodosReview =
+      when
+        ( isJust (org ^? orgFileProperty "LAST_REVIEW")
+            || isJust (org ^? orgFileProperty "NEXT_REVIEW")
+        )
+        $ report LintWarn NonTodoWithReviewProperties
+
     ruleTagsVocabulary =
       forM_ (org ^? orgFileProperty "TAGS_ALL") $ \tags -> do
         let tags' = words tags
@@ -290,6 +301,8 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   ruleNoInvalidStateChanges
   -- RULE: Only TODO items have SCHEDULED/DEADLINE/CLOSED timestamps
   ruleNoTimestampsOnNonTodos
+  -- RULE: Only and all TODO items have NEXT/LAST_REVIEW properties
+  ruleOnlyTodosReview
   -- RULE: Whitespace before and after body and log entries should match
   unless ignoreWhitespace ruleNoInconsistentWhitespace
   -- RULE: Body and log entry text should never contain only whitespace
@@ -509,6 +522,15 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
             && maybe True (not . isTodo) (e ^? keyword)
         )
         $ report LintWarn TimestampsOnNonTodo
+
+    ruleOnlyTodosReview =
+      when
+        ( maybe True (not . isTodo) (e ^? keyword)
+            && ( isJust (e ^? property "LAST_REVIEW")
+                   || isJust (e ^? property "NEXT_REVIEW")
+               )
+        )
+        $ report LintWarn NonTodoWithReviewProperties
 
     ruleNoInconsistentWhitespace = do
       unless (consistent logLeading) $
@@ -794,3 +816,7 @@ showLintOrg fl (LintMessage ln kind code) =
         "Location is not valid: " ++ l
       InvalidDrawerCase d ->
         "Drawer has invalid case: " ++ show d
+      TodoMissingReviewProperties ->
+        "Todo missing LAST_REVIEW and NEXT_REVIEW properties"
+      NonTodoWithReviewProperties ->
+        "Non-todo with LAST_REVIEW and NEXT_REVIEW properties"

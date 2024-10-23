@@ -20,9 +20,15 @@ execSite verbose _cfg opts (Collection _xs) = do
   siteConfig <- readSiteConfiguration (opts ^. configFile)
   hakyllWithArgs
     defaultConfiguration
-      { provideMetadata = pandocMetadata (Just (siteName siteConfig)),
+      { destinationDirectory = "_site",
+        storeDirectory = "_cache",
+        tmpDirectory = "_cache/tmp",
+        providerDirectory = ".",
+        deployCommand = siteDeploy siteConfig,
         inMemoryCache = True,
-        deployCommand = siteDeploy siteConfig
+        previewHost = "127.0.0.1",
+        previewPort = 8000,
+        provideMetadata = pandocMetadata (Just (siteName siteConfig))
       }
     Options
       { verbosity = verbose,
