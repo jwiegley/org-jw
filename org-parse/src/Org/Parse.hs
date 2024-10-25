@@ -144,6 +144,7 @@ parseKeyword = do
            "DEFER" -> pure $ OpenKeyword loc "DEFER"
            "TASK" -> pure $ OpenKeyword loc "TASK"
            "HABIT" -> pure $ OpenKeyword loc "HABIT"
+           "VISIT" -> pure $ OpenKeyword loc "VISIT"
            "DONE" -> pure $ ClosedKeyword loc "DONE"
            "FINISHED" -> pure $ ClosedKeyword loc "FINISHED"
            "COMPLETE" -> pure $ ClosedKeyword loc "COMPLETE"

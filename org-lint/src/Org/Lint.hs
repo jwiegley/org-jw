@@ -476,8 +476,16 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
               forM_ mkwf $ \kwf ->
                 case mprev of
                   Nothing ->
-                    unless (kwf `elem` ["TODO", "TASK", "HABIT", "PROJECT"]) $
-                      report
+                    unless
+                      ( kwf
+                          `elem` [ "TODO",
+                                   "TASK",
+                                   "HABIT",
+                                   "VISIT",
+                                   "PROJECT"
+                                 ]
+                      )
+                      $ report
                         LintWarn
                         ( InvalidStateChangeInvalidTransition
                             FirstTransition

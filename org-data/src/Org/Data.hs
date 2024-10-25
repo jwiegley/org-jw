@@ -624,20 +624,14 @@ countEntries cs = foldAllEntries cs M.empty . tallyEntry
 -- jww (2024-05-12): This should be driven by a configuration file
 isTodo :: String -> Bool
 isTodo kw =
-  kw
-    `elem` [ "TODO",
-             "PROJECT",
-             "DOING",
-             "WAIT",
-             "DEFER",
-             "TASK",
-             "HABIT",
-             "DONE",
-             "FINISHED",
-             "COMPLETE",
-             "ABORTED",
-             "CANCELED"
-           ]
+  isOpenTodo kw
+    || kw
+      `elem` [ "DONE",
+               "FINISHED",
+               "COMPLETE",
+               "ABORTED",
+               "CANCELED"
+             ]
 
 isOpenTodo :: String -> Bool
 isOpenTodo kw =
@@ -648,7 +642,8 @@ isOpenTodo kw =
              "WAIT",
              "DEFER",
              "TASK",
-             "HABIT"
+             "HABIT",
+             "VISIT"
            ]
 
 isArchive :: OrgFile -> Bool

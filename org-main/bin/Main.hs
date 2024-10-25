@@ -74,7 +74,8 @@ globalConfig = Config {..}
         "WAIT",
         "DEFER",
         "TASK",
-        "HABIT"
+        "HABIT",
+        "VISIT"
       ]
     _closedKeywords =
       [ "DONE",
@@ -88,22 +89,89 @@ globalConfig = Config {..}
       ]
     _keywordTransitions =
       [ ( "TODO",
-          ["DOING", "WAIT", "DEFER", "TASK", "HABIT", "CANCELED", "DONE"]
+          [ "DOING",
+            "WAIT",
+            "DEFER",
+            "TASK",
+            "CANCELED",
+            "DONE"
+          ]
         ),
-        ("PROJECT", ["ABORTED", "COMPLETE"]),
-        ("DOING", ["TODO", "WAIT", "DEFER", "TASK", "CANCELED", "DONE"]),
-        ("WAIT", ["DOING", "TODO", "DEFER", "TASK", "CANCELED", "DONE"]),
-        ("DEFER", ["DOING", "WAIT", "TODO", "TASK", "CANCELED", "DONE"]),
+        ( "PROJECT",
+          [ "ABORTED",
+            "COMPLETE"
+          ]
+        ),
+        ( "DOING",
+          [ "TODO",
+            "WAIT",
+            "DEFER",
+            "TASK",
+            "CANCELED",
+            "DONE"
+          ]
+        ),
+        ( "WAIT",
+          [ "DOING",
+            "TODO",
+            "DEFER",
+            "TASK",
+            "CANCELED",
+            "DONE"
+          ]
+        ),
+        ( "DEFER",
+          [ "DOING",
+            "WAIT",
+            "TODO",
+            "TASK",
+            "CANCELED",
+            "DONE"
+          ]
+        ),
         ( "TASK",
-          ["DOING", "WAIT", "DEFER", "TODO", "HABIT", "CANCELED", "DONE"]
+          [ "DOING",
+            "WAIT",
+            "DEFER",
+            "TODO",
+            "CANCELED",
+            "DONE"
+          ]
         ),
-        ("HABIT", ["FINISHED"]),
-        ("FINISHED", ["HABIT"]),
-        ("DONE", ["TODO", "TASK", "HABIT"]),
-        ("ABORTED", ["PROJECT"]),
-        ("COMPLETE", ["PROJECT"]),
+        ( "DONE",
+          [ "TODO",
+            "TASK"
+          ]
+        ),
+        ( "HABIT",
+          [ "FINISHED"
+          ]
+        ),
+        ( "VISIT",
+          [ "FINISHED"
+          ]
+        ),
+        ( "FINISHED",
+          [ "HABIT",
+            "VISIT"
+          ]
+        ),
+        ( "ABORTED",
+          [ "PROJECT"
+          ]
+        ),
+        ( "COMPLETE",
+          [ "PROJECT"
+          ]
+        ),
         ( "CANCELED",
-          ["DOING", "WAIT", "DEFER", "TASK", "TODO", "HABIT", "DONE"]
+          [ "DOING",
+            "WAIT",
+            "DEFER",
+            "TASK",
+            "TODO",
+            "DONE"
+          ]
         )
       ]
     _priorities =
