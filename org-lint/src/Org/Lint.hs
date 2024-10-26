@@ -23,7 +23,12 @@ import GHC.Generics (Generic)
 import Org.Data
 import Org.Print
 import Org.Types
-import System.Directory (doesDirectoryExist, doesFileExist)
+import System.Directory
+  ( doesDirectoryExist,
+    doesFileExist,
+    doesPathExist,
+    getHomeDirectory,
+  )
 import System.FilePath.Posix
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Regex.TDFA
@@ -92,6 +97,7 @@ data LintMessageCode
   | InvalidDrawerCase DrawerType
   | TodoMissingReviewProperties
   | NonTodoWithReviewProperties
+  | BrokenLink String
   deriving (Show, Eq)
 
 data LintMessage = LintMessage
@@ -126,6 +132,8 @@ lintOrgFile cfg level org = do
   ruleTagsVocabulary
   -- RULE: All verbs are part of the verb vocabulary, if specified
   ruleVerbVocabulary
+  -- RULE: Check that all file links point to actual files
+  ruleCheckAllLinks
   -- RULE: No duplicated file properties outside of link and tags
   forM_ (findDuplicates (props ^.. traverse . name . to (map toLower))) $ \nm ->
     unless (nm `elem` ["link", "tags"]) $
@@ -234,6 +242,34 @@ lintOrgFile cfg level org = do
               report' (e ^. entryLoc . pos) LintWarn $
                 VerbInFileUnknown verb
 
+    ruleCheckAllLinks =
+      unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
+        forM_ paragraphs $ \paragraph ->
+          case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
+            AllTextSubmatches ([_, tilde, link] :: [String]) ->
+              unless
+                ( unsafePerformIO $ do
+                    home <- getHomeDirectory
+                    doesPathExist
+                      ( if tilde == "~/"
+                          then home </> link
+                          else takeDirectory (org ^. orgFilePath) </> link
+                      )
+                )
+                $ report LintError (BrokenLink (tilde ++ link))
+            _ -> pure ()
+
+    paragraphs = bodyString (has _Paragraph)
+
+    bodyString f =
+      org
+        ^. orgFileHeader
+          . headerPreamble
+          . blocks
+          . traverse
+          . filtered f
+          . to (showBlock "")
+
     props =
       org ^. orgFileHeader . headerPropertiesDrawer
         ++ org ^. orgFileHeader . headerFileProperties
@@ -289,6 +325,8 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   ruleLogEntriesNeverInBody
   -- RULE: Drawer end marker should always properly end a drawer
   ruleMisplacedDrawerEnd
+  -- RULE: Check that all file links point to actual files
+  ruleCheckAllLinks
   -- RULE: Log entries should never begin with a blank line
   ruleNoWhitespaceAtStartOfLogEntry
   -- RULE: No title has internal whitespace other than single spaces
@@ -418,6 +456,23 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
             paragraphs
         )
         $ report LintError MisplacedDrawerEnd
+
+    ruleCheckAllLinks =
+      unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
+        forM_ paragraphs $ \paragraph ->
+          case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
+            AllTextSubmatches ([_, tilde, link] :: [String]) ->
+              unless
+                ( unsafePerformIO $ do
+                    home <- getHomeDirectory
+                    doesPathExist
+                      ( if tilde == "~/"
+                          then home </> link
+                          else takeDirectory (org ^. orgFilePath) </> link
+                      )
+                )
+                $ report LintError (BrokenLink (tilde ++ link))
+            _ -> pure ()
 
     ruleNoWhitespaceAtStartOfLogEntry =
       forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
@@ -828,3 +883,5 @@ showLintOrg fl (LintMessage ln kind code) =
         "Todo missing LAST_REVIEW and NEXT_REVIEW properties"
       NonTodoWithReviewProperties ->
         "Non-todo with LAST_REVIEW and NEXT_REVIEW properties"
+      BrokenLink link ->
+        "Link to missing file: " ++ link
