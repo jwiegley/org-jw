@@ -7,7 +7,7 @@
 module Main where
 
 import Control.Lens hiding ((<.>))
-import Data.Foldable (forM_)
+import Data.Foldable (foldl', forM_)
 import Data.GraphViz
 import Data.GraphViz.Attributes.Complete
 import Data.Map.Strict qualified as M
