@@ -213,7 +213,7 @@ lintOrgFile cfg level org = do
                   then id
                   else not
               )
-                $ any id (org ^.. allEntries . keyword . to isOpenTodo)
+                $ any id (org ^.. allEntries . keyword . to (isOpenTodo cfg))
             )
             $ report LintWarn FileTagsTodoMismatch
 
@@ -531,21 +531,13 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
               forM_ mkwf $ \kwf ->
                 case mprev of
                   Nothing ->
-                    unless
-                      ( kwf
-                          `elem` [ "TODO",
-                                   "TASK",
-                                   "HABIT",
-                                   "VISIT",
-                                   "PROJECT"
-                                 ]
-                      )
-                      $ report
+                    unless (kwf `elem` cfg ^. startKeywords) $
+                      report
                         LintWarn
                         ( InvalidStateChangeInvalidTransition
                             FirstTransition
                             kwf
-                            "TODO"
+                            (cfg ^?! startKeywords . _head)
                         )
                   Just prev ->
                     unless
@@ -582,13 +574,13 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
     ruleNoTimestampsOnNonTodos =
       when
         ( any isLeadingStamp (e ^. entryStamps)
-            && maybe True (not . isTodo) (e ^? keyword)
+            && maybe True (not . isTodo cfg) (e ^? keyword)
         )
         $ report LintWarn TimestampsOnNonTodo
 
     ruleOnlyTodosReview =
       when
-        ( maybe True (not . isTodo) (e ^? keyword)
+        ( maybe True (not . isTodo cfg) (e ^? keyword)
             && ( isJust (e ^? property "LAST_REVIEW")
                    || isJust (e ^? property "NEXT_REVIEW")
                )
@@ -655,7 +647,7 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
               ( e ^. entryTitle `elem` ["Notes", "Transcript"]
                   && null (e ^. entryItems)
               )
-                || maybe False isTodo (e ^? keyword)
+                || maybe False (isTodo cfg) (e ^? keyword)
             _ -> False
         )
         $ report LintInfo EmptyBodyWhitespace

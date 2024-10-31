@@ -20,7 +20,8 @@ import Data.Time
 import GHC.Generics
 
 data Config = Config
-  { _openKeywords :: [String],
+  { _startKeywords :: [String],
+    _openKeywords :: [String],
     _closedKeywords :: [String],
     _keywordTransitions :: [(String, [String])],
     _priorities :: [String],
@@ -28,14 +29,15 @@ data Config = Config
     _propertyColumn :: Int,
     _tagsColumn :: Int
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Plated)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
 
 makeClassy ''Config
 
 emptyConfig :: Config
 emptyConfig =
   Config
-    { _openKeywords = [],
+    { _startKeywords = [],
+      _openKeywords = [],
       _closedKeywords = [],
       _keywordTransitions = [],
       _priorities = [],

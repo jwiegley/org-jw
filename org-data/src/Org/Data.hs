@@ -357,15 +357,15 @@ orgFileProperty n =
 --
 --   - A virtual property used as an alternate way to access details about the
 --     entry.
-anyProperty :: String -> Fold Entry String
-anyProperty n =
+anyProperty :: Config -> String -> Fold Entry String
+anyProperty cfg n =
   failing
     (entryProperties . lookupProperty n)
-    (maybe ignored runFold (lookup n specialProperties))
+    (maybe ignored runFold (lookup n (specialProperties cfg)))
 
 -- jww (2024-05-13): Need to handle inherited tags
-specialProperties :: [(String, ReifiedFold Entry String)]
-specialProperties =
+specialProperties :: Config -> [(String, ReifiedFold Entry String)]
+specialProperties cfg =
   [ -- All tags, including inherited ones.
     ("ALLTAGS", undefined),
     -- t if task is currently blocked by children or siblings.
@@ -398,7 +398,14 @@ specialProperties =
     -- The first inactive timestamp in the entry.
     ("TIMESTAMP_IA", undefined),
     -- The TODO keyword of the entry.
-    ("TODO", Fold (entryKeyword . _Just . keywordString . filtered isTodo)),
+    ( "TODO",
+      Fold
+        ( entryKeyword
+            . _Just
+            . keywordString
+            . filtered (isTodo cfg)
+        )
+    ),
     ------------------------------------------------------------------------
     -- The following are not defined by Org-mode as special
     ------------------------------------------------------------------------
@@ -621,30 +628,11 @@ countEntries ::
   Map k a
 countEntries cs = foldAllEntries cs M.empty . tallyEntry
 
--- jww (2024-05-12): This should be driven by a configuration file
-isTodo :: String -> Bool
-isTodo kw =
-  isOpenTodo kw
-    || kw
-      `elem` [ "DONE",
-               "FINISHED",
-               "COMPLETE",
-               "ABORTED",
-               "CANCELED"
-             ]
+isTodo :: Config -> String -> Bool
+isTodo cfg kw = isOpenTodo cfg kw || kw `elem` cfg ^. closedKeywords
 
-isOpenTodo :: String -> Bool
-isOpenTodo kw =
-  kw
-    `elem` [ "TODO",
-             "PROJECT",
-             "DOING",
-             "WAIT",
-             "DEFER",
-             "TASK",
-             "HABIT",
-             "VISIT"
-           ]
+isOpenTodo :: Config -> String -> Bool
+isOpenTodo cfg kw = kw `elem` cfg ^. openKeywords
 
 isArchive :: OrgFile -> Bool
 isArchive org = "archive" `isInfixOf` (org ^. orgFilePath)

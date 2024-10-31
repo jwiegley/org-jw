@@ -9,6 +9,9 @@
 
 module Org.Parse where
 
+-- import Debug.Trace
+
+import Control.Applicative (asum)
 import Control.Arrow (second)
 import Control.Lens
 import Control.Monad
@@ -18,7 +21,6 @@ import Data.Maybe (isJust, maybeToList)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Time
--- import Debug.Trace
 import FlatParse.Combinators
 import FlatParse.Stateful hiding (Parser)
 import FlatParse.Stateful qualified as FP
@@ -134,27 +136,14 @@ parseKeyword :: Parser Keyword
 parseKeyword = do
   -- traceM "parseKeyword..1"
   !loc <- getLoc
-  $( switch
-       [|
-         case _ of
-           "TODO" -> pure $ OpenKeyword loc "TODO"
-           "PROJECT" -> pure $ OpenKeyword loc "PROJECT"
-           "DOING" -> pure $ OpenKeyword loc "DOING"
-           "WAIT" -> pure $ OpenKeyword loc "WAIT"
-           "DEFER" -> pure $ OpenKeyword loc "DEFER"
-           "TASK" -> pure $ OpenKeyword loc "TASK"
-           "HABIT" -> pure $ OpenKeyword loc "HABIT"
-           "VISIT" -> pure $ OpenKeyword loc "VISIT"
-           "DONE" -> pure $ ClosedKeyword loc "DONE"
-           "FINISHED" -> pure $ ClosedKeyword loc "FINISHED"
-           "COMPLETE" -> pure $ ClosedKeyword loc "COMPLETE"
-           "ABORTED" -> pure $ ClosedKeyword loc "ABORTED"
-           "CANCELED" -> pure $ ClosedKeyword loc "CANCELED"
-           "NOTE" -> pure $ ClosedKeyword loc "NOTE"
-           "FEEDBACK" -> pure $ ClosedKeyword loc "FEEDBACK"
-           "LINK" -> pure $ ClosedKeyword loc "LINK"
-         |]
-   )
+  (_, cfg) <- ask
+  asum $
+    map
+      (\kw -> OpenKeyword loc kw <$ byteString (strToUtf8 kw))
+      (cfg ^. openKeywords)
+      ++ map
+        (\kw -> ClosedKeyword loc kw <$ byteString (strToUtf8 kw))
+        (cfg ^. closedKeywords)
 
 parseEntry :: Int -> Parser Entry
 parseEntry parseAtDepth = do

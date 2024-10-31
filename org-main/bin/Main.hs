@@ -55,11 +55,11 @@ main = do
       case coll ^.. items . traverse . _OrgItem . allEntries of
         [] -> pure ()
         e : _ -> do
-          pPrint $ e ^? anyProperty "ID"
-          pPrint $ e ^? anyProperty "CATEGORY"
-          pPrint $ e ^? anyProperty "TITLE"
-          pPrint $ e ^? anyProperty "ITEM"
-          pPrint $ e ^? anyProperty "FOOBAR"
+          pPrint $ e ^? anyProperty globalConfig "ID"
+          pPrint $ e ^? anyProperty globalConfig "CATEGORY"
+          pPrint $ e ^? anyProperty globalConfig "TITLE"
+          pPrint $ e ^? anyProperty globalConfig "ITEM"
+          pPrint $ e ^? anyProperty globalConfig "FOOBAR"
     Site siteOpts -> execSite (opts ^. verbose) globalConfig siteOpts coll
 
 globalConfig :: Config
@@ -67,16 +67,19 @@ globalConfig = Config {..}
   where
     -- jww (2024-05-10): These details need to be read from a file, or from
     -- command-line options.
-    _openKeywords =
+    _startKeywords =
       [ "TODO",
         "PROJECT",
-        "DOING",
-        "WAIT",
-        "DEFER",
         "TASK",
         "HABIT",
         "VISIT"
       ]
+    _openKeywords =
+      _startKeywords
+        ++ [ "DOING",
+             "WAIT",
+             "DEFER"
+           ]
     _closedKeywords =
       [ "DONE",
         "FINISHED",
