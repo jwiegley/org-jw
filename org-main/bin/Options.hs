@@ -45,6 +45,7 @@ makeLenses ''Command
 
 data Options = Options
   { _verbose :: !Bool,
+    _configFile :: FilePath,
     _command :: !Command,
     _inputs :: !InputFiles
   }
@@ -59,6 +60,12 @@ tradeJournalOpts =
       ( short 'v'
           <> long "verbose"
           <> help "Report progress verbosely"
+      )
+    <*> strOption
+      ( short 'c'
+          <> long "config"
+          <> metavar "ORG_CONFIG"
+          <> help "Path to configuration file (a DOT file)"
       )
     <*> hsubparser
       ( parseCommand

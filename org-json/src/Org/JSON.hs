@@ -25,6 +25,12 @@ lowerFirst :: String -> String
 lowerFirst [] = []
 lowerFirst (x : xs) = (toLower x : xs)
 
+instance FromJSON Config where
+  parseJSON = genericParseJSON JSON.defaultOptions
+
+instance ToJSON Config where
+  toEncoding = genericToEncoding JSON.defaultOptions
+
 instance ToJSON Time where
   toEncoding =
     genericToEncoding

@@ -12,9 +12,12 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
+  - containers
+  - graphviz
   - lens
   - pretty-show
   - optparse-applicative
+  - text
 
 executables:
   org:
