@@ -29,7 +29,6 @@ main :: IO ()
 main = do
   opts <- getOptions
   cfg <- configFromDotFile <$> readFile (opts ^. configFile)
-  pPrint cfg
   coll <- readCollectionIO cfg (opts ^. inputs)
   case opts ^. command of
     Parse -> do
