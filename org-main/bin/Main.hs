@@ -94,6 +94,7 @@ configFromDotFile dot = Config {..}
     _propertyColumn = 11
     _tagsColumn = 97
     _attachmentsDir = "/Users/johnw/org/data"
+    _cacheDir = Just "/Users/johnw/.cache/org-jw"
 
     nodesWithColor :: X11Color -> [String]
     nodesWithColor clr = map nodeID (filter (hasColor clr) (graphNodes gr))

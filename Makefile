@@ -2,6 +2,7 @@ CABAL_FILES =					\
      flatparse-util/flatparse-util.cabal	\
      org-data/org-data.cabal			\
      org-filetags/org-filetags.cabal		\
+     org-cbor/org-cbor.cabal			\
      org-json/org-json.cabal			\
      org-lint/org-lint.cabal			\
      org-main/org-main.cabal			\
@@ -12,8 +13,9 @@ CABAL_FILES =					\
 
 all: $(CABAL_FILES)
 	cabal build all
-	find -L ~/org/ -name '*.org' -type f				\
-	    | time cabal run org-main:exe:org -- -c ~/org/org.dot lint -l INFO -F -
+	find -L ~/org/ -name '*.org' -type f			\
+	    | time cabal run org-main:exe:org --		\
+		-c ~/org/org.dot lint -l INFO -F - +RTS -p
 
 flatparse-util/flatparse-util.cabal: flatparse-util/package.yaml
 	(cd flatparse-util; hpack -f)
@@ -23,6 +25,9 @@ org-data/org-data.cabal: org-data/package.yaml
 
 org-filetags/org-filetags.cabal: org-filetags/package.yaml
 	(cd org-filetags; hpack -f)
+
+org-cbor/org-cbor.cabal: org-cbor/package.yaml
+	(cd org-cbor; hpack -f)
 
 org-json/org-json.cabal: org-json/package.yaml
 	(cd org-json; hpack -f)

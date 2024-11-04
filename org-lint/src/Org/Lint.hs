@@ -31,8 +31,8 @@ import Org.Types
 import System.Directory
   ( doesDirectoryExist,
     doesFileExist,
-    doesPathExist,
-    getHomeDirectory,
+    -- doesPathExist,
+    -- getHomeDirectory,
   )
 import System.FilePath.Posix
 import System.IO.Unsafe (unsafePerformIO)
@@ -183,7 +183,7 @@ lintOrgFile' cfg level org = do
   -- RULE: All verbs are part of the verb vocabulary, if specified
   ruleVerbVocabulary
   -- RULE: Check that all file links point to actual files
-  ruleCheckAllLinks
+  -- ruleCheckAllLinks
   -- RULE: No duplicated file properties outside of link and tags
   forM_ (findDuplicates (props ^.. traverse . name . to (map toLower))) $ \nm ->
     unless (nm `elem` ["link", "tags"]) $
@@ -292,33 +292,33 @@ lintOrgFile' cfg level org = do
               report' (e ^. entryLoc . pos) LintWarn $
                 VerbInFileUnknown verb
 
-    ruleCheckAllLinks =
-      unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
-        forM_ paragraphs $ \paragraph ->
-          case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
-            AllTextSubmatches ([_, tilde, link] :: [String]) ->
-              unless
-                ( unsafePerformIO $ do
-                    home <- getHomeDirectory
-                    doesPathExist
-                      ( if tilde == "~/"
-                          then home </> link
-                          else takeDirectory (org ^. orgFilePath) </> link
-                      )
-                )
-                $ report LintError (BrokenLink (tilde ++ link))
-            _ -> pure ()
+    -- ruleCheckAllLinks =
+    --   unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
+    --     forM_ paragraphs $ \paragraph ->
+    --       case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
+    --         AllTextSubmatches ([_, tilde, link] :: [String]) ->
+    --           unless
+    --             ( unsafePerformIO $ do
+    --                 home <- getHomeDirectory
+    --                 doesPathExist
+    --                   ( if tilde == "~/"
+    --                       then home </> link
+    --                       else takeDirectory (org ^. orgFilePath) </> link
+    --                   )
+    --             )
+    --             $ report LintError (BrokenLink (tilde ++ link))
+    --         _ -> pure ()
 
-    paragraphs = bodyString (has _Paragraph)
+    -- paragraphs = bodyString (has _Paragraph)
 
-    bodyString f =
-      org
-        ^. orgFileHeader
-          . headerPreamble
-          . blocks
-          . traverse
-          . filtered f
-          . to (showBlock "")
+    -- bodyString f =
+    --   org
+    --     ^. orgFileHeader
+    --       . headerPreamble
+    --       . blocks
+    --       . traverse
+    --       . filtered f
+    --       . to (showBlock "")
 
     props =
       org ^. orgFileHeader . headerPropertiesDrawer
@@ -376,7 +376,7 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   -- RULE: Drawer end marker should always properly end a drawer
   ruleMisplacedDrawerEnd
   -- RULE: Check that all file links point to actual files
-  ruleCheckAllLinks
+  -- ruleCheckAllLinks
   -- RULE: Log entries should never begin with a blank line
   ruleNoWhitespaceAtStartOfLogEntry
   -- RULE: No title has internal whitespace other than single spaces
@@ -507,22 +507,22 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
         )
         $ report LintError MisplacedDrawerEnd
 
-    ruleCheckAllLinks =
-      unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
-        forM_ paragraphs $ \paragraph ->
-          case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
-            AllTextSubmatches ([_, tilde, link] :: [String]) ->
-              unless
-                ( unsafePerformIO $ do
-                    home <- getHomeDirectory
-                    doesPathExist
-                      ( if tilde == "~/"
-                          then home </> link
-                          else takeDirectory (org ^. orgFilePath) </> link
-                      )
-                )
-                $ report LintError (BrokenLink (tilde ++ link))
-            _ -> pure ()
+    -- ruleCheckAllLinks =
+    --   unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
+    --     forM_ paragraphs $ \paragraph ->
+    --       case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
+    --         AllTextSubmatches ([_, tilde, link] :: [String]) ->
+    --           unless
+    --             ( unsafePerformIO $ do
+    --                 home <- getHomeDirectory
+    --                 doesPathExist
+    --                   ( if tilde == "~/"
+    --                       then home </> link
+    --                       else takeDirectory (org ^. orgFilePath) </> link
+    --                   )
+    --             )
+    --             $ report LintError (BrokenLink (tilde ++ link))
+    --         _ -> pure ()
 
     ruleNoWhitespaceAtStartOfLogEntry =
       forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->

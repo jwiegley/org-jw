@@ -29,7 +29,8 @@ data Config = Config
     _priorities :: [String],
     _attachmentsDir :: FilePath,
     _propertyColumn :: Int,
-    _tagsColumn :: Int
+    _tagsColumn :: Int,
+    _cacheDir :: Maybe FilePath
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
@@ -43,7 +44,8 @@ emptyConfig =
       _priorities = [],
       _attachmentsDir = "",
       _propertyColumn = 0,
-      _tagsColumn = 0
+      _tagsColumn = 0,
+      _cacheDir = Nothing
     }
 
 data Loc = Loc

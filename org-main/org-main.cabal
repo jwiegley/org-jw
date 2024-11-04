@@ -17,8 +17,15 @@ executable org
   main-is: Main.hs
   other-modules:
       Options
+      Read
       JSON.Options
       JSON.Exec
+      Lint.Options
+      Lint.Exec
+      FileTags.Options
+      FileTags.Exec
+      Site.Options
+      Site.Exec
   hs-source-dirs:
       bin
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto -threaded -rtsopts -with-rtsopts=-N
@@ -26,6 +33,7 @@ executable org
       base >=4.5
     , bytestring
     , containers
+    , directory
     , filepath
     , flatparse
     , flatparse-util
@@ -34,6 +42,7 @@ executable org
     , lens
     , mtl
     , optparse-applicative
+    , org-cbor
     , org-data
     , org-filetags
     , org-json
