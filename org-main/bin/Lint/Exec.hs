@@ -15,6 +15,7 @@ import Lint.Options
 import Org.Data
 import Org.Lint
 import Org.Types
+import Read
 import System.Exit
 import System.FilePath
 import Prelude hiding (readFile)
@@ -23,10 +24,14 @@ execLint :: Config -> LintOptions -> Collection -> IO ()
 execLint cfg opts (Collection xs) = do
   let msgs = lintOrgFiles cfg (opts ^. kind) (xs ^.. traverse . _OrgItem)
       n = M.foldl' (\acc ms -> acc + length ms) 0 msgs
-  forM_ (M.assocs msgs) $ \(path, ms) -> do
-    ms' <- findPositions path ms
-    forM_ ms' $ \msg ->
-      putStrLn $ showLintOrg path msg
+  forM_ (M.assocs msgs) $ \(path, ms) -> case ms of
+    [] ->
+      forM_ (opts ^. checkDir) $ \cdir ->
+        createCheckFile cdir path
+    _ -> do
+      ms' <- findPositions path ms
+      forM_ ms' $ \msg ->
+        putStrLn $ showLintOrg path msg
   if n == 0
     then do
       putStrLn $ show (length xs) ++ " files passed lint"

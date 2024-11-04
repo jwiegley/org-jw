@@ -43,7 +43,7 @@ main = do
       putStrLn $
         "There are a total of "
           ++ show (length (coll ^.. items . traverse . _OrgItem . allEntries))
-          ++ " entries"
+          ++ " Org-mode entries"
       pPrint $ countEntries coll $ \e m k ->
         k m $ case e ^. entryKeyword of
           Nothing -> "<plain>"

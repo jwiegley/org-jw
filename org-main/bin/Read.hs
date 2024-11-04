@@ -28,33 +28,41 @@ import System.Directory
 import System.FilePath.Posix
 import System.IO
 
-fileIsChanged ::
-  Maybe FilePath ->
-  FilePath ->
-  IO Bool
-fileIsChanged (Just cdir) path = do
-  let checkFile =
-        cdir </> takeBaseName (map repl path) <.> "chk"
-  existsDir <- doesDirectoryExist cdir
-  unless existsDir $
-    createDirectoryIfMissing True cdir
-  existsFile <- doesFileExist checkFile
-  if existsFile
-    then do
-      checkTime <- getModificationTime checkFile
-      fileTime <- getModificationTime path
-      if diffUTCTime fileTime checkTime < 0
-        then pure False
-        else changed checkFile
-    else changed checkFile
+checkFilePath :: FilePath -> FilePath -> FilePath
+checkFilePath cdir path =
+  cdir </> takeBaseName (map repl path) <.> "chk"
   where
     repl '/' = '!'
     repl c = c
 
-    changed checkFile = do
-      writeFile checkFile ""
-      pure True
+createCheckFile :: FilePath -> FilePath -> IO ()
+createCheckFile cdir path = do
+  existsDir <- doesDirectoryExist cdir
+  unless existsDir $
+    createDirectoryIfMissing True cdir
+  writeFile checkFile ""
+  where
+    checkFile = checkFilePath cdir path
+
+fileIsChanged :: Maybe FilePath -> FilePath -> IO Bool
+fileIsChanged (Just cdir) path = do
+  existsDir <- doesDirectoryExist cdir
+  if existsDir
+    then do
+      existsFile <- doesFileExist checkFile
+      if existsFile
+        then do
+          checkTime <- getModificationTime checkFile
+          fileTime <- getModificationTime path
+          pure $ diffUTCTime fileTime checkTime >= 0
+        else pure True
+    else pure True
+  where
+    checkFile = checkFilePath cdir path
 fileIsChanged Nothing _ = pure True
+
+winnowPaths :: Maybe FilePath -> [FilePath] -> IO [FilePath]
+winnowPaths = filterM . fileIsChanged
 
 readOrgFile ::
   (MonadError (Loc, String) m, MonadIO m) =>
@@ -187,6 +195,3 @@ getInputPaths = \case
   Paths paths -> pure paths
   ListFromStdin -> map T.unpack . T.lines . T.decodeUtf8 <$> readStdin
   FilesFromFile path -> readLines path
-
-winnowPaths :: Maybe FilePath -> [FilePath] -> IO [FilePath]
-winnowPaths = filterM . fileIsChanged
