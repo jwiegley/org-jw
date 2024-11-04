@@ -18,8 +18,6 @@ build-type:     Simple
 library
   exposed-modules:
       Org.Site
-      Org.Site.Options
-      Org.Site.Exec
   other-modules:
       Paths_org_site
   hs-source-dirs:
@@ -33,8 +31,6 @@ library
     , filepath >=1.3
     , hakyll >=4.16.2.1
     , hakyll-images
-    , lens
-    , optparse-applicative
     , org-types
     , pandoc >=2.11 && <2.20 || >=3.0 && <3.3
     , pandoc-types

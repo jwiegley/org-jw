@@ -4,13 +4,13 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Org.JSON.Exec where
+module JSON.Exec where
 
 import Control.Lens hiding ((<.>))
 import Data.Foldable (forM_)
+import JSON.Options
 import Org.Data
 import Org.JSON
-import Org.JSON.Options
 import Org.Types
 import System.FilePath
 import Prelude hiding (readFile)

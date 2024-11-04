@@ -16,8 +16,6 @@ build-type:     Simple
 library
   exposed-modules:
       Org.JSON
-      Org.JSON.Options
-      Org.JSON.Exec
   other-modules:
       Paths_org_json
   hs-source-dirs:
@@ -26,13 +24,5 @@ library
   build-depends:
       aeson
     , base >=4.5
-    , bytestring
-    , containers
-    , filepath
-    , flatparse
-    , lens
-    , mtl
-    , optparse-applicative
-    , org-data
     , org-types
   default-language: Haskell2010

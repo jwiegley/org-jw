@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -14,8 +15,12 @@ import Control.Monad.Writer
 import Data.Char (isLower, isUpper, toLower)
 import Data.Data (Data)
 import Data.Data.Lens
-import Data.Foldable (foldl', forM_)
+import Data.Foldable (forM_)
 import Data.List (isInfixOf)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
+import Data.Map (Map)
+import Data.Map qualified as M
 import Data.Maybe (isJust, isNothing)
 import Data.Typeable (Typeable)
 import Debug.Trace (traceM)
@@ -107,8 +112,53 @@ data LintMessage = LintMessage
   }
   deriving (Show, Eq)
 
-lintOrgFile :: Config -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
-lintOrgFile cfg level org = do
+lintOrgFiles ::
+  Config ->
+  LintMessageKind ->
+  [OrgFile] ->
+  Map FilePath [LintMessage]
+lintOrgFiles cfg level xs =
+  let (entriesById, ms) = foldr doLint (M.empty, []) xs
+      idMsgs = flip concatMap (M.assocs entriesById) $ \(k, loc :| locs) ->
+        [ ( loc ^. file,
+            [ LintMessage
+                (loc ^. pos)
+                LintError
+                (DuplicatedIdentifier k)
+            ]
+          )
+          | not (null locs)
+        ]
+   in M.unionWith (<>) (M.fromList ms) (M.fromList idMsgs)
+  where
+    doLint ::
+      OrgFile ->
+      (Map String (NonEmpty Loc), [(FilePath, [LintMessage])]) ->
+      (Map String (NonEmpty Loc), [(FilePath, [LintMessage])])
+    doLint org (entriesById, ms) =
+      (entriesById', (org ^. orgFilePath, msgs) : ms)
+      where
+        entriesById' =
+          (\f -> foldr f entriesById (org ^.. allEntries)) $ \e m ->
+            let loc = e ^. entryLoc
+             in maybe
+                  m
+                  ( \ident ->
+                      m
+                        & at ident
+                          %~ Just
+                            . maybe
+                              (NE.singleton loc)
+                              (NE.cons loc)
+                  )
+                  (e ^? entryId)
+        msgs = lintOrgFile cfg level org
+
+lintOrgFile :: Config -> LintMessageKind -> OrgFile -> [LintMessage]
+lintOrgFile cfg level org = execWriter (lintOrgFile' cfg level org)
+
+lintOrgFile' :: Config -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
+lintOrgFile' cfg level org = do
   when (level == LintDebug) $ do
     traceM $ "Linting " ++ (org ^. orgFilePath)
   -- RULE: All files must have titles
@@ -122,7 +172,7 @@ lintOrgFile cfg level org = do
   -- RULE: Title file property is always last. This is needed for the sake of
   --       xeft and how it displays entry text.
   ruleTitleProperyAlwaysLast
-  -- RULE: :ARCHIVE: or #+archive: property alwayos refers to existing file
+  -- rule: :ARCHIVE: or #+archive: property alwayos refers to existing file
   ruleArchiveTagFileExists
   -- RULE: A filetags of :todo: should indicate open TODO entries
   ruleFileTagsTodo

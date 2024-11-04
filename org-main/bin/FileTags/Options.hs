@@ -5,7 +5,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Org.FileTags.Options where
+module FileTags.Options where
 
 import Control.Lens hiding (List, argument)
 import Data.Text qualified as T

@@ -4,7 +4,7 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Org.Read where
+module Read where
 
 import Control.Concurrent.ParallelIO qualified as PIO
 import Control.Monad (foldM)
@@ -17,7 +17,6 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Traversable (forM)
 import Data.Typeable (Typeable)
-import FlatParse.Combinators
 import FlatParse.Stateful qualified as FP
 import GHC.Generics
 import Org.Parse
@@ -41,8 +40,8 @@ readOrgFile cfg path = do
   res <-
     liftIO $
       withFile path ReadMode $
-        fmap (readOrgFile_ cfg path) . B.hGetContents
-  liftResult path res
+        fmap (parseOrgFile cfg path) . B.hGetContents
+  liftEither res
 
 readStdin :: (MonadIO m) => m ByteString
 readStdin = liftIO B.getContents

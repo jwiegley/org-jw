@@ -3,7 +3,6 @@
 module Org.FileTags.TagTrees where
 
 import Control.Arrow ((***))
-import Control.Lens
 import Control.Monad (unless)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.State
@@ -53,7 +52,7 @@ makeTagTrees dryRun tagTreesDir overwrite depth tagForUntagged paths = do
   (count, maxDepth) <- flip execStateT (0 :: Int, 0 :: Int) $
     forM_ paths $ \path -> do
       tags <-
-        liftIO (pathTags path) <&> \case
+        flip fmap (liftIO (pathTags path)) $ \case
           [] -> maybeToList tagForUntagged
           xs -> xs
       forM_ (filter (\ts -> length ts <= depth) (combinations tags)) $

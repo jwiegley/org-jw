@@ -1,23 +1,25 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 module Org.Types where
 
-import Control.Lens
-import Data.Char (toLower)
-import Data.Data
+import Control.Applicative (Const (..))
+import Data.Data (Data)
 import Data.Function (on)
-import Data.Hashable
+import Data.Functor.Identity (Identity (..))
+import Data.Hashable (Hashable)
 import Data.Maybe (fromMaybe)
+import Data.Monoid (First (..))
 import Data.Time
-import GHC.Generics
+  ( Day (ModifiedJulianDay),
+    UTCTime (..),
+    diffTimeToPicoseconds,
+    secondsToDiffTime,
+  )
+import Data.Typeable (Typeable)
+import GHC.Generics (Generic)
 
 data Config = Config
   { _startKeywords :: [String],
@@ -29,9 +31,7 @@ data Config = Config
     _propertyColumn :: Int,
     _tagsColumn :: Int
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
-
-makeClassy ''Config
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 emptyConfig :: Config
 emptyConfig =
@@ -50,9 +50,7 @@ data Loc = Loc
   { _file :: FilePath,
     _pos :: Int
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
-
-makeLenses ''Loc
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 data Property = Property
   { _propertyLoc :: Loc,
@@ -60,33 +58,24 @@ data Property = Property
     _name :: String,
     _value :: String
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
-
-makeLenses ''Property
-
-lookupProperty' :: String -> Traversal' [Property] Property
-lookupProperty' n =
-  traverse . filtered (\x -> map toLower (x ^. name) == map toLower n)
-
-lookupProperty :: String -> Traversal' [Property] String
-lookupProperty n = lookupProperty' n . value
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 data DrawerType
   = PlainDrawer String
   | BeginDrawer String
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 data Block
   = Whitespace Loc String
   | Paragraph Loc [String]
   | Drawer Loc DrawerType [String]
   | InlineTask Loc Entry
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 newtype Body = Body
   { _blocks :: [Block]
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 instance Semigroup Body where
   Body [] <> ys = ys
@@ -108,7 +97,7 @@ emptyBody = (== mempty)
 {-# INLINE emptyBody #-}
 
 newtype Tag = PlainTag String
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 data TimeSpan
   = DaySpan
@@ -123,8 +112,7 @@ data TimeSpan
       Generic,
       Data,
       Typeable,
-      Hashable,
-      Plated
+      Hashable
     )
 
 data TimeKind
@@ -139,8 +127,7 @@ data TimeKind
       Generic,
       Data,
       Typeable,
-      Hashable,
-      Plated
+      Hashable
     )
 
 data TimeSuffixKind
@@ -156,8 +143,7 @@ data TimeSuffixKind
       Generic,
       Data,
       Typeable,
-      Hashable,
-      Plated
+      Hashable
     )
 
 data TimeSuffix = TimeSuffix
@@ -166,7 +152,7 @@ data TimeSuffix = TimeSuffix
     _suffixSpan :: TimeSpan,
     _suffixLargerSpan :: Maybe (Integer, TimeSpan)
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 data Time = Time
   { _timeKind :: TimeKind,
@@ -178,7 +164,7 @@ data Time = Time
     _timeEnd :: Maybe Integer,
     _timeSuffix :: Maybe TimeSuffix
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 timeStartToUTCTime :: Time -> UTCTime
 timeStartToUTCTime Time {..} =
@@ -217,7 +203,7 @@ data Duration = Duration
   { _hours :: Integer,
     _mins :: Integer
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 {-
 _duration :: Traversal' Time Duration
@@ -249,7 +235,7 @@ data Stamp
   | ScheduledStamp Loc Time
   | DeadlineStamp Loc Time
   | ActiveStamp Loc Time
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 isLeadingStamp :: Stamp -> Bool
 isLeadingStamp (ClosedStamp _ _) = True
@@ -264,12 +250,12 @@ data Header = Header
     -- _headerStamps :: [Stamp],
     _headerPreamble :: Body
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 data Keyword
   = OpenKeyword Loc String
   | ClosedKeyword Loc String
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
 
 data LogEntry
   = LogClosing Loc Time (Maybe Body)
@@ -282,9 +268,9 @@ data LogEntry
   | LogRefiling Loc Time (Maybe Body)
   | LogClock Loc Time (Maybe Duration)
   | LogBook Loc [LogEntry]
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
-_LogLoc :: Lens' LogEntry Loc
+_LogLoc :: (Functor f) => (Loc -> f Loc) -> LogEntry -> f LogEntry
 _LogLoc f e = case e of
   LogClosing loc t mbody ->
     (\loc' -> LogClosing loc' t mbody) <$> f loc
@@ -307,7 +293,7 @@ _LogLoc f e = case e of
   LogBook loc es ->
     (`LogBook` es) <$> f loc
 
-_LogTime :: Traversal' LogEntry Time
+_LogTime :: (Applicative f) => (Time -> f Time) -> LogEntry -> f LogEntry
 _LogTime f e = case e of
   LogClosing loc t mbody ->
     (\t' -> LogClosing loc t' mbody) <$> f t
@@ -329,7 +315,7 @@ _LogTime f e = case e of
     (\t' -> LogClock loc t' mbody) <$> f t
   LogBook {} -> pure e
 
-_LogBody :: Traversal' LogEntry Body
+_LogBody :: (Applicative f) => (Body -> f Body) -> LogEntry -> f LogEntry
 _LogBody f e = case e of
   LogClosing loc t mbody ->
     LogClosing loc t <$> traverse f mbody
@@ -367,61 +353,30 @@ data Entry = Entry
     _entryBody :: Body,
     _entryItems :: [Entry]
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
-
-makePrisms ''DrawerType
-
-makePrisms ''Block
-
-makeClassy ''Body
-
-makePrisms ''Tag
-
-makePrisms ''TimeSpan
-
-makePrisms ''TimeKind
-
-makePrisms ''TimeSuffixKind
-
-makeLenses ''TimeSuffix
-
-makeClassy ''Time
-
-makeClassy ''Duration
-
-makePrisms ''Stamp
-
-makeClassy ''Header
-
-makePrisms ''Keyword
-
-makePrisms ''LogEntry
-
-makeClassy ''Entry
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 data OrgFile = OrgFile
   { _orgFilePath :: FilePath,
     _orgFileHeader :: Header,
     _orgFileEntries :: [Entry]
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
-
-makeClassy ''OrgFile
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 data CollectionItem
   = OrgItem OrgFile
   | DataItem FilePath
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
-
-makePrisms ''CollectionItem
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
 newtype Collection = Collection
   { _items :: [CollectionItem]
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable, Plated)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
-makeClassy ''Collection
+previewIsh ::
+  ((a -> Const (First a) a) -> s -> Const (First a) s) ->
+  s ->
+  Maybe a
+previewIsh l = getFirst . getConst . l (Const . First . Just)
 
-collectionPaths :: Collection -> [FilePath]
-collectionPaths (Collection cs) =
-  map (^. failing (_OrgItem . orgFilePath) _DataItem) cs
+setIsh :: ((a -> Identity a) -> s -> Identity s) -> a -> s -> s
+setIsh l x = runIdentity . l (const (Identity x))

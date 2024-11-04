@@ -12,11 +12,19 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
+  - bytestring
   - containers
+  - filepath
+  - flatparse
+  - flatparse-util
   - graphviz
+  - hakyll       >= 4.16.2.1
   - lens
-  - pretty-show
+  - mtl
   - optparse-applicative
+  - parallel-io
+  - pretty-show
+  - time
   - text
 
 executables:
@@ -26,6 +34,8 @@ executables:
     ghc-options: -threaded -rtsopts -with-rtsopts=-N
     other-modules:
       - Options
+      - JSON.Options
+      - JSON.Exec
     dependencies:
       - org-types
       - org-parse

@@ -16,8 +16,6 @@ build-type:     Simple
 library
   exposed-modules:
       Org.Lint
-      Org.Lint.Options
-      Org.Lint.Exec
   other-modules:
       Paths_org_lint
   hs-source-dirs:
@@ -25,14 +23,11 @@ library
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
       base >=4.5
-    , bytestring
     , containers
     , directory
     , filepath
-    , flatparse
     , lens
     , mtl
-    , optparse-applicative
     , org-data
     , org-parse
     , org-print

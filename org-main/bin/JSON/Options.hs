@@ -5,7 +5,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Org.JSON.Options where
+module JSON.Options where
 
 import Control.Lens hiding (argument)
 import Data.Typeable (Typeable)

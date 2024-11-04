@@ -4,9 +4,9 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Org.Print where
+module Org.Print (showOrgFile, showTime, showBlock, summarizeEntry) where
 
-import Control.Lens
+import Control.Applicative (asum)
 import Data.Maybe (maybeToList)
 import Data.Time
 import Org.Types
@@ -233,7 +233,14 @@ showEntry propCol tagCol Entry {..} =
       | null _entryProperties = []
       | otherwise = showProperties propCol _entryProperties
     logEntries = concatMap showLogEntry _entryLogEntries
-    activeStamp = case _entryStamps ^? traverse . _ActiveStamp . _2 of
+    activeStamp = case asum
+      ( map
+          ( \case
+              ActiveStamp _ t -> Just t
+              _ -> Nothing
+          )
+          _entryStamps
+      ) of
       Nothing -> []
       Just stamp -> [showTime stamp]
     entryLines = showBody "" _entryBody

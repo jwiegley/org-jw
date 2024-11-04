@@ -7,13 +7,12 @@
 {-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module Org.Parse where
+module Org.Parse (parseOrgFile, parseTime) where
 
 -- import Debug.Trace
 
 import Control.Applicative (asum)
 import Control.Arrow (second)
-import Control.Lens
 import Control.Monad
 import Data.ByteString (ByteString)
 import Data.Char (isAlpha, isAlphaNum, isPrint, isSpace)
@@ -34,11 +33,12 @@ getLoc = do
   (path, _) <- ask
   pure $ Loc path (unPos p)
 
-readOrgFile_ :: Config -> FilePath -> ByteString -> Result (Loc, String) OrgFile
-readOrgFile_ cfg path = runParser parseOrgFile (path, cfg) 0
+parseOrgFile :: Config -> FilePath -> ByteString -> Either (Loc, String) OrgFile
+parseOrgFile cfg path =
+  resultToEither path . runParser parseOrgFile' (path, cfg) 0
 
-parseOrgFile :: Parser OrgFile
-parseOrgFile = do
+parseOrgFile' :: Parser OrgFile
+parseOrgFile' = do
   -- traceM "parseOrgFile..1"
   (path, _) <- ask
   -- traceM $ "parseOrgFile..2: " ++ show path
@@ -140,10 +140,10 @@ parseKeyword = do
   asum $
     map
       (\kw -> OpenKeyword loc kw <$ byteString (strToUtf8 kw))
-      (cfg ^. openKeywords)
+      (_openKeywords cfg)
       ++ map
         (\kw -> ClosedKeyword loc kw <$ byteString (strToUtf8 kw))
-        (cfg ^. closedKeywords)
+        (_closedKeywords cfg)
 
 parseEntry :: Int -> Parser Entry
 parseEntry parseAtDepth = do
@@ -200,19 +200,21 @@ parseEntry parseAtDepth = do
         let dflt = (logEntries, text)
          in case reverse logEntries of
               [] -> dflt
-              l : ls -> case l ^? _LogBody of
-                Nothing -> dflt
+              l : ls -> case previewIsh _LogBody l of
                 Just bdy -> case reverse (_blocks bdy) of
                   (le@(Whitespace _ _) : les) ->
                     case ( _blocks text,
                            reverse (_blocks text)
                          ) of
                       (b : bs, Whitespace _ _ : _) ->
-                        ( reverse ((l & _LogBody .~ Body (reverse les)) : ls),
+                        ( reverse
+                            ( setIsh _LogBody (Body (reverse les)) l : ls
+                            ),
                           Body (le : b : bs)
                         )
                       _ -> dflt
                   _ -> dflt
+                _ -> dflt
   -- traceM "parseEntry..17"
   _entryItems <- many (parseEntry (succ _entryDepth))
   -- traceM "parseEntry..18"

@@ -1,16 +1,19 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Org.Data where
 
@@ -37,6 +40,90 @@ import Org.Print
 import Org.Types
 import System.FilePath.Posix
 import Prelude hiding (readFile)
+
+deriving instance Plated Config
+
+deriving instance Plated Loc
+
+deriving instance Plated Property
+
+deriving instance Plated DrawerType
+
+deriving instance Plated Block
+
+deriving instance Plated Body
+
+deriving instance Plated Tag
+
+deriving instance Plated TimeSpan
+
+deriving instance Plated TimeKind
+
+deriving instance Plated TimeSuffixKind
+
+deriving instance Plated TimeSuffix
+
+deriving instance Plated Time
+
+deriving instance Plated Duration
+
+deriving instance Plated Stamp
+
+deriving instance Plated Header
+
+deriving instance Plated Keyword
+
+deriving instance Plated LogEntry
+
+deriving instance Plated Entry
+
+deriving instance Plated OrgFile
+
+deriving instance Plated CollectionItem
+
+deriving instance Plated Collection
+
+makeClassy ''Config
+
+makeLenses ''Loc
+
+makeLenses ''Property
+
+makePrisms ''DrawerType
+
+makePrisms ''Block
+
+makeClassy ''Body
+
+makePrisms ''Tag
+
+makePrisms ''TimeSpan
+
+makePrisms ''TimeKind
+
+makePrisms ''TimeSuffixKind
+
+makeLenses ''TimeSuffix
+
+makeClassy ''Time
+
+makeClassy ''Duration
+
+makePrisms ''Stamp
+
+makeClassy ''Header
+
+makePrisms ''Keyword
+
+makePrisms ''LogEntry
+
+makeClassy ''Entry
+
+makeClassy ''OrgFile
+
+makePrisms ''CollectionItem
+
+makeClassy ''Collection
 
 lined :: Traversal' [String] String
 lined f a = lines <$> f (unlines a)
@@ -643,3 +730,24 @@ entryStateHistory = entryLogEntries . traverse . biplate
 transitionsOf :: Config -> String -> [String]
 transitionsOf cfg kw =
   fromMaybe [] (lookup kw (cfg ^. keywordTransitions))
+
+lookupProperty' ::
+  (Applicative f) =>
+  String ->
+  (Property -> f Property) ->
+  [Property] ->
+  f [Property]
+lookupProperty' n =
+  traverse . filtered (\x -> map toLower (x ^. name) == map toLower n)
+
+lookupProperty ::
+  (Applicative f) =>
+  String ->
+  (String -> f String) ->
+  [Property] ->
+  f [Property]
+lookupProperty n = lookupProperty' n . value
+
+collectionPaths :: Collection -> [FilePath]
+collectionPaths (Collection cs) =
+  map (^. failing (_OrgItem . orgFilePath) _DataItem) cs

@@ -5,7 +5,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Org.Lint.Options where
+module Lint.Options where
 
 import Control.Lens hiding (argument)
 import Data.Typeable (Typeable)

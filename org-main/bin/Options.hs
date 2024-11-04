@@ -6,13 +6,13 @@ module Options where
 
 import Control.Lens hiding (argument)
 import Data.Typeable (Typeable)
+import FileTags.Options
 import GHC.Generics
+import JSON.Options
+import Lint.Options
 import Options.Applicative as OA
-import Org.FileTags.Options
-import Org.JSON.Options
-import Org.Lint.Options
-import Org.Read
-import Org.Site.Options
+import Read
+import Site.Options
 
 version :: String
 version = "0.0.1"

@@ -12,23 +12,18 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
-  - bytestring
   - containers
   - directory
   - filepath
   - lens
   - mtl
-  - flatparse
   - pretty-show
   - regex-tdfa
-  - optparse-applicative
 
 library:
   source-dirs: src
   exposed-modules:
     - Org.Lint
-    - Org.Lint.Options
-    - Org.Lint.Exec
   dependencies:
     - org-types
     - org-parse

@@ -13,20 +13,10 @@ ghc-options:
 dependencies:
   - base >= 4.5
   - aeson
-  - bytestring
-  - containers
-  - filepath
-  - lens
-  - flatparse
-  - mtl
-  - optparse-applicative
 
 library:
   source-dirs: src
   exposed-modules:
     - Org.JSON
-    - Org.JSON.Options
-    - Org.JSON.Exec
   dependencies:
-    - org-data
     - org-types

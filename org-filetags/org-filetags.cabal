@@ -17,8 +17,6 @@ library
   exposed-modules:
       Org.FileTags.TagTrees
       Org.FileTags.Filter
-      Org.FileTags.Options
-      Org.FileTags.Exec
   other-modules:
       Paths_org_filetags
   hs-source-dirs:
@@ -26,16 +24,9 @@ library
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
       base >=4.5
-    , containers
     , directory
     , filepath
     , flatparse
     , flatparse-util
-    , lens
-    , optparse-applicative
-    , org-data
-    , org-parse
-    , org-types
-    , text
     , transformers
   default-language: Haskell2010

@@ -12,7 +12,6 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
-  - lens
   - time
 
 library:
@@ -21,4 +20,3 @@ library:
     - Org.Print
   dependencies:
     - org-types
-    - org-parse

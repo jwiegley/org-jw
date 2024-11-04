@@ -13,7 +13,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Org.JSON where
+module Org.JSON (orgFileToJSON) where
 
 import Data.Aeson
 import Data.Aeson qualified as JSON

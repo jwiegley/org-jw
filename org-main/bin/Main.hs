@@ -7,21 +7,21 @@
 module Main where
 
 import Control.Lens hiding ((<.>))
-import Data.Foldable (foldl', forM_)
+import Data.Foldable (forM_)
 import Data.GraphViz
 import Data.GraphViz.Attributes.Complete
 import Data.Map.Strict qualified as M
 import Data.Text.Lazy (Text)
 import Data.Text.Lazy.IO (readFile)
+import FileTags.Exec
+import JSON.Exec
+import Lint.Exec
 import Options
 import Org.Data
-import Org.FileTags.Exec
-import Org.JSON.Exec
-import Org.Lint.Exec
 import Org.Print
-import Org.Read hiding (readFile)
-import Org.Site.Exec
 import Org.Types
+import Read hiding (readFile)
+import Site.Exec
 import Text.Show.Pretty
 import Prelude hiding (readFile)
 

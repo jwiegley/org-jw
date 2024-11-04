@@ -5,7 +5,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Org.Site.Options where
+module Site.Options where
 
 import Control.Lens hiding (argument)
 import Data.Typeable (Typeable)

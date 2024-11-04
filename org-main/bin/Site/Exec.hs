@@ -4,14 +4,14 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Org.Site.Exec where
+module Site.Exec where
 
 import Control.Lens
 import Data.Time
 import Hakyll
 import Org.Site
-import Org.Site.Options
 import Org.Types
+import Site.Options
 import Prelude hiding (readFile)
 
 execSite :: Bool -> Config -> SiteOptions -> Collection -> IO ()

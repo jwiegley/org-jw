@@ -4,14 +4,14 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Org.FileTags.Exec where
+module FileTags.Exec where
 
 import Control.Lens hiding (List)
 import Data.Foldable (forM_)
 import Data.Map qualified as M
+import FileTags.Options
 import Org.Data
 import Org.FileTags.Filter
-import Org.FileTags.Options
 import Org.FileTags.TagTrees
 import Org.Types
 import Prelude hiding (readFile)
