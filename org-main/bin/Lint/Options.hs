@@ -14,7 +14,8 @@ import Options.Applicative as OA
 import Org.Lint
 
 data LintOptions = LintOptions
-  { _kind :: !LintMessageKind
+  { _kind :: !LintMessageKind,
+    _checkDir :: !(Maybe FilePath)
   }
   deriving (Show, Typeable, Generic)
 
@@ -29,4 +30,10 @@ lintOptions =
           <> long "level"
           <> value LintInfo
           <> help "Log level to report"
+      )
+    <*> optional
+      ( strOption
+          ( long "check-dir"
+              <> help "Directory of flags used to check if files are new"
+          )
       )

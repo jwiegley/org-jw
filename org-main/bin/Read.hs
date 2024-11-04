@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -7,7 +8,7 @@
 module Read where
 
 import Control.Concurrent.ParallelIO qualified as PIO
-import Control.Monad (foldM, unless)
+import Control.Monad (filterM, foldM, join, unless)
 import Control.Monad.Except
 import Control.Monad.IO.Class
 import Data.ByteString (ByteString)
@@ -27,12 +28,33 @@ import System.Directory
 import System.FilePath.Posix
 import System.IO
 
-data InputFiles
-  = FileFromStdin -- '-f -'
-  | ListFromStdin -- '-F -'
-  | Paths [FilePath] -- '<path>...'
-  | FilesFromFile FilePath -- '-F <path>'
-  deriving (Data, Show, Eq, Typeable, Generic, Ord)
+fileIsChanged ::
+  Maybe FilePath ->
+  FilePath ->
+  IO Bool
+fileIsChanged (Just cdir) path = do
+  let checkFile =
+        cdir </> takeBaseName (map repl path) <.> "chk"
+  existsDir <- doesDirectoryExist cdir
+  unless existsDir $
+    createDirectoryIfMissing True cdir
+  existsFile <- doesFileExist checkFile
+  if existsFile
+    then do
+      checkTime <- getModificationTime checkFile
+      fileTime <- getModificationTime path
+      if diffUTCTime fileTime checkTime < 0
+        then pure False
+        else changed checkFile
+    else changed checkFile
+  where
+    repl '/' = '!'
+    repl c = c
+
+    changed checkFile = do
+      writeFile checkFile ""
+      pure True
+fileIsChanged Nothing _ = pure True
 
 readOrgFile ::
   (MonadError (Loc, String) m, MonadIO m) =>
@@ -101,57 +123,39 @@ readCollectionItem cfg path = do
 foldCollection ::
   (MonadError (Loc, String) m, MonadIO m) =>
   Config ->
-  InputFiles ->
+  [FilePath] ->
   a ->
   (FilePath -> Either (Loc, String) CollectionItem -> a -> m a) ->
   m a
-foldCollection cfg inputs z f = do
-  paths <- case inputs of
-    FileFromStdin -> pure ["<stdin>"]
-    Paths paths -> pure paths
-    ListFromStdin -> map T.unpack . T.lines . T.decodeUtf8 <$> readStdin
-    FilesFromFile path -> readLines path
+foldCollection cfg paths z f =
   (\k -> foldM k z paths) $ \acc path ->
-    tryError (readCollectionItem cfg path) >>= \case
-      Left e -> f path (Left e) acc
-      Right x -> f path (Right x) acc
+    tryError (readCollectionItem cfg path) >>= \eres ->
+      f path eres acc
 
 readCollection ::
   (MonadError (Loc, String) m, MonadIO m) =>
   Config ->
-  InputFiles ->
+  [FilePath] ->
   m Collection
-readCollection cfg inputs =
-  Collection <$> foldCollection cfg inputs [] go
+readCollection cfg paths =
+  Collection <$> foldCollection cfg paths [] go
   where
     go _path (Left err) _ = throwError err
     go _path (Right x) acc = pure (x : acc)
 
 mapCollection ::
   Config ->
-  InputFiles ->
-  IO [IO (Either (Loc, String) CollectionItem)]
-mapCollection cfg inputs = do
-  paths <- case inputs of
-    FileFromStdin -> pure ["<stdin>"]
-    Paths paths -> pure paths
-    ListFromStdin -> map T.unpack . T.lines . T.decodeUtf8 <$> readStdin
-    FilesFromFile path -> readLines path
-  forM paths $ \path ->
-    pure $ do
-      eres <- runExceptT (tryError (readCollectionItem cfg path))
-      pure $ case eres of
-        Left err -> Left err
-        Right (Left err) -> Left err
-        Right (Right x) -> Right x
+  [FilePath] ->
+  [IO (Either (Loc, String) CollectionItem)]
+mapCollection cfg = map \path ->
+  join <$> runExceptT (tryError (readCollectionItem cfg path))
 
 readCollectionIO ::
   Config ->
-  InputFiles ->
+  [FilePath] ->
   IO Collection
-readCollectionIO cfg inputs = do
-  actions <- mapCollection cfg inputs
-  coll <- PIO.parallelInterleaved actions
+readCollectionIO cfg paths = do
+  coll <- PIO.parallelInterleaved $ mapCollection cfg paths
   PIO.stopGlobalPool
   fmap (Collection . concat) $ forM coll $ \case
     Left (loc, err) -> do
@@ -169,3 +173,20 @@ readCollectionIO cfg inputs = do
           pure []
         _ -> error "impossible"
     Right x -> pure [x]
+
+data InputFiles
+  = FileFromStdin -- '-f -'
+  | ListFromStdin -- '-F -'
+  | Paths [FilePath] -- '<path>...'
+  | FilesFromFile FilePath -- '-F <path>'
+  deriving (Data, Show, Eq, Typeable, Generic, Ord)
+
+getInputPaths :: InputFiles -> IO [FilePath]
+getInputPaths = \case
+  FileFromStdin -> pure ["<stdin>"]
+  Paths paths -> pure paths
+  ListFromStdin -> map T.unpack . T.lines . T.decodeUtf8 <$> readStdin
+  FilesFromFile path -> readLines path
+
+winnowPaths :: Maybe FilePath -> [FilePath] -> IO [FilePath]
+winnowPaths = filterM . fileIsChanged

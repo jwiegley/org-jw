@@ -13,9 +13,14 @@ CABAL_FILES =					\
 
 all: $(CABAL_FILES)
 	cabal build all
-	find -L ~/org/ -name '*.org' -type f			\
-	    | time cabal run org-main:exe:org --		\
-		-c ~/org/org.dot lint -l INFO -F - +RTS -p
+	find -L ~/org/ -name '*.org' -type f		\
+	    | time cabal run org-main:exe:org --	\
+		-c ~/org/org.dot			\
+		lint					\
+		--check-dir ~/.local/share/org-jw       \
+		-l INFO					\
+		-F -					\
+		+RTS -p
 
 flatparse-util/flatparse-util.cabal: flatparse-util/package.yaml
 	(cd flatparse-util; hpack -f)

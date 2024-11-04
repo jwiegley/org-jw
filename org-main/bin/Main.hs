@@ -16,6 +16,7 @@ import Data.Text.Lazy.IO (readFile)
 import FileTags.Exec
 import JSON.Exec
 import Lint.Exec
+import Lint.Options
 import Options
 import Org.Data
 import Org.Print
@@ -29,7 +30,14 @@ main :: IO ()
 main = do
   opts <- getOptions
   cfg <- configFromDotFile <$> readFile (opts ^. configFile)
-  coll <- readCollectionIO cfg (opts ^. inputs)
+  paths <- getInputPaths (opts ^. inputs)
+  paths' <- case opts ^. command of
+    Lint lintOpts ->
+      -- When linting, only check files that have changed since the last lint
+      -- run, if --check-dir has been given.
+      winnowPaths (lintOpts ^. checkDir) paths
+    _ -> pure paths
+  coll <- readCollectionIO cfg paths'
   case opts ^. command of
     Parse -> do
       putStrLn $
@@ -58,16 +66,16 @@ main = do
         (coll ^.. items . traverse . _OrgItem)
     Lint lintOpts -> execLint cfg lintOpts coll
     Tags tagsOpts -> execTags cfg tagsOpts coll
-    Test -> do
-      case coll ^.. items . traverse . _OrgItem . allEntries of
-        [] -> pure ()
-        e : _ -> do
-          pPrint $ e ^? anyProperty cfg "ID"
-          pPrint $ e ^? anyProperty cfg "CATEGORY"
-          pPrint $ e ^? anyProperty cfg "TITLE"
-          pPrint $ e ^? anyProperty cfg "ITEM"
-          pPrint $ e ^? anyProperty cfg "FOOBAR"
-    Site siteOpts -> execSite (opts ^. verbose) cfg siteOpts coll
+    Test -> case coll ^.. items . traverse . _OrgItem . allEntries of
+      [] -> pure ()
+      e : _ -> do
+        pPrint $ e ^? anyProperty cfg "ID"
+        pPrint $ e ^? anyProperty cfg "CATEGORY"
+        pPrint $ e ^? anyProperty cfg "TITLE"
+        pPrint $ e ^? anyProperty cfg "ITEM"
+        pPrint $ e ^? anyProperty cfg "FOOBAR"
+    Site siteOpts ->
+      execSite (opts ^. verbose) cfg siteOpts coll
 
 configFromDotFile :: Text -> Config
 configFromDotFile dot = Config {..}
@@ -95,6 +103,7 @@ configFromDotFile dot = Config {..}
     _tagsColumn = 97
     _attachmentsDir = "/Users/johnw/org/data"
     _cacheDir = Just "/Users/johnw/.cache/org-jw"
+    _checkDir = Nothing
 
     nodesWithColor :: X11Color -> [String]
     nodesWithColor clr = map nodeID (filter (hasColor clr) (graphNodes gr))
