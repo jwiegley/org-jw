@@ -29,7 +29,9 @@ import Prelude hiding (readFile)
 main :: IO ()
 main = do
   opts <- getOptions
-  cfg <- configFromDotFile <$> readFile (opts ^. configFile)
+  cfg <-
+    configFromDotFile (opts ^. Options.cacheDir)
+      <$> readFile (opts ^. configFile)
   paths <- getInputPaths (opts ^. inputs)
   paths' <- case opts ^. command of
     Lint lintOpts ->
@@ -77,8 +79,8 @@ main = do
     Site siteOpts ->
       execSite (opts ^. verbose) cfg siteOpts coll
 
-configFromDotFile :: Text -> Config
-configFromDotFile dot = Config {..}
+configFromDotFile :: Maybe FilePath -> Text -> Config
+configFromDotFile cdir dot = Config {..}
   where
     gr :: DotGraph String
     gr = parseDotGraph dot
@@ -102,7 +104,7 @@ configFromDotFile dot = Config {..}
     _propertyColumn = 11
     _tagsColumn = 97
     _attachmentsDir = "/Users/johnw/org/data"
-    _cacheDir = Just "/Users/johnw/.cache/org-jw"
+    _cacheDir = cdir
     _checkDir = Nothing
 
     nodesWithColor :: X11Color -> [String]

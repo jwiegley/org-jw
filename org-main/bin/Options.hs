@@ -45,7 +45,8 @@ makeLenses ''Command
 
 data Options = Options
   { _verbose :: !Bool,
-    _configFile :: FilePath,
+    _configFile :: !FilePath,
+    _cacheDir :: !(Maybe FilePath),
     _command :: !Command,
     _inputs :: !InputFiles
   }
@@ -66,6 +67,13 @@ tradeJournalOpts =
           <> long "config"
           <> metavar "ORG_CONFIG"
           <> help "Path to configuration file (a DOT file)"
+      )
+    <*> optional
+      ( strOption
+          ( long "cache-dir"
+              <> metavar "ORG_CACHE"
+              <> help "Directory to cache parsed Org-mode files"
+          )
       )
     <*> hsubparser
       ( parseCommand

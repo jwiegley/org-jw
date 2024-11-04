@@ -22,6 +22,15 @@ all: $(CABAL_FILES)
 		-F -					\
 		+RTS -p
 
+json: $(CABAL_FILES)
+	cabal build all
+	find -L ~/org/ -name '*.org' -type f		\
+	    | cabal run org-main:exe:org --	        \
+		-c ~/org/org.dot			\
+		json --output ~/.cache/org-jw-json	\
+		-F -					\
+		+RTS -N
+
 flatparse-util/flatparse-util.cabal: flatparse-util/package.yaml
 	(cd flatparse-util; hpack -f)
 

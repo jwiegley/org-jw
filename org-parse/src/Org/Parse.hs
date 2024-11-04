@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -9,8 +10,6 @@
 
 module Org.Parse (parseOrgFile, parseTime) where
 
--- import Debug.Trace
-
 import Control.Applicative (asum)
 import Control.Arrow (second)
 import Control.Monad
@@ -20,6 +19,7 @@ import Data.Maybe (isJust, maybeToList)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Time
+-- import Debug.Trace
 import FlatParse.Combinators
 import FlatParse.Stateful hiding (Parser)
 import FlatParse.Stateful qualified as FP
@@ -545,6 +545,9 @@ parseLogEntry = do
         trailingSpace
         -- traceM "parseClockEntry..13"
         pure (tm, Duration {..})
+      case mend of
+        Nothing -> trailingSpace
+        _ -> pure ()
       -- traceM "parseClockEntry..14"
       pure $
         maybe
@@ -557,7 +560,7 @@ parseLogEntry = do
       trailingSpace
       -- traceM "parseLogBook..2"
       book <- many parseLogEntry
-      -- traceM "parseLogBook..3"
+      -- traceM $ "parseLogBook..3: " ++ show book
       $(string ":END:") *> trailingSpace
       -- traceM "parseLogBook..4"
       return $ LogBook loc book
@@ -628,7 +631,9 @@ parseEntryBody parseAtDepth = do
         depth <- parseHeaderStars
         -- traceM $ "parseEntryBody..2: " ++ show depth
         guard $ depth < 15
-      else -- traceM $ "parseEntryBody..3: " ++ show depth
+      else do
+        -- depth <- parseHeaderStars
+        -- traceM $ "parseEntryBody..3: " ++ show depth
         void parseHeaderStars
 
 parseNoteBody :: Parser Body

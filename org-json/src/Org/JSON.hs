@@ -1,22 +1,11 @@
--- {-# LANGUAGE ApplicativeDo #-}
--- {-# LANGUAGE BangPatterns #-}
--- {-# LANGUAGE DeriveGeneric #-}
--- {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
--- {-# LANGUAGE LambdaCase #-}
--- {-# LANGUAGE MultiWayIf #-}
--- {-# LANGUAGE OverloadedStrings #-}
--- {-# LANGUAGE RankNTypes #-}
--- {-# LANGUAGE TemplateHaskell #-}
--- {-# LANGUAGE TupleSections #-}
--- {-# LANGUAGE TypeApplications #-}
--- {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Org.JSON (orgFileToJSON, orgFileFromJSON) where
+module Org.JSON (orgFileToJSON, orgFileToJSONFile, orgFileFromJSONFile) where
 
 import Data.Aeson
 import Data.Aeson qualified as JSON
+import Data.ByteString.Lazy (ByteString)
 import Data.Char (toLower)
 import Org.Types
 import Prelude hiding (readFile)
@@ -229,8 +218,11 @@ instance ToJSON OrgFile where
         { fieldLabelModifier = lowerFirst . drop 8 -- _orgFile
         }
 
-orgFileToJSON :: FilePath -> OrgFile -> IO ()
-orgFileToJSON = encodeFile
+orgFileToJSON :: OrgFile -> ByteString
+orgFileToJSON = encode
 
-orgFileFromJSON :: FilePath -> IO (Either String OrgFile)
-orgFileFromJSON = eitherDecodeFileStrict
+orgFileToJSONFile :: FilePath -> OrgFile -> IO ()
+orgFileToJSONFile = encodeFile
+
+orgFileFromJSONFile :: FilePath -> IO (Either String OrgFile)
+orgFileFromJSONFile = eitherDecodeFileStrict
