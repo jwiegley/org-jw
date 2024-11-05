@@ -42,30 +42,24 @@ main = do
       winnowPaths (lintOpts ^. checkDir) paths
     _ -> pure paths
   coll <- readCollectionIO cfg paths'
+  let orgItems = coll ^.. items . traverse . _OrgItem
   case opts ^. command of
-    Parse -> do
-      putStrLn $
-        "There are a total of "
-          ++ show (length (coll ^.. items . traverse . _OrgItem . allEntries))
-          ++ " Org-mode entries"
-      pPrint $ countEntries coll $ \e m k ->
-        k m $ case e ^. entryKeyword of
-          Nothing -> "<plain>"
-          Just (OpenKeyword _ kw) -> kw
-          Just (ClosedKeyword _ kw) -> kw
-      pPrint $ countEntries coll $ \e m k -> foldr (flip k) m (e ^. entryTags)
-    Json jsonOpts -> execJson cfg jsonOpts coll
-    Print -> forM_ (coll ^.. items . traverse . _OrgItem) $ \org -> do
+    Parse ->
+      putStrLn $ "Parsed " ++ show (length orgItems) ++ " Org-mode files"
+    Print -> forM_ orgItems $ \org ->
       forM_ (showOrgFile cfg org) putStrLn
     Dump -> pPrint coll
     Outline ->
-      forM_ (coll ^.. items . traverse . _OrgItem) $ \org ->
-        forM_ (_orgFileEntries org) $
+      forM_ orgItems $ \org ->
+        forM_ (org ^. orgFileEntries) $
           mapM_ putStrLn . summarizeEntry cfg
-    Stats statsOpts -> execStats cfg statsOpts coll
+    Json jsonOpts -> execJson cfg jsonOpts coll
     Lint lintOpts -> execLint cfg lintOpts coll
+    Stats statsOpts -> execStats cfg statsOpts coll
     Tags tagsOpts -> execTags cfg tagsOpts coll
-    Test -> case coll ^.. items . traverse . _OrgItem . allEntries of
+    Trip tripOpts -> execTrip cfg tripOpts coll
+    Site siteOpts -> execSite (opts ^. verbose) cfg siteOpts coll
+    Test -> case orgItems ^.. traverse . allEntries of
       [] -> pure ()
       e : _ -> do
         pPrint $ e ^? anyProperty cfg "ID"
@@ -73,9 +67,6 @@ main = do
         pPrint $ e ^? anyProperty cfg "TITLE"
         pPrint $ e ^? anyProperty cfg "ITEM"
         pPrint $ e ^? anyProperty cfg "FOOBAR"
-    Site siteOpts ->
-      execSite (opts ^. verbose) cfg siteOpts coll
-    Trip tripOpts -> execTrip cfg tripOpts coll
 
 configFromDotFile :: Maybe FilePath -> Text -> Config
 configFromDotFile cdir dot = Config {..}

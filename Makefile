@@ -37,6 +37,28 @@ trip: $(CABAL_FILES)
 	cabal run org-main:exe:org -- -c ~/org/org.dot \
 		trip ~/org/journal/202409101058-meeting-leads-offsite-q3-2024.org
 
+stats: $(CABAL_FILES)
+	cabal build all
+	cabal run org-main:exe:org -- -c ~/org/org.dot \
+		stats ~/org/todo.org
+
+meeting-stats: $(CABAL_FILES)
+	cabal build all
+	find -L ~/org/journal/ -name '*.org' -type f -print0	\
+	    | xargs -0 egrep -l '^#\+filetags.*:kadena:'	\
+	    | cabal run org-main:exe:org --			\
+		-c ~/org/org.dot				\
+		stats						\
+		-F -
+
+stats-all: $(CABAL_FILES)
+	cabal build all
+	find -L ~/org/ -name '*.org' -type f	\
+	    | cabal run org-main:exe:org --	\
+		-c ~/org/org.dot		\
+		stats				\
+		-F -
+
 round-trip: $(CABAL_FILES)
 	cabal build all
 	find -L ~/org/ -name '*.org' -type f	\

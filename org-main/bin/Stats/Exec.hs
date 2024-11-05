@@ -1,23 +1,51 @@
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Stats.Exec where
 
 import Control.Lens hiding ((<.>))
-import Control.Monad (void)
 import Data.Foldable (forM_)
+import Data.List (sortOn)
+import Data.Map.Strict qualified as M
 import Org.Data
-import Org.Print
 import Org.Types
 import Stats.Options
-import System.IO hiding (readFile)
-import System.IO.Temp
-import System.Process
+import System.IO
 import Prelude hiding (readFile)
 
+fsize :: FilePath -> IO Integer
+fsize path = withFile path ReadMode hFileSize
+
 execStats :: Config -> StatsOptions -> Collection -> IO ()
-execStats cfg opts coll = do
-  error "stats is not yet implemented"
+execStats cfg _opts coll = do
+  putStrLn $ show (length orgItems) ++ " files"
+
+  totalSize <- sum <$> mapM (fsize . view orgFilePath) orgItems
+  putStrLn $ show (fromIntegral totalSize / 1024.0 / 1024.0 :: Double) ++ " MB"
+
+  putStrLn $ show (length orgEntries) ++ " entries"
+  putStrLn $ show (length orgTodos) ++ " todos"
+  putStrLn $ show (length orgOpenTodos) ++ " open todos"
+  putStrLn $ show (length orgTodos - length orgOpenTodos) ++ " closed todos"
+
+  putStrLn "\nKeywords:"
+  forM_ (reverse (sortOn snd (M.assocs allKeywords))) $ \(x, n) ->
+    putStrLn $ "  " ++ show n ++ " " ++ x
+
+  putStrLn "\nTags:"
+  forM_ (reverse (sortOn snd (M.assocs allTags))) $ \(PlainTag x, n) ->
+    putStrLn $ "  " ++ show n ++ " " ++ x
+  where
+    orgItems = coll ^.. items . traverse . _OrgItem
+    orgEntries = orgItems ^.. traverse . allEntries
+    orgTodos = orgEntries ^.. traverse . keyword . filtered (isTodo cfg)
+    orgOpenTodos = orgTodos ^.. traverse . filtered (isOpenTodo cfg)
+
+    allKeywords = countEntries coll $ \e m k ->
+      k m $ case e ^. entryKeyword of
+        Nothing -> "<plain>"
+        Just (OpenKeyword _ kw) -> kw
+        Just (ClosedKeyword _ kw) -> kw
+
+    allTags = countEntries coll $ \e m k ->
+      foldr (flip k) m (e ^. entryTags)
