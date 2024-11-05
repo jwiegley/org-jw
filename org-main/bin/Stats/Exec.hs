@@ -24,9 +24,9 @@ execStats cfg _opts coll = do
   putStrLn $ show (fromIntegral totalSize / 1024.0 / 1024.0 :: Double) ++ " MB"
 
   putStrLn $ show (length orgEntries) ++ " entries"
-  putStrLn $ show (length orgTodos) ++ " todos"
-  putStrLn $ show (length orgOpenTodos) ++ " open todos"
-  putStrLn $ show (length orgTodos - length orgOpenTodos) ++ " closed todos"
+  putStrLn $ show (length orgTodos) ++ " items"
+  putStrLn $ show (length orgOpenTodos) ++ " open items"
+  putStrLn $ show (length orgTodos - length orgOpenTodos) ++ " closed items"
 
   putStrLn "\nKeywords:"
   forM_ (reverse (sortOn snd (M.assocs allKeywords))) $ \(x, n) ->
