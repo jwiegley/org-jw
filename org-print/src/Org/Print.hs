@@ -7,7 +7,7 @@
 module Org.Print (showOrgFile, showTime, showBlock, summarizeEntry) where
 
 import Control.Applicative (asum)
-import Data.Maybe (maybeToList)
+import Data.Maybe (isNothing, maybeToList)
 import Data.Time
 import Org.Types
 
@@ -18,24 +18,31 @@ showStamp (DeadlineStamp _ tm) = "DEADLINE: " <> showTime tm
 showStamp x = error $ "showStamp not support for " ++ show x
 
 showTime :: Time -> String
-showTime tm =
+showTime = showTime' False
+
+showTime' :: Bool -> Time -> String
+showTime' splitTime tm =
   concat $
-    showTimeSingle tm
+    showTimeSingle' splitTime tm
       : case _timeDayEnd tm of
-        Nothing -> []
-        Just end ->
-          [ "--",
-            showTimeSingle
-              tm
-                { _timeDay = end,
-                  _timeDayEnd = Nothing,
-                  _timeStart = _timeEnd tm,
-                  _timeEnd = Nothing
-                }
-          ]
+        Just end
+          | splitTime || end /= _timeDay tm ->
+              [ "--",
+                showTimeSingle
+                  tm
+                    { _timeDay = end,
+                      _timeDayEnd = Nothing,
+                      _timeStart = _timeEnd tm,
+                      _timeEnd = Nothing
+                    }
+              ]
+        _ -> []
 
 showTimeSingle :: Time -> String
-showTimeSingle Time {..} =
+showTimeSingle = showTimeSingle' False
+
+showTimeSingle' :: Bool -> Time -> String
+showTimeSingle' splitTime Time {..} =
   concat $
     [ beg,
       formatTime
@@ -55,16 +62,20 @@ showTimeSingle Time {..} =
               )
           ]
       ++ case _timeEnd of
-        Nothing -> []
-        Just finish ->
-          [ formatTime
-              defaultTimeLocale
-              "-%H:%M"
-              ( UTCTime
-                  (ModifiedJulianDay _timeDay)
-                  (secondsToDiffTime (finish * 60))
-              )
-          ]
+        Just finish
+          | not splitTime
+              && ( isNothing _timeDayEnd
+                     || _timeDayEnd == Just _timeDay
+                 ) ->
+              [ formatTime
+                  defaultTimeLocale
+                  "-%H:%M"
+                  ( UTCTime
+                      (ModifiedJulianDay _timeDay)
+                      (secondsToDiffTime (finish * 60))
+                  )
+              ]
+        _ -> []
       ++ case _timeSuffix of
         Nothing -> []
         Just TimeSuffix {..} ->
@@ -82,7 +93,7 @@ showTimeSingle Time {..} =
             ++ case _suffixLargerSpan of
               Nothing -> []
               Just (num, s) ->
-                [ show num,
+                [ "/" <> show num,
                   case s of
                     DaySpan -> "d"
                     WeekSpan -> "w"
@@ -97,7 +108,7 @@ showTimeSingle Time {..} =
 
 showDuration :: Duration -> String
 showDuration Duration {..} =
-  pad ' ' (show _hours) <> pad '0' (show _mins)
+  pad ' ' (show _hours) <> ":" <> pad '0' (show _mins)
   where
     pad c [x] = [c, x]
     pad _ xs = xs
@@ -111,18 +122,18 @@ showLogEntry (LogClosing _ tm text) =
     : maybe [] (showBody "  ") text
 showLogEntry (LogState _ fr t tm text) =
   concat
-    ( [ "- State \"",
-        showKeyword fr
-      ]
-        ++ [ "\" from \"" <> showKeyword k
+    ( ["- State "]
+        ++ [padded 13 ("\"" <> showKeyword fr <> "\"")]
+        ++ [ padded 18 ("from \"" <> showKeyword k <> "\"")
              | k <- maybeToList t
            ]
-        ++ [ "\" ",
-             showTime tm,
+        ++ [ showTime tm,
              if null text then "" else " \\\\"
            ]
     )
     : maybe [] (showBody "  ") text
+  where
+    padded n s = s <> replicate (n - length s) ' '
 showLogEntry (LogNote _ tm text) =
   ( "- Note taken on "
       <> showTime tm
@@ -170,7 +181,7 @@ showLogEntry (LogRefiling _ tm text) =
 showLogEntry (LogClock _ tm Nothing) =
   ["CLOCK: " <> showTimeSingle tm]
 showLogEntry (LogClock _ tm (Just dur)) =
-  ["CLOCK: " <> showTime tm <> " => " <> showDuration dur]
+  ["CLOCK: " <> showTime' True tm <> " => " <> showDuration dur]
 showLogEntry (LogBook _ tms) =
   ":LOGBOOK:" : concatMap showLogEntry tms ++ [":END:"]
 
@@ -205,6 +216,7 @@ showEntry propCol tagCol Entry {..} =
             [replicate (fromIntegral _entryDepth) '*']
               ++ [" "]
               ++ [showKeyword kw <> " " | kw <- maybeToList _entryKeyword]
+              ++ ["[#" <> prio <> "] " | prio <- maybeToList _entryPriority]
               ++ [ "(" <> c <> ") "
                    | c <- maybeToList _entryContext
                  ]
@@ -248,10 +260,14 @@ showEntry propCol tagCol Entry {..} =
 showBody :: String -> Body -> [String]
 showBody leader (Body b) = concatMap (showBlock leader) b
 
+prefixLeader :: String -> String -> String
+prefixLeader _ "" = ""
+prefixLeader leader str = leader <> str
+
 showBlock :: String -> Block -> [String]
 showBlock _leader (Whitespace _ txt) = [txt]
-showBlock leader (Paragraph _ xs) = map (leader <>) xs
-showBlock leader (Drawer _ _ xs) = map (leader <>) xs
+showBlock leader (Paragraph _ xs) = map (prefixLeader leader) xs
+showBlock leader (Drawer _ _ xs) = map (prefixLeader leader) xs
 showBlock _leader (InlineTask _ _xs) =
   error "showBlock not implemented for InlineTask"
 

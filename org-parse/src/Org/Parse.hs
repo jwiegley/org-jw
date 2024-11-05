@@ -11,7 +11,6 @@
 module Org.Parse (parseOrgFile, parseTime) where
 
 import Control.Applicative (asum)
-import Control.Arrow (second)
 import Control.Monad
 import Data.ByteString (ByteString)
 import Data.Char (isAlpha, isAlphaNum, isPrint, isSpace)
@@ -171,6 +170,7 @@ parseEntry parseAtDepth = do
   -- traceM "parseEntry..9.5"
   _entryVerb <- optional parseEntryVerb
   -- traceM "parseEntry..10"
+  skipMany singleSpace
   (_entryTitle, (_entryLocator, _entryTags)) <-
     manyTill_ anyChar parseTitleSuffix
   -- traceM "parseEntry..11"
@@ -544,7 +544,7 @@ parseLogEntry = do
         -- traceM "parseClockEntry..12"
         trailingSpace
         -- traceM "parseClockEntry..13"
-        pure (tm, Duration {..})
+        pure (tm, Just (Duration {..}))
       case mend of
         Nothing -> trailingSpace
         _ -> pure ()
@@ -552,7 +552,7 @@ parseLogEntry = do
       pure $
         maybe
           (LogClock loc start Nothing)
-          (uncurry (LogClock loc) . second Just)
+          (uncurry (LogClock loc))
           mend
 
     parseLogBook loc = do
@@ -760,7 +760,7 @@ parseDrawer leader = do
         pure $ prefix <> begin <> suffix
       content <-
         manyTill
-          (("\n" <$ newline) <|> (leader *> restOfLine))
+          (("" <$ newline) <|> (leader *> restOfLine))
           ( lookahead
               ( void
                   ( leader

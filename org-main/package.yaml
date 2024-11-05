@@ -24,8 +24,10 @@ dependencies:
   - mtl
   - optparse-applicative
   - parallel-io
+  - process
   - pretty-show
   - time
+  - temporary
   - text
 
 executables:
@@ -40,6 +42,8 @@ executables:
       - JSON.Exec
       - Lint.Options
       - Lint.Exec
+      - Trip.Options
+      - Trip.Exec
       - FileTags.Options
       - FileTags.Exec
       - Site.Options

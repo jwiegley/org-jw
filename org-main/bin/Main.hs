@@ -24,6 +24,7 @@ import Org.Types
 import Read hiding (readFile)
 import Site.Exec
 import Text.Show.Pretty
+import Trip.Exec
 import Prelude hiding (readFile)
 
 main :: IO ()
@@ -78,6 +79,7 @@ main = do
         pPrint $ e ^? anyProperty cfg "FOOBAR"
     Site siteOpts ->
       execSite (opts ^. verbose) cfg siteOpts coll
+    Trip tripOpts -> execTrip cfg tripOpts coll
 
 configFromDotFile :: Maybe FilePath -> Text -> Config
 configFromDotFile cdir dot = Config {..}

@@ -13,6 +13,7 @@ import Lint.Options
 import Options.Applicative as OA
 import Read
 import Site.Options
+import Trip.Options
 
 version :: String
 version = "0.0.1"
@@ -39,6 +40,7 @@ data Command
   | Tags TagsOptions
   | Test
   | Site SiteOptions
+  | Trip TripOptions
   deriving (Show, Typeable, Generic)
 
 makeLenses ''Command
@@ -86,6 +88,7 @@ tradeJournalOpts =
           <> tagsCommand
           <> testCommand
           <> siteCommand
+          <> tripCommand
       )
     <*> filesOptions
   where
@@ -188,6 +191,12 @@ tradeJournalOpts =
       OA.command
         "site"
         (info (Site <$> siteOptions) (progDesc "Org-mode website builder"))
+
+    tripCommand :: Mod CommandFields Command
+    tripCommand =
+      OA.command
+        "trip"
+        (info (Trip <$> tripOptions) (progDesc "Org-mode website builder"))
 
 optionsDefinition :: ParserInfo Options
 optionsDefinition =
