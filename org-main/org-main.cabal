@@ -24,6 +24,8 @@ executable org
       Lint.Exec
       Trip.Options
       Trip.Exec
+      Stats.Options
+      Stats.Exec
       FileTags.Options
       FileTags.Exec
       Site.Options

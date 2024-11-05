@@ -29,13 +29,12 @@ execTrip cfg opts coll = do
         void $
           system $
             "diff -U3 \""
-              <> tmp
-              <> "\" \""
               <> org ^. orgFilePath
+              <> "\" \""
+              <> tmp
               <> "\""
   where
-    Config {..} = cfg
     writeOrgFile h org = do
-      forM_ (showOrgFile _propertyColumn _tagsColumn org) $
+      forM_ (showOrgFile cfg org) $
         hPutStrLn h
       hClose h

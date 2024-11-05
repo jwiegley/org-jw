@@ -20,15 +20,31 @@ all: $(CABAL_FILES)
 		--check-dir ~/.local/share/org-jw       \
 		-l INFO					\
 		-F -					\
-		+RTS -p
+		+RTS -N
 
 json: $(CABAL_FILES)
 	cabal build all
-	find -L ~/org/ -name '*.org' -type f		\
-	    | cabal run org-main:exe:org --	        \
-		-c ~/org/org.dot			\
-		json --output ~/.cache/org-jw-json	\
-		-F -					\
+	find -L ~/org/ -name '*.org' -type f	\
+	    | cabal run org-main:exe:org --	\
+		-c ~/org/org.dot		\
+		json				\
+		--output ~/.cache/org-jw-json	\
+		-F -				\
+		+RTS -N
+
+trip: $(CABAL_FILES)
+	cabal build all
+	cabal run org-main:exe:org -- -c ~/org/org.dot \
+		trip ~/org/journal/202409101058-meeting-leads-offsite-q3-2024.org
+
+round-trip: $(CABAL_FILES)
+	cabal build all
+	find -L ~/org/ -name '*.org' -type f	\
+	    | cabal run org-main:exe:org --	\
+		-c ~/org/org.dot		\
+		trip				\
+		--change-in-place		\
+		-F -				\
 		+RTS -N
 
 flatparse-util/flatparse-util.cabal: flatparse-util/package.yaml

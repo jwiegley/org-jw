@@ -12,13 +12,16 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
+  - base16-bytestring
   - containers
+  - cryptohash-sha512
   - directory
   - filepath
   - lens
   - mtl
   - pretty-show
   - regex-tdfa
+  - text
 
 library:
   source-dirs: src

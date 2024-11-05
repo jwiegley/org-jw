@@ -23,6 +23,7 @@ import Org.Print
 import Org.Types
 import Read hiding (readFile)
 import Site.Exec
+import Stats.Exec
 import Text.Show.Pretty
 import Trip.Exec
 import Prelude hiding (readFile)
@@ -54,19 +55,14 @@ main = do
           Just (ClosedKeyword _ kw) -> kw
       pPrint $ countEntries coll $ \e m k -> foldr (flip k) m (e ^. entryTags)
     Json jsonOpts -> execJson cfg jsonOpts coll
-    Print -> do
-      let Config {..} = cfg
-      forM_ (coll ^.. items . traverse . _OrgItem) $ \org -> do
-        forM_ (showOrgFile _propertyColumn _tagsColumn org) putStrLn
+    Print -> forM_ (coll ^.. items . traverse . _OrgItem) $ \org -> do
+      forM_ (showOrgFile cfg org) putStrLn
     Dump -> pPrint coll
     Outline ->
-      mapM_
-        (mapM_ putStrLn . concatMap summarizeEntry . _orgFileEntries)
-        (coll ^.. items . traverse . _OrgItem)
-    Stats ->
-      mapM_
-        (mapM_ putStrLn . concatMap summarizeEntry . _orgFileEntries)
-        (coll ^.. items . traverse . _OrgItem)
+      forM_ (coll ^.. items . traverse . _OrgItem) $ \org ->
+        forM_ (_orgFileEntries org) $
+          mapM_ putStrLn . summarizeEntry cfg
+    Stats statsOpts -> execStats cfg statsOpts coll
     Lint lintOpts -> execLint cfg lintOpts coll
     Tags tagsOpts -> execTags cfg tagsOpts coll
     Test -> case coll ^.. items . traverse . _OrgItem . allEntries of

@@ -3,13 +3,28 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-module Org.Print (showOrgFile, showTime, showBlock, summarizeEntry) where
+module Org.Print
+  ( showOrgFile,
+    showTime,
+    showBlock,
+    showEntry,
+    summarizeEntry,
+  )
+where
 
 import Control.Applicative (asum)
+import Control.Monad.Reader
+import Data.Functor.Identity (Identity (..))
 import Data.Maybe (isNothing, maybeToList)
 import Data.Time
 import Org.Types
+import Text.Regex.TDFA
+import Text.Regex.TDFA.String ()
+
+concatMapM :: (Monad m) => (a -> m [b]) -> [a] -> m [b]
+concatMapM f = fmap concat . mapM f
 
 showStamp :: Stamp -> String
 showStamp (ClosedStamp _ tm) = "CLOSED: " <> showTime tm
@@ -113,103 +128,135 @@ showDuration Duration {..} =
     pad c [x] = [c, x]
     pad _ xs = xs
 
-showLogEntry :: LogEntry -> [String]
+showLogEntry :: LogEntry -> Reader Config [String]
 showLogEntry (LogClosing _ tm text) =
-  ( "- CLOSING NOTE"
-      <> showTime tm
-      <> if null text then "" else " \\\\"
-  )
-    : maybe [] (showBody "  ") text
-showLogEntry (LogState _ fr t tm text) =
-  concat
-    ( ["- State "]
-        ++ [padded 13 ("\"" <> showKeyword fr <> "\"")]
-        ++ [ padded 18 ("from \"" <> showKeyword k <> "\"")
-             | k <- maybeToList t
-           ]
-        ++ [ showTime tm,
-             if null text then "" else " \\\\"
-           ]
+  ( ( "- CLOSING NOTE"
+        <> showTime tm
+        <> if null text then "" else " \\\\"
     )
-    : maybe [] (showBody "  ") text
+      :
+  )
+    <$> maybe (pure []) (showBody "  ") text
+showLogEntry (LogState _ fr t tm text) =
+  ( concat
+      ( ["- State "]
+          ++ [padded 13 ("\"" <> showKeyword fr <> "\"")]
+          ++ [ padded 18 ("from \"" <> showKeyword k <> "\"")
+               | k <- maybeToList t
+             ]
+          ++ [ showTime tm,
+               if null text then "" else " \\\\"
+             ]
+      )
+      :
+  )
+    <$> maybe (pure []) (showBody "  ") text
   where
     padded n s = s <> replicate (n - length s) ' '
 showLogEntry (LogNote _ tm text) =
-  ( "- Note taken on "
-      <> showTime tm
-      <> if null text then "" else " \\\\"
+  ( ( "- Note taken on "
+        <> showTime tm
+        <> if null text then "" else " \\\\"
+    )
+      :
   )
-    : maybe [] (showBody "  ") text
+    <$> maybe (pure []) (showBody "  ") text
 showLogEntry (LogRescheduled _ tm1 tm2 text) =
-  ( "- Rescheduled from \""
-      <> showTime tm1
-      <> "\" on "
-      <> showTime tm2
-      <> if null text then "" else " \\\\"
+  ( ( "- Rescheduled from \""
+        <> showTime tm1
+        <> "\" on "
+        <> showTime tm2
+        <> if null text then "" else " \\\\"
+    )
+      :
   )
-    : maybe [] (showBody "  ") text
+    <$> maybe (pure []) (showBody "  ") text
 showLogEntry (LogNotScheduled _ tm1 tm2 text) =
-  ( "- Not scheduled, was \""
-      <> showTime tm1
-      <> "\" on "
-      <> showTime tm2
-      <> if null text then "" else " \\\\"
+  ( ( "- Not scheduled, was \""
+        <> showTime tm1
+        <> "\" on "
+        <> showTime tm2
+        <> if null text then "" else " \\\\"
+    )
+      :
   )
-    : maybe [] (showBody "  ") text
+    <$> maybe (pure []) (showBody "  ") text
 showLogEntry (LogDeadline _ tm1 tm2 text) =
-  ( "- New deadline from \""
-      <> showTime tm1
-      <> "\" on "
-      <> showTime tm2
-      <> if null text then "" else " \\\\"
+  ( ( "- New deadline from \""
+        <> showTime tm1
+        <> "\" on "
+        <> showTime tm2
+        <> if null text then "" else " \\\\"
+    )
+      :
   )
-    : maybe [] (showBody "  ") text
+    <$> maybe (pure []) (showBody "  ") text
 showLogEntry (LogNoDeadline _ tm1 tm2 text) =
-  ( "- Removed deadline, was \""
-      <> showTime tm1
-      <> "\" on "
-      <> showTime tm2
-      <> if null text then "" else " \\\\"
+  ( ( "- Removed deadline, was \""
+        <> showTime tm1
+        <> "\" on "
+        <> showTime tm2
+        <> if null text then "" else " \\\\"
+    )
+      :
   )
-    : maybe [] (showBody "  ") text
+    <$> maybe (pure []) (showBody "  ") text
 showLogEntry (LogRefiling _ tm text) =
-  ( "- Refiled on "
-      <> showTime tm
-      <> if null text then "" else " \\\\"
+  ( ( "- Refiled on "
+        <> showTime tm
+        <> if null text then "" else " \\\\"
+    )
+      :
   )
-    : maybe [] (showBody "  ") text
+    <$> maybe (pure []) (showBody "  ") text
 showLogEntry (LogClock _ tm Nothing) =
-  ["CLOCK: " <> showTimeSingle tm]
+  pure ["CLOCK: " <> showTimeSingle tm]
 showLogEntry (LogClock _ tm (Just dur)) =
-  ["CLOCK: " <> showTime' True tm <> " => " <> showDuration dur]
-showLogEntry (LogBook _ tms) =
-  ":LOGBOOK:" : concatMap showLogEntry tms ++ [":END:"]
+  pure ["CLOCK: " <> showTime' True tm <> " => " <> showDuration dur]
+showLogEntry (LogBook _ tms) = do
+  entries <- concatMapM showLogEntry tms
+  pure $ ":LOGBOOK:" : entries ++ [":END:"]
 
 showKeyword :: Keyword -> String
 showKeyword (OpenKeyword _ n) = n
 showKeyword (ClosedKeyword _ n) = n
 
-showEntry :: Int -> Int -> Entry -> [String]
-showEntry propCol tagCol Entry {..} =
-  [title]
-    ++ timestamps
-    ++ properties
-    ++ logEntries
-    ++ activeStamp
-    ++ entryLines
-    ++ concatMap (showEntry propCol tagCol) _entryItems
+showEntry :: Entry -> Reader Config [String]
+showEntry Entry {..} = do
+  props <- properties
+  logEnts <- logEntries
+  entry <- entryLines
+  items <- concatMapM showEntry _entryItems
+  tagsCol <- asks _tagsColumn
+  pure $
+    [title tagsCol]
+      ++ timestamps
+      ++ props
+      ++ logEnts
+      ++ activeStamp
+      ++ entry
+      ++ items
   where
-    title
+    title tagsCol
       | null suffix = prefix
       | otherwise = prefix <> spacer <> suffix
       where
+        count x = length . filter (x ==)
+
+        prefixLength =
+          -(count '=' prefix)
+            + case prefix =~ ("\\[\\[[^]]+\\]\\[" :: String) of
+              AllTextSubmatches ([link] :: [String]) ->
+                length prefix - length link - 2
+              _ -> length prefix
+
         spacer
           | width < 2 = "  "
           | otherwise = replicate (fromIntegral width) ' '
           where
             width =
-              tagCol
-                - fromIntegral (length prefix)
+              tagsCol
+                - fromIntegral prefixLength
                 - fromIntegral (length suffix)
         prefix =
           concat $
@@ -242,9 +289,9 @@ showEntry propCol tagCol Entry {..} =
       where
         leadingStamps = filter isLeadingStamp _entryStamps
     properties
-      | null _entryProperties = []
-      | otherwise = showProperties propCol _entryProperties
-    logEntries = concatMap showLogEntry _entryLogEntries
+      | null _entryProperties = pure []
+      | otherwise = showProperties _entryProperties
+    logEntries = concatMapM showLogEntry _entryLogEntries
     activeStamp = case asum
       ( map
           ( \case
@@ -257,49 +304,56 @@ showEntry propCol tagCol Entry {..} =
       Just stamp -> [showTime stamp]
     entryLines = showBody "" _entryBody
 
-showBody :: String -> Body -> [String]
-showBody leader (Body b) = concatMap (showBlock leader) b
+showBody :: String -> Body -> Reader Config [String]
+showBody leader (Body b) = concatMapM (showBlock leader) b
 
 prefixLeader :: String -> String -> String
 prefixLeader _ "" = ""
 prefixLeader leader str = leader <> str
 
-showBlock :: String -> Block -> [String]
-showBlock _leader (Whitespace _ txt) = [txt]
-showBlock leader (Paragraph _ xs) = map (prefixLeader leader) xs
-showBlock leader (Drawer _ _ xs) = map (prefixLeader leader) xs
-showBlock _leader (InlineTask _ _xs) =
-  error "showBlock not implemented for InlineTask"
+showBlock :: String -> Block -> Reader Config [String]
+showBlock _ (Whitespace _ txt) = pure [txt]
+showBlock leader (Paragraph _ xs) = pure $ map (prefixLeader leader) xs
+showBlock leader (Drawer _ _ xs) = pure $ map (prefixLeader leader) xs
+showBlock _ (InlineTask _ e) = do
+  entry <- showEntry e
+  pure $ entry ++ ["*************** END"]
 
-bodyLength :: Body -> Int
-bodyLength = sum . Prelude.map (fromIntegral . length) . showBody ""
+bodyLength :: Body -> Reader Config Int
+bodyLength body = do
+  txt <- showBody "" body
+  pure $ sum $ Prelude.map (fromIntegral . length) txt
 
-showOrgFile :: Int -> Int -> OrgFile -> [String]
-showOrgFile propCol tagCol OrgFile {..} =
-  showHeader propCol _orgFileHeader
-    ++ concatMap (showEntry propCol tagCol) _orgFileEntries
+showOrgFile :: Config -> OrgFile -> [String]
+showOrgFile cfg OrgFile {..} =
+  flip runReader cfg $
+    (++)
+      <$> showHeader _orgFileHeader
+      <*> concatMapM showEntry _orgFileEntries
 
-showHeader :: Int -> Header -> [String]
-showHeader propCol Header {..} =
-  propertiesDrawer
-    ++ fileProperties
-    ++ preamble
+showHeader :: Header -> Reader Config [String]
+showHeader Header {..} = do
+  propDrawer <- propertiesDrawer
+  fileProps <- fileProperties
+  preamb <- preamble
+  pure $ propDrawer ++ fileProps ++ preamb
   where
     propertiesDrawer
-      | null _headerPropertiesDrawer = []
-      | otherwise = showProperties propCol _headerPropertiesDrawer
+      | null _headerPropertiesDrawer = pure []
+      | otherwise = showProperties _headerPropertiesDrawer
     fileProperties
-      | null _headerFileProperties = []
-      | otherwise = showFileProperties _headerFileProperties
+      | null _headerFileProperties = pure []
+      | otherwise = pure $ showFileProperties _headerFileProperties
     preamble = showBody "" _headerPreamble
 
-showProperties :: Int -> [Property] -> [String]
-showProperties propCol ps =
-  [":PROPERTIES:"]
-    ++ map propLine ps
-    ++ [":END:"]
+showProperties :: [Property] -> Reader Config [String]
+showProperties ps = ReaderT $ \cfg ->
+  Identity $
+    [":PROPERTIES:"]
+      ++ map (propLine (_propertyColumn cfg)) ps
+      ++ [":END:"]
   where
-    propLine Property {..}
+    propLine propCol Property {..}
       | null suffix = prefix
       | otherwise = prefix <> spacer <> suffix
       where
@@ -317,69 +371,73 @@ showFileProperties ps =
     | Property {..} <- ps
   ]
 
-summarizeEntry :: Entry -> [String]
-summarizeEntry Entry {..} =
+summarizeEntry :: Config -> Entry -> [String]
+summarizeEntry cfg Entry {..} =
   [replicate (fromIntegral _entryDepth) '*' <> " " <> _entryTitle]
-    ++ showProperties
-      0
-      ( _entryProperties
-          ++ [Property _entryLoc False "FILE" (_file _entryLoc)]
-          ++ [Property _entryLoc False "OFFSET" (show (_pos _entryLoc))]
-          ++ [ Property _entryLoc False "KEYWORD" (show x)
-               | x <- maybeToList _entryKeyword
-             ]
-          ++ [ Property _entryLoc False "PRIORITY" x
-               | x <- maybeToList _entryPriority
-             ]
-          ++ [ Property _entryLoc False "CONTEXT" x
-               | x <- maybeToList _entryContext
-             ]
-          ++ [ Property _entryLoc False "VERB" x
-               | x <- maybeToList _entryVerb
-             ]
-          ++ [ Property _entryLoc False "LOCATOR" x
-               | x <- maybeToList _entryLocator
-             ]
-          ++ [ Property
-                 _entryLoc
-                 False
-                 "LOG_ENTRIES"
-                 (show (length _entryLogEntries))
-               | not (null _entryLogEntries)
-             ]
-          ++ [ Property
-                 _entryLoc
-                 False
-                 "BODY_LEN"
-                 (show (bodyLength _entryBody))
-               | not (emptyBody _entryBody)
-             ]
-          ++ case _entryTags of
-            [] -> []
-            _ ->
-              [ Property
-                  _entryLoc
-                  False
-                  "TAGS"
-                  ( concat $
-                      ":"
-                        : [ case tag of
-                              PlainTag t -> t <> ":"
-                            | tag <- _entryTags
-                          ]
+    ++ runReader
+      ( do
+          bodyLen <- bodyLength _entryBody
+          showProperties
+            ( _entryProperties
+                ++ [Property _entryLoc False "FILE" (_file _entryLoc)]
+                ++ [Property _entryLoc False "OFFSET" (show (_pos _entryLoc))]
+                ++ [ Property _entryLoc False "KEYWORD" (show x)
+                     | x <- maybeToList _entryKeyword
+                   ]
+                ++ [ Property _entryLoc False "PRIORITY" x
+                     | x <- maybeToList _entryPriority
+                   ]
+                ++ [ Property _entryLoc False "CONTEXT" x
+                     | x <- maybeToList _entryContext
+                   ]
+                ++ [ Property _entryLoc False "VERB" x
+                     | x <- maybeToList _entryVerb
+                   ]
+                ++ [ Property _entryLoc False "LOCATOR" x
+                     | x <- maybeToList _entryLocator
+                   ]
+                ++ [ Property
+                       _entryLoc
+                       False
+                       "LOG_ENTRIES"
+                       (show (length _entryLogEntries))
+                     | not (null _entryLogEntries)
+                   ]
+                ++ [ Property
+                       _entryLoc
+                       False
+                       "BODY_LEN"
+                       (show bodyLen)
+                     | not (emptyBody _entryBody)
+                   ]
+                ++ case _entryTags of
+                  [] -> []
+                  _ ->
+                    [ Property
+                        _entryLoc
+                        False
+                        "TAGS"
+                        ( concat $
+                            ":"
+                              : [ case tag of
+                                    PlainTag t -> t <> ":"
+                                  | tag <- _entryTags
+                                ]
+                        )
+                    ]
+                ++ map
+                  ( \case
+                      ClosedStamp _ tm ->
+                        Property _entryLoc False "CLOSED" (showTime tm)
+                      ScheduledStamp _ tm ->
+                        Property _entryLoc False "SCHEDULED" (showTime tm)
+                      DeadlineStamp _ tm ->
+                        Property _entryLoc False "DEADLINE" (showTime tm)
+                      ActiveStamp _ tm ->
+                        Property _entryLoc False "ACTIVE" (showTime tm)
                   )
-              ]
-          ++ map
-            ( \case
-                ClosedStamp _ tm ->
-                  Property _entryLoc False "CLOSED" (showTime tm)
-                ScheduledStamp _ tm ->
-                  Property _entryLoc False "SCHEDULED" (showTime tm)
-                DeadlineStamp _ tm ->
-                  Property _entryLoc False "DEADLINE" (showTime tm)
-                ActiveStamp _ tm ->
-                  Property _entryLoc False "ACTIVE" (showTime tm)
+                  _entryStamps
             )
-            _entryStamps
       )
-    ++ concatMap summarizeEntry _entryItems
+      cfg {_propertyColumn = 0}
+    ++ concatMap (summarizeEntry cfg) _entryItems

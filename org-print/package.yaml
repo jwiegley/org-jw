@@ -12,6 +12,8 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
+  - mtl
+  - regex-tdfa
   - time
 
 library:

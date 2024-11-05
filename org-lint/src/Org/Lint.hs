@@ -11,17 +11,22 @@ module Org.Lint where
 import Control.Applicative
 import Control.Lens
 import Control.Monad (foldM, unless, when)
+import Control.Monad.Reader
 import Control.Monad.Writer
+import Crypto.Hash.SHA512
+import Data.ByteString.Base16 qualified as Base16
 import Data.Char (isLower, isUpper, toLower)
 import Data.Data (Data)
 import Data.Data.Lens
 import Data.Foldable (forM_)
-import Data.List (isInfixOf)
+import Data.List (intercalate, isInfixOf)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map (Map)
 import Data.Map qualified as M
 import Data.Maybe (isJust, isNothing)
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import Data.Typeable (Typeable)
 import Debug.Trace (traceM)
 import GHC.Generics (Generic)
@@ -31,8 +36,8 @@ import Org.Types
 import System.Directory
   ( doesDirectoryExist,
     doesFileExist,
-    -- doesPathExist,
-    -- getHomeDirectory,
+    doesPathExist,
+    getHomeDirectory,
   )
 import System.FilePath.Posix
 import System.IO.Unsafe (unsafePerformIO)
@@ -103,6 +108,7 @@ data LintMessageCode
   | TodoMissingReviewProperties
   | NonTodoWithReviewProperties
   | BrokenLink String
+  | HashesDoNotMatch String String
   deriving (Show, Eq)
 
 data LintMessage = LintMessage
@@ -183,7 +189,7 @@ lintOrgFile' cfg level org = do
   -- RULE: All verbs are part of the verb vocabulary, if specified
   ruleVerbVocabulary
   -- RULE: Check that all file links point to actual files
-  -- ruleCheckAllLinks
+  ruleCheckAllLinks
   -- RULE: No duplicated file properties outside of link and tags
   forM_ (findDuplicates (props ^.. traverse . name . to (map toLower))) $ \nm ->
     unless (nm `elem` ["link", "tags"]) $
@@ -292,33 +298,33 @@ lintOrgFile' cfg level org = do
               report' (e ^. entryLoc . pos) LintWarn $
                 VerbInFileUnknown verb
 
-    -- ruleCheckAllLinks =
-    --   unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
-    --     forM_ paragraphs $ \paragraph ->
-    --       case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
-    --         AllTextSubmatches ([_, tilde, link] :: [String]) ->
-    --           unless
-    --             ( unsafePerformIO $ do
-    --                 home <- getHomeDirectory
-    --                 doesPathExist
-    --                   ( if tilde == "~/"
-    --                       then home </> link
-    --                       else takeDirectory (org ^. orgFilePath) </> link
-    --                   )
-    --             )
-    --             $ report LintError (BrokenLink (tilde ++ link))
-    --         _ -> pure ()
+    ruleCheckAllLinks =
+      unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
+        forM_ paragraphs $ \paragraph ->
+          case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
+            AllTextSubmatches ([_, tilde, link] :: [String]) ->
+              unless
+                ( unsafePerformIO $ do
+                    home <- getHomeDirectory
+                    doesPathExist
+                      ( if tilde == "~/"
+                          then home </> link
+                          else takeDirectory (org ^. orgFilePath) </> link
+                      )
+                )
+                $ report LintError (BrokenLink (tilde ++ link))
+            _ -> pure ()
 
-    -- paragraphs = bodyString (has _Paragraph)
+    paragraphs = bodyString (has _Paragraph)
 
-    -- bodyString f =
-    --   org
-    --     ^. orgFileHeader
-    --       . headerPreamble
-    --       . blocks
-    --       . traverse
-    --       . filtered f
-    --       . to (showBlock "")
+    bodyString f =
+      org
+        ^. orgFileHeader
+          . headerPreamble
+          . blocks
+          . traverse
+          . filtered f
+          . to (\b -> runReader (showBlock "" b) cfg)
 
     props =
       org ^. orgFileHeader . headerPropertiesDrawer
@@ -376,7 +382,7 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   -- RULE: Drawer end marker should always properly end a drawer
   ruleMisplacedDrawerEnd
   -- RULE: Check that all file links point to actual files
-  -- ruleCheckAllLinks
+  ruleCheckAllLinks
   -- RULE: Log entries should never begin with a blank line
   ruleNoWhitespaceAtStartOfLogEntry
   -- RULE: No title has internal whitespace other than single spaces
@@ -407,6 +413,8 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   ruleLocationIsValid
   -- RULE: Plain drawers are uppercase, begin/end drawers are lowercase
   ruleDrawerCase
+  -- RULE: Entries with hashes match when hashed
+  ruleHashesMatch
   where
     inArchive = isArchive org
 
@@ -507,22 +515,22 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
         )
         $ report LintError MisplacedDrawerEnd
 
-    -- ruleCheckAllLinks =
-    --   unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
-    --     forM_ paragraphs $ \paragraph ->
-    --       case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
-    --         AllTextSubmatches ([_, tilde, link] :: [String]) ->
-    --           unless
-    --             ( unsafePerformIO $ do
-    --                 home <- getHomeDirectory
-    --                 doesPathExist
-    --                   ( if tilde == "~/"
-    --                       then home </> link
-    --                       else takeDirectory (org ^. orgFilePath) </> link
-    --                   )
-    --             )
-    --             $ report LintError (BrokenLink (tilde ++ link))
-    --         _ -> pure ()
+    ruleCheckAllLinks =
+      unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
+        forM_ paragraphs $ \paragraph ->
+          case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
+            AllTextSubmatches ([_, tilde, link] :: [String]) ->
+              unless
+                ( unsafePerformIO $ do
+                    home <- getHomeDirectory
+                    doesPathExist
+                      ( if tilde == "~/"
+                          then home </> link
+                          else takeDirectory (org ^. orgFilePath) </> link
+                      )
+                )
+                $ report LintError (BrokenLink (tilde ++ link))
+            _ -> pure ()
 
     ruleNoWhitespaceAtStartOfLogEntry =
       forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
@@ -779,13 +787,33 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
             )
             $ report LintInfo (InvalidDrawerCase drawerType)
 
+    ruleHashesMatch =
+      forM_ (e ^? property "HASH_sha512") $ \definedHash ->
+        let entryWithoutHash =
+              e & entryProperties %~ filter (\p -> p ^. name /= "HASH_sha512")
+            actualHash = hashEntry entryWithoutHash
+         in when (definedHash /= actualHash) $
+              report LintWarn (HashesDoNotMatch definedHash actualHash)
+      where
+        hashEntry ent =
+          take 64 $
+            T.unpack $
+              T.decodeUtf8 $
+                Base16.encode $
+                  hash $
+                    T.encodeUtf8 $
+                      T.pack $
+                        (++ "\n") $
+                          intercalate "\n" $
+                            runReader (showEntry ent) cfg
+
     bodyString f =
       e
         ^. entryBody
           . blocks
           . traverse
           . filtered f
-          . to (showBlock "")
+          . to (\b -> runReader (showBlock "" b) cfg)
         ++ e
           ^. entryLogEntries
             . traverse
@@ -794,7 +822,7 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
             . blocks
             . traverse
             . filtered f
-            . to (showBlock "")
+            . to (\b -> runReader (showBlock "" b) cfg)
 
     report' loc kind code
       | kind >= level = do
@@ -927,3 +955,5 @@ showLintOrg fl (LintMessage ln kind code) =
         "Non-todo with LAST_REVIEW and NEXT_REVIEW properties"
       BrokenLink link ->
         "Link to missing file: " ++ link
+      HashesDoNotMatch x y ->
+        "Hash do not match: " ++ x ++ " != " ++ y

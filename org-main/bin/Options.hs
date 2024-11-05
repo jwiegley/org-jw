@@ -13,6 +13,7 @@ import Lint.Options
 import Options.Applicative as OA
 import Read
 import Site.Options
+import Stats.Options
 import Trip.Options
 
 version :: String
@@ -35,7 +36,7 @@ data Command
   | Print
   | Dump
   | Outline
-  | Stats
+  | Stats StatsOptions
   | Lint LintOptions
   | Tags TagsOptions
   | Test
@@ -158,11 +159,7 @@ tradeJournalOpts =
     statsCommand =
       OA.command
         "stats"
-        (info statsOptions (progDesc "Stats Org-mode file"))
-      where
-        statsOptions :: Parser Command
-        statsOptions =
-          pure Stats
+        (info (Stats <$> statsOptions) (progDesc "Statistics on Org-mode files"))
 
     lintCommand :: Mod CommandFields Command
     lintCommand =
