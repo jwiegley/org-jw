@@ -20,20 +20,22 @@ import Prelude hiding (readFile)
 
 execTrip :: Config -> TripOptions -> Collection -> IO ()
 execTrip cfg opts coll = do
-  let Config {..} = cfg
-  forM_ (coll ^.. items . traverse . _OrgItem) $ \org -> do
-    withSystemTempFile "roundtrip" $ \tmp h -> do
+  forM_ (coll ^.. items . traverse . _OrgItem) $ \org ->
+    if _changeInPlace opts
+      then withFile (org ^. orgFilePath) WriteMode $ \h ->
+        writeOrgFile h org
+      else withSystemTempFile "roundtrip" $ \tmp h -> do
+        writeOrgFile h org
+        void $
+          system $
+            "diff -U3 \""
+              <> tmp
+              <> "\" \""
+              <> org ^. orgFilePath
+              <> "\""
+  where
+    Config {..} = cfg
+    writeOrgFile h org = do
       forM_ (showOrgFile _propertyColumn _tagsColumn org) $
         hPutStrLn h
-      if _changeInPlace opts
-        then withFile (org ^. orgFilePath) WriteMode $ \orgh ->
-          forM_ (showOrgFile _propertyColumn _tagsColumn org) $ \line ->
-            hPutStr orgh line
-        else
-          void $
-            system $
-              "diff -U3 \""
-                <> tmp
-                <> "\" \""
-                <> org ^. orgFilePath
-                <> "\""
+      hClose h
