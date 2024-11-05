@@ -1,0 +1,5 @@
+#+title: Org-jw
+
+This repository contains a series of modules that I use for managing my
+personal Org-mode. Most of them are not suitable for general use, since the
+objective is tailored to managing the data in my own Org-mode files.
