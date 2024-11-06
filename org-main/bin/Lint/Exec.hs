@@ -12,6 +12,7 @@ import Data.ByteString qualified as B
 import Data.Foldable (forM_)
 import Data.List (find)
 import Data.Map qualified as M
+import Data.Traversable (forM)
 import FlatParse.Stateful qualified as FP
 import Lint.Options
 import Org.Data
@@ -30,7 +31,7 @@ execLint :: Config -> LintOptions -> Collection -> IO ()
 execLint cfg opts (Collection xs) = do
   let msgs = lintOrgFiles cfg (opts ^. kind) orgItems
       n = M.foldl' (\acc ms -> acc + length ms) 0 msgs
-  forM_ (M.assocs msgs) $ \(path, ms) -> case ms of
+  ecs <- forM (M.assocs msgs) $ \(path, ms) -> case ms of
     [] -> do
       ec <-
         if opts ^. roundTrip
@@ -51,15 +52,18 @@ execLint cfg opts (Collection xs) = do
         ExitFailure _ ->
           putStrLn $
             showLintOrg path (LintMessage 0 LintError FileFailsToRoundTrip)
+      pure ec
     _ -> do
       ms' <- findPositions path ms
       forM_ ms' $ \msg ->
         putStrLn $ showLintOrg path msg
-  if n == 0
+      pure ExitSuccess
+  let n' = n + sum (map (\ec -> case ec of ExitSuccess -> 0; _ -> 1) ecs)
+  if n' == 0
     then do
       putStrLn $ show (length xs) ++ " files passed lint"
       exitSuccess
-    else exitWith (ExitFailure n)
+    else exitWith (ExitFailure n')
   where
     orgItems = xs ^.. traverse . _OrgItem
 
