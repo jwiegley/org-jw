@@ -22,6 +22,17 @@ all: $(CABAL_FILES)
 		-F -					\
 		+RTS -N
 
+lint: $(CABAL_FILES)
+	cabal build all
+	find -L ~/org/ -name '*.org' -type f		\
+	    | time cabal run org-main:exe:org --	\
+		-c ~/org/org.dot			\
+		lint					\
+		--round-trip				\
+		-l INFO					\
+		-F -					\
+		+RTS -N
+
 json: $(CABAL_FILES)
 	cabal build all
 	find -L ~/org/ -name '*.org' -type f	\

@@ -109,6 +109,7 @@ data LintMessageCode
   | NonTodoWithReviewProperties
   | BrokenLink String
   | HashesDoNotMatch String String
+  | FileFailsToRoundTrip
   deriving (Show, Eq)
 
 data LintMessage = LintMessage
@@ -957,3 +958,5 @@ showLintOrg fl (LintMessage ln kind code) =
         "Link to missing file: " ++ link
       HashesDoNotMatch x y ->
         "Hash do not match: " ++ x ++ " != " ++ y
+      FileFailsToRoundTrip ->
+        "File fails to round trip through parsing and printing"
