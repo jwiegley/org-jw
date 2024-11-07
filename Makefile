@@ -50,8 +50,13 @@ trip: $(CABAL_FILES)
 
 stats: $(CABAL_FILES)
 	cabal build all
-	cabal run org-main:exe:org -- -c ~/org/org.dot \
-		stats ~/org/todo.org
+	find -L ~/org/ -name '*.org' -type f	\
+	    | cabal run org-main:exe:org --	\
+		--cache-dir ~/.cache/org-jw	\
+		-c ~/org/org.dot		\
+		stats				\
+		-F -				\
+		+RTS -N
 
 meeting-stats: $(CABAL_FILES)
 	cabal build all
