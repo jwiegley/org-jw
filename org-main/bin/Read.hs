@@ -1,6 +1,4 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
@@ -13,14 +11,12 @@ import Control.Monad.Except
 import Control.Monad.IO.Class
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
-import Data.Data (Data)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Time
 import Data.Traversable (forM)
-import Data.Typeable (Typeable)
 import FlatParse.Stateful qualified as FP
-import GHC.Generics
+import Options
 import Org.CBOR
 import Org.Parse
 import Org.Types
@@ -66,10 +62,11 @@ winnowPaths = filterM . fileIsChanged
 
 readOrgFile ::
   (MonadError (Loc, String) m, MonadIO m) =>
+  Options ->
   Config ->
   FilePath ->
   m OrgFile
-readOrgFile cfg path = case _cacheDir cfg of
+readOrgFile opts cfg path = case cacheDir opts of
   Just cdir -> do
     let cacheFile =
           cdir
@@ -120,50 +117,55 @@ readLines path = lines <$> liftIO (System.IO.readFile path)
 
 readCollectionItem ::
   (MonadError (Loc, String) m, MonadIO m) =>
+  Options ->
   Config ->
   FilePath ->
   m CollectionItem
-readCollectionItem cfg path = do
+readCollectionItem opts cfg path = do
   if takeExtension path == ".org"
-    then OrgItem <$> readOrgFile cfg path
+    then OrgItem <$> readOrgFile opts cfg path
     else pure $ DataItem path
 
 foldCollection ::
   (MonadError (Loc, String) m, MonadIO m) =>
+  Options ->
   Config ->
   [FilePath] ->
   a ->
   (FilePath -> Either (Loc, String) CollectionItem -> a -> m a) ->
   m a
-foldCollection cfg paths z f =
+foldCollection opts cfg paths z f =
   (\k -> foldM k z paths) $ \acc path ->
-    tryError (readCollectionItem cfg path) >>= \eres ->
+    tryError (readCollectionItem opts cfg path) >>= \eres ->
       f path eres acc
 
 readCollection ::
   (MonadError (Loc, String) m, MonadIO m) =>
+  Options ->
   Config ->
   [FilePath] ->
   m Collection
-readCollection cfg paths =
-  Collection <$> foldCollection cfg paths [] go
+readCollection opts cfg paths =
+  Collection <$> foldCollection opts cfg paths [] go
   where
     go _path (Left err) _ = throwError err
     go _path (Right x) acc = pure (x : acc)
 
 mapCollection ::
+  Options ->
   Config ->
   [FilePath] ->
   [IO (Either (Loc, String) CollectionItem)]
-mapCollection cfg = map \path ->
-  join <$> runExceptT (tryError (readCollectionItem cfg path))
+mapCollection opts cfg = map \path ->
+  join <$> runExceptT (tryError (readCollectionItem opts cfg path))
 
 readCollectionIO ::
+  Options ->
   Config ->
   [FilePath] ->
   IO Collection
-readCollectionIO cfg paths = do
-  coll <- PIO.parallelInterleaved $ mapCollection cfg paths
+readCollectionIO opts cfg paths = do
+  coll <- PIO.parallelInterleaved $ mapCollection opts cfg paths
   PIO.stopGlobalPool
   fmap (Collection . concat) $ forM coll $ \case
     Left (loc, err) -> do
@@ -181,13 +183,6 @@ readCollectionIO cfg paths = do
           pure []
         _ -> error "impossible"
     Right x -> pure [x]
-
-data InputFiles
-  = FileFromStdin -- '-f -'
-  | ListFromStdin -- '-F -'
-  | Paths [FilePath] -- '<path>...'
-  | FilesFromFile FilePath -- '-F <path>'
-  deriving (Data, Show, Eq, Typeable, Generic, Ord)
 
 getInputPaths :: InputFiles -> IO [FilePath]
 getInputPaths = \case

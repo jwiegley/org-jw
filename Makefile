@@ -52,7 +52,8 @@ stats: $(CABAL_FILES)
 	cabal build all
 	find -L ~/org/ -name '*.org' -type f	\
 	    | cabal run org-main:exe:org --	\
-		-c ~/org/org.dot		\
+		--config ~/org/org.cfg		\
+		--keywords ~/org/org.dot	\
 		stats				\
 		-F -				\
 		+RTS -N

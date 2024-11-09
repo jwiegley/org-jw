@@ -10,7 +10,7 @@ import Options.Applicative as OA
 data TripOptions = TripOptions
   { _changeInPlace :: !Bool
   }
-  deriving (Show, Typeable, Generic)
+  deriving (Show, Eq, Typeable, Generic)
 
 tripOptions :: Parser TripOptions
 tripOptions =

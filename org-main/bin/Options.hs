@@ -4,14 +4,12 @@
 
 module Options where
 
-import Control.Lens hiding (argument)
 import Data.Typeable (Typeable)
 import FileTags.Options
 import GHC.Generics
 import JSON.Options
 import Lint.Options
 import Options.Applicative as OA
-import Read
 import Site.Options
 import Stats.Options
 import Trip.Options
@@ -42,20 +40,24 @@ data Command
   | Test
   | Site SiteOptions
   | Trip TripOptions
-  deriving (Show, Typeable, Generic)
+  deriving (Show, Eq, Typeable, Generic)
 
-makeLenses ''Command
+data InputFiles
+  = FileFromStdin -- '-f -'
+  | ListFromStdin -- '-F -'
+  | Paths [FilePath] -- '<path>...'
+  | FilesFromFile FilePath -- '-F <path>'
+  deriving (Show, Eq, Typeable, Generic, Ord)
 
 data Options = Options
-  { _verbose :: !Bool,
-    _configFile :: !FilePath,
-    _cacheDir :: !(Maybe FilePath),
-    _command :: !Command,
-    _inputs :: !InputFiles
+  { verbose :: !Bool,
+    cacheDir :: !(Maybe FilePath),
+    configFile :: !FilePath,
+    keywordsGraph :: !(Maybe FilePath),
+    command :: !Command,
+    inputs :: !InputFiles
   }
-  deriving (Show, Typeable, Generic)
-
-makeLenses ''Options
+  deriving (Show, Eq, Typeable, Generic)
 
 tradeJournalOpts :: Parser Options
 tradeJournalOpts =
@@ -65,17 +67,21 @@ tradeJournalOpts =
           <> long "verbose"
           <> help "Report progress verbosely"
       )
-    <*> strOption
-      ( short 'c'
-          <> long "config"
-          <> metavar "ORG_CONFIG"
-          <> help "Path to configuration file (a DOT file)"
-      )
     <*> optional
       ( strOption
           ( long "cache-dir"
-              <> metavar "ORG_CACHE"
               <> help "Directory to cache parsed Org-mode files"
+          )
+      )
+    <*> strOption
+      ( short 'c'
+          <> long "config"
+          <> help "Path to Yaml configuration file"
+      )
+    <*> optional
+      ( strOption
+          ( long "keywords"
+              <> help "Keywords graph DOT file"
           )
       )
     <*> hsubparser

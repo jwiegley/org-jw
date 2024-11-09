@@ -10,7 +10,7 @@ import Options.Applicative as OA
 data StatsOptions = StatsOptions
   { _changeInPlace :: !Bool
   }
-  deriving (Show, Typeable, Generic)
+  deriving (Show, Eq, Typeable, Generic)
 
 statsOptions :: Parser StatsOptions
 statsOptions =

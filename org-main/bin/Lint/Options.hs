@@ -18,7 +18,7 @@ data LintOptions = LintOptions
     _checkDir :: !(Maybe FilePath),
     _roundTrip :: !Bool
   }
-  deriving (Show, Typeable, Generic)
+  deriving (Show, Eq, Typeable, Generic)
 
 makeLenses ''LintOptions
 

@@ -27,25 +27,23 @@ data Config = Config
     _closedKeywords :: [String],
     _keywordTransitions :: [(String, [String])],
     _priorities :: [String],
-    _attachmentsDir :: FilePath,
     _propertyColumn :: Int,
     _tagsColumn :: Int,
-    _cacheDir :: Maybe FilePath
+    _attachmentsDir :: FilePath
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable)
 
-emptyConfig :: Config
-emptyConfig =
+defaultConfig :: Config
+defaultConfig =
   Config
     { _startKeywords = [],
       _openKeywords = [],
       _closedKeywords = [],
       _keywordTransitions = [],
       _priorities = [],
-      _attachmentsDir = "",
       _propertyColumn = 0,
       _tagsColumn = 0,
-      _cacheDir = Nothing
+      _attachmentsDir = ""
     }
 
 data Loc = Loc

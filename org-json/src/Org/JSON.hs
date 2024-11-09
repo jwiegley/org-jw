@@ -15,7 +15,11 @@ lowerFirst [] = []
 lowerFirst (x : xs) = (toLower x : xs)
 
 instance FromJSON Config where
-  parseJSON = genericParseJSON JSON.defaultOptions
+  parseJSON =
+    genericParseJSON
+      JSON.defaultOptions
+        { fieldLabelModifier = drop 1 -- _
+        }
 
 instance ToJSON Config where
   toEncoding = genericToEncoding JSON.defaultOptions

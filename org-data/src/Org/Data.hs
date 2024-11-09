@@ -283,7 +283,7 @@ fileNameReTest = do
     test path expect = do
       let res =
             parseMaybe
-              ("<path \"" ++ path ++ "\">", emptyConfig)
+              ("<path \"" ++ path ++ "\">", defaultConfig)
               fileNameRe
               (T.encodeUtf8 (T.pack path))
       unless (res == Just expect) $
@@ -546,7 +546,7 @@ _Time =
     showTime
     ( \str ->
         parseMaybe
-          ("<string \"" ++ str ++ "\">", emptyConfig)
+          ("<string \"" ++ str ++ "\">", defaultConfig)
           parseTime
           (T.encodeUtf8 (T.pack str))
     )

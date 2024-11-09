@@ -42,11 +42,11 @@ execStats cfg _opts coll = do
   putStrLn "\nVerbs:"
   showStats (itemsUsed entryVerb) id
 
-  putStrLn "\nContexts:"
-  showStats (itemsUsed entryContext) id
+  -- putStrLn "\nContexts:"
+  -- showStats (itemsUsed entryContext) id
 
-  putStrLn "\nLocators:"
-  showStats (itemsUsed entryLocator) id
+  -- putStrLn "\nLocators:"
+  -- showStats (itemsUsed entryLocator) id
 
   putStrLn "\nDrawers:"
   let drawersUsed = flip execState M.empty $

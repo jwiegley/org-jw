@@ -15,7 +15,7 @@ import Options.Applicative as OA
 data JsonOptions = JsonOptions
   { _jsonDir :: !(Maybe FilePath)
   }
-  deriving (Show, Typeable, Generic)
+  deriving (Show, Eq, Typeable, Generic)
 
 makeLenses ''JsonOptions
 

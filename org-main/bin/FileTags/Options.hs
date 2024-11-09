@@ -31,14 +31,14 @@ data TagsCommand
         filterOverwrite :: Bool,
         filterExpr :: TagExpr
       }
-  deriving (Show, Typeable, Generic)
+  deriving (Show, Eq, Typeable, Generic)
 
 makePrisms ''TagsCommand
 
 data TagsOptions = TagsOptions
   { _command :: !TagsCommand
   }
-  deriving (Show, Typeable, Generic)
+  deriving (Show, Eq, Typeable, Generic)
 
 makeLenses ''TagsOptions
 
