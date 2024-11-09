@@ -719,7 +719,7 @@ parseDrawer leader = do
         -- @Drawer Loc String [String]@
         ident <- identifier <* $(char ':') <* trailingSpace
         -- traceM "parsePlainDrawer..3"
-        pure $ prefix <> ":" <> ident <> ":"
+        pure $ ":" <> ident <> ":"
       -- traceM "parsePlainDrawer..4"
       content <-
         manyTill
@@ -742,7 +742,7 @@ parseDrawer leader = do
         -- traceM "parsePlainDrawer..8"
         pure $ prefix <> ending
       -- traceM "parsePlainDrawer..9"
-      pure (PlainDrawer txt, txt : content ++ [endLine])
+      pure (PlainDrawer txt, prefix <> txt : content ++ [endLine])
 
     endBlockString =
       $( switch
@@ -757,7 +757,7 @@ parseDrawer leader = do
       -- traceM "parseSrcDrawer..1"
       txt <- do
         suffix <- wholeLine
-        pure $ prefix <> begin <> suffix
+        pure $ begin <> suffix
       content <-
         manyTill
           (("" <$ newline) <|> (leader *> restOfLine))
@@ -775,4 +775,7 @@ parseDrawer leader = do
         ending <- endBlockString
         suffix <- wholeLine
         pure $ prefix <> ending <> suffix
-      pure (BeginDrawer txt, txt : content ++ [endLine])
+      pure
+        ( BeginDrawer (unwords (Prelude.take 2 (words txt))),
+          prefix <> txt : content ++ [endLine]
+        )
