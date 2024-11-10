@@ -34,7 +34,6 @@ import qualified Data.Text.IO as TIO
 import Data.Time
 import Data.Time.Format.ISO8601
 import Data.Yaml (decodeFileEither)
-import Debug.Trace (trace)
 import Hakyll
 import Hakyll.Images (loadImage, resizeImageCompiler)
 import System.Directory
