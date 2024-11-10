@@ -6,10 +6,6 @@ module Main where
 
 import Control.Lens hiding ((<.>))
 import Data.Foldable (forM_)
-import Data.GraphViz
-import Data.GraphViz.Attributes.Complete
-import Data.Map.Strict qualified as M
-import Data.Text.Lazy (Text)
 import Data.Text.Lazy.IO (readFile)
 import Data.Yaml qualified as Yaml
 import FileTags.Exec
@@ -19,7 +15,6 @@ import Lint.Options
 import Options
 import Org.Data
 import Org.Print
-import Org.Types
 import Read hiding (readFile)
 import Site.Exec
 import Stats.Exec
@@ -71,7 +66,7 @@ main = do
     Stats statsOpts -> execStats cfg statsOpts coll
     Tags tagsOpts -> execTags cfg tagsOpts coll
     Trip tripOpts -> execTrip cfg tripOpts coll
-    Site siteOpts -> execSite (verbose opts) cfg siteOpts coll
+    Site siteOpts -> execSite opts siteOpts coll
     Test -> case orgItems ^.. traverse . allEntries of
       [] -> pure ()
       e : _ -> do
@@ -80,42 +75,3 @@ main = do
         pPrint $ e ^? anyProperty cfg "TITLE"
         pPrint $ e ^? anyProperty cfg "ITEM"
         pPrint $ e ^? anyProperty cfg "FOOBAR"
-
-applyDotFile :: Config -> Text -> Config
-applyDotFile Config {..} dot = Config {..}
-  where
-    gr :: DotGraph String
-    gr = parseDotGraph dot
-
-    _startKeywords = nodesWithColor Red
-    _openKeywords = _startKeywords ++ nodesWithColor Blue
-    _closedKeywords = nodesWithColor Green
-    _keywordTransitions =
-      M.toList $
-        foldl'
-          ( \m e ->
-              m
-                & at (fromNode e) %~ \case
-                  Nothing -> Just [toNode e]
-                  Just ns -> Just (toNode e : ns)
-          )
-          mempty
-          (graphEdges gr)
-
-    nodesWithColor :: X11Color -> [String]
-    nodesWithColor clr = map nodeID (filter (hasColor clr) (graphNodes gr))
-
-    hasColor :: X11Color -> DotNode String -> Bool
-    hasColor clr =
-      any
-        ( \case
-            Color cs ->
-              any
-                ( \c -> case wColor c of
-                    X11Color x11 -> x11 == clr
-                    _ -> False
-                )
-                cs
-            _ -> False
-        )
-        . nodeAttributes

@@ -52,7 +52,7 @@ stats: $(CABAL_FILES)
 	cabal build all
 	find -L ~/org/ -name '*.org' -type f	\
 	    | cabal run org-main:exe:org --	\
-		--config ~/org/org.cfg		\
+		--config ~/org/org.yaml		\
 		--keywords ~/org/org.dot	\
 		stats				\
 		-F -				\
@@ -84,6 +84,15 @@ round-trip: $(CABAL_FILES)
 		--change-in-place		\
 		-F -				\
 		+RTS -N
+
+newartisans: $(CABAL_FILES)
+	cabal build all
+	cabal run org-main:exe:org --		\
+	    --config ~/org/org.yaml		\
+	    --keywords ~/org/org.dot		\
+	    site				\
+	    build				\
+	    ~/org/newartisans/config.yaml
 
 flatparse-util/flatparse-util.cabal: flatparse-util/package.yaml
 	(cd flatparse-util; hpack -f)

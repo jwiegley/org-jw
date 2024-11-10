@@ -6,32 +6,39 @@
 
 module Site.Exec where
 
-import Control.Lens
 import Data.Time
-import Hakyll
+import Hakyll as Hakyll
+import Options as Org
 import Org.Site
 import Org.Types
-import Site.Options
+import Site.Options as Site
+import System.Directory
+import System.Exit
+import System.FilePath
 import Prelude hiding (readFile)
 
-execSite :: Bool -> Config -> SiteOptions -> Collection -> IO ()
-execSite verbose _cfg opts (Collection _xs) = do
+execSite :: Org.Options -> SiteOptions -> Collection -> IO ()
+execSite opts siteOpts (Collection (DataItem config : _)) = do
   now <- getCurrentTime
-  siteConfig <- readSiteConfiguration (opts ^. configFile)
-  hakyllWithArgs
-    defaultConfiguration
-      { destinationDirectory = "_site",
-        storeDirectory = "_cache",
-        tmpDirectory = "_cache/tmp",
-        providerDirectory = ".",
-        deployCommand = siteDeploy siteConfig,
-        inMemoryCache = True,
-        previewHost = "127.0.0.1",
-        previewPort = 8000,
-        provideMetadata = pandocMetadata (Just (siteName siteConfig))
-      }
-    Options
-      { verbosity = verbose,
-        optCommand = opts ^. hakyllCommand
-      }
-    (siteRules now siteConfig)
+  siteConfig <- readSiteConfiguration config
+  withCurrentDirectory (takeDirectory config) $
+    hakyllWithArgs
+      defaultConfiguration
+        { destinationDirectory = "_site",
+          storeDirectory = "_cache",
+          tmpDirectory = "_cache/tmp",
+          providerDirectory = ".",
+          deployCommand = siteDeploy siteConfig,
+          inMemoryCache = True,
+          previewHost = "127.0.0.1",
+          previewPort = 8000,
+          provideMetadata = pandocMetadata (Just (siteName siteConfig))
+        }
+      Hakyll.Options
+        { verbosity = Org.verbose opts,
+          optCommand = Site._hakyllCommand siteOpts
+        }
+      (siteRules now siteConfig)
+execSite _ _ _ = do
+  putStrLn "usage: org site <hakyll command> <config.yaml>"
+  exitFailure

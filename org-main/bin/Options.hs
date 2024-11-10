@@ -1,15 +1,23 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Options where
 
+import Data.GraphViz
+import Data.GraphViz.Attributes.Complete hiding (Paths)
+import Data.Map.Strict qualified as M
+import Data.Text.Lazy (Text)
 import Data.Typeable (Typeable)
 import FileTags.Options
 import GHC.Generics
 import JSON.Options
 import Lint.Options
 import Options.Applicative as OA
+import Org.Types
 import Site.Options
 import Stats.Options
 import Trip.Options
@@ -209,3 +217,46 @@ optionsDefinition =
 
 getOptions :: IO Options
 getOptions = execParser optionsDefinition
+
+applyDotFile :: Config -> Text -> Config
+applyDotFile Config {..} dot = Config {..}
+  where
+    gr :: DotGraph String
+    gr = parseDotGraph dot
+
+    _startKeywords = nodesWithColor Red
+    _openKeywords = _startKeywords ++ nodesWithColor Blue
+    _closedKeywords = nodesWithColor Green
+    _keywordTransitions =
+      M.toList $
+        foldl'
+          ( flip
+              ( \e ->
+                  M.alter
+                    ( \case
+                        Nothing -> Just [toNode e]
+                        Just ns -> Just (toNode e : ns)
+                    )
+                    (fromNode e)
+              )
+          )
+          mempty
+          (graphEdges gr)
+
+    nodesWithColor :: X11Color -> [String]
+    nodesWithColor clr = map nodeID (filter (hasColor clr) (graphNodes gr))
+
+    hasColor :: X11Color -> DotNode String -> Bool
+    hasColor clr =
+      any
+        ( \case
+            Color cs ->
+              any
+                ( \c -> case wColor c of
+                    X11Color x11 -> x11 == clr
+                    _ -> False
+                )
+                cs
+            _ -> False
+        )
+        . nodeAttributes
