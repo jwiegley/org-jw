@@ -91,7 +91,7 @@ newartisans: $(CABAL_FILES)
 	    --config ~/org/org.yaml		\
 	    --keywords ~/org/org.dot		\
 	    site				\
-	    build				\
+	    rebuild				\
 	    ~/org/newartisans/config.yaml
 
 flatparse-util/flatparse-util.cabal: flatparse-util/package.yaml

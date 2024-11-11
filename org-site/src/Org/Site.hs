@@ -276,8 +276,9 @@ siteRules now site@SiteConfiguration {..} = do
         fixPostLinks :: Identifier -> P.Pandoc -> IO P.Pandoc
         fixPostLinks ident = everywhereM (mkM (fixPostLink ident))
 
-        -- Fixup Org-roam links to refer the intended document by its route.
         fixPostLink :: Identifier -> P.Inline -> IO P.Inline
+        -- Fixup Org-roam links that refer the document by its id. These must
+        -- be resolved to the destination path.
         fixPostLink _ident l@(P.Link as title (T.unpack -> url, title'))
           | AllTextSubmatches [_, uuid] <- url =~ ("^id:(.+)$" :: String) = do
               -- Within the [Identifier] gives by entries, find one whose
@@ -289,6 +290,7 @@ siteRules now site@SiteConfiguration {..} = do
                     as
                     title
                     (T.pack ("/" ++ path), title')
+        -- Fixup image links.
         fixPostLink ident (P.Image as title (T.unpack -> url, title'))
           | AllTextSubmatches [_, target] <-
               url
@@ -334,9 +336,7 @@ data SiteConfiguration = SiteConfiguration
     siteKeywords :: String, -- Site keywords
     siteCopyright :: String, -- Site copyright
     siteAnalytics :: String, -- Google Analytics Id
-    siteDisqus :: String, -- Disqus domainname
-    siteContentDir :: String, -- Path to pages, posts, drafts
-    siteDir :: String -- Path to templates and other files
+    siteDisqus :: String -- Disqus domainname
   }
 
 instance FromJSON SiteConfiguration where
@@ -353,8 +353,6 @@ instance FromJSON SiteConfiguration where
       <*> v .: "copyright"
       <*> v .: "analytics"
       <*> v .: "disqus"
-      <*> v .: "contentDir"
-      <*> v .: "siteDir"
   parseJSON invalid = typeMismatch "SiteConfiguration" invalid
 
 readSiteConfiguration :: FilePath -> IO SiteConfiguration
@@ -392,9 +390,7 @@ siteCtx SiteConfiguration {..} =
       constField "keywords" siteKeywords,
       constField "copyright" siteCopyright,
       constField "analytics" siteAnalytics,
-      constField "disqus" siteDisqus,
-      constField "contentDir" siteContentDir,
-      constField "siteDir" siteDir
+      constField "disqus" siteDisqus
     ]
 
 {------------------------------------------------------------------------}
