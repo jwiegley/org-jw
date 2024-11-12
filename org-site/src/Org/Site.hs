@@ -472,8 +472,8 @@ getMatchesToPublishBefore moment pat = do
         ( \(date, _) ->
             -- Only posts intended to be published have the "published"
             -- metadata field; this requires the Org file be tagged with
-            -- :publish/NAME: and that it have a :CREATED: or :PUBLISH: date
-            -- in its properties.
+            -- :publish: and that it have a :CREATED: or :PUBLISH: date in its
+            -- properties.
             diffUTCTime date moment < 0
         )
 
@@ -586,28 +586,24 @@ cleanupMetadata ::
   Maybe String ->
   M.Map T.Text P.MetaValue ->
   M.Map T.Text P.MetaValue
-cleanupMetadata mname = M.foldMapWithKey ((M.fromList .) . go)
+cleanupMetadata Nothing m = M.insert "shouldPublish" (P.MetaBool False) m
+cleanupMetadata (Just name) m = M.foldMapWithKey ((M.fromList .) . go) m
   where
     go "filetags" (P.MetaString value) =
       [ ( "shouldPublish",
-          P.MetaBool
-            (T.unpack value =~ (":publish/" ++ name ++ ":" :: String))
+          P.MetaBool (T.pack name `elem` tags && "publish" `elem` tags)
         )
-        | Just name <- [mname]
       ]
         ++ [ ( "tags",
                P.MetaString
                  ( T.intercalate ", "
-                     . filter
-                       ( \(T.unpack -> s) ->
-                           not (s =~ ("^publish/" :: String))
-                       )
-                     . filter (not . T.null)
-                     . T.splitOn ":"
-                     $ value
+                     . filter (\s -> s /= T.pack name && s /= "publish")
+                     $ tags
                  )
              )
            ]
+      where
+        tags = filter (not . T.null) (T.splitOn ":" value)
     go key value = [(key, value)]
 
 getSlug :: FilePath -> P.Meta -> [P.Inline]
