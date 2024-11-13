@@ -11,22 +11,27 @@ CABAL_FILES =					\
      org-site/org-site.cabal			\
      org-types/org-types.cabal
 
+FIND_FILES = find -L ~/org/ \( -name template -type d -prune -o -name '*.org' \) -type f
+
 all: $(CABAL_FILES)
 	cabal build all
-	find -L ~/org/ -name '*.org' -type f		\
+	$(FIND_FILES)					\
 	    | time cabal run org-main:exe:org --	\
-		-c ~/org/org.dot			\
+		--config ~/org/org.yaml			\
+		--keywords ~/org/org.dot		\
 		lint					\
-		--check-dir ~/.local/share/org-jw       \
+		--check-dir ~/.local/share/org-jw	\
+		--round-trip				\
 		-l INFO					\
 		-F -					\
 		+RTS -N
 
 lint: $(CABAL_FILES)
 	cabal build all
-	find -L ~/org/ -name '*.org' -type f		\
+	$(FIND_FILES)					\
 	    | time cabal run org-main:exe:org --	\
-		-c ~/org/org.dot			\
+		--config ~/org/org.yaml			\
+		--keywords ~/org/org.dot		\
 		lint					\
 		--round-trip				\
 		-l INFO					\
@@ -35,9 +40,10 @@ lint: $(CABAL_FILES)
 
 json: $(CABAL_FILES)
 	cabal build all
-	find -L ~/org/ -name '*.org' -type f	\
+	$(FIND_FILES)				\
 	    | cabal run org-main:exe:org --	\
-		-c ~/org/org.dot		\
+		--config ~/org/org.yaml		\
+		--keywords ~/org/org.dot	\
 		json				\
 		--output ~/.cache/org-jw-json	\
 		-F -				\
@@ -45,12 +51,28 @@ json: $(CABAL_FILES)
 
 trip: $(CABAL_FILES)
 	cabal build all
-	cabal run org-main:exe:org -- -c ~/org/org.dot \
-		trip ~/org/journal/202409101058-meeting-leads-offsite-q3-2024.org
+	$(FIND_FILES)				\
+	    | cabal run org-main:exe:org --	\
+		--config ~/org/org.yaml		\
+		--keywords ~/org/org.dot	\
+		trip				\
+		-F -				\
+		+RTS -N
+
+trip-update: $(CABAL_FILES)
+	cabal build all
+	$(FIND_FILES)				\
+	    | cabal run org-main:exe:org --	\
+		--config ~/org/org.yaml		\
+		--keywords ~/org/org.dot	\
+		trip				\
+		--change-in-place		\
+		-F -				\
+		+RTS -N
 
 stats: $(CABAL_FILES)
 	cabal build all
-	find -L ~/org/ -name '*.org' -type f	\
+	$(FIND_FILES)				\
 	    | cabal run org-main:exe:org --	\
 		--config ~/org/org.yaml		\
 		--keywords ~/org/org.dot	\
@@ -63,27 +85,10 @@ meeting-stats: $(CABAL_FILES)
 	find -L ~/org/journal/ -name '*.org' -type f -print0	\
 	    | xargs -0 egrep -l '^#\+filetags.*:kadena:'	\
 	    | cabal run org-main:exe:org --			\
-		-c ~/org/org.dot				\
+		--config ~/org/org.yaml				\
+		--keywords ~/org/org.dot			\
 		stats						\
 		-F -
-
-stats-all: $(CABAL_FILES)
-	cabal build all
-	find -L ~/org/ -name '*.org' -type f	\
-	    | cabal run org-main:exe:org --	\
-		-c ~/org/org.dot		\
-		stats				\
-		-F -
-
-round-trip: $(CABAL_FILES)
-	cabal build all
-	find -L ~/org/ -name '*.org' -type f	\
-	    | cabal run org-main:exe:org --	\
-		-c ~/org/org.dot		\
-		trip				\
-		--change-in-place		\
-		-F -				\
-		+RTS -N
 
 newartisans: $(CABAL_FILES)
 	cabal build all
