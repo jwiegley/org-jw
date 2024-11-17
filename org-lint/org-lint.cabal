@@ -26,15 +26,19 @@ library
     , base16-bytestring
     , containers
     , cryptohash-sha512
+    , deepseq
     , directory
     , filepath
     , lens
+    , monad-par
     , mtl
     , org-data
     , org-parse
     , org-print
     , org-types
     , pretty-show
+    , process
     , regex-tdfa
     , text
+    , transformers
   default-language: Haskell2010

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -9,6 +10,7 @@
 module Org.Lint where
 
 import Control.Applicative
+import Control.DeepSeq
 import Control.Lens
 import Control.Monad (foldM, unless, when)
 import Control.Monad.Reader
@@ -39,8 +41,10 @@ import System.Directory
     doesPathExist,
     getHomeDirectory,
   )
+import System.Exit
 import System.FilePath.Posix
 import System.IO.Unsafe (unsafePerformIO)
+import System.Process
 import Text.Regex.TDFA
 import Text.Regex.TDFA.String ()
 import Text.Show.Pretty
@@ -50,7 +54,7 @@ consistent [] = True
 consistent (x : xs) = foldl' (\b y -> b && x == y) True xs
 
 data LintMessageKind = LintDebug | LintInfo | LintWarn | LintError
-  deriving (Data, Show, Eq, Typeable, Generic, Enum, Bounded, Ord)
+  deriving (Data, Show, Eq, Typeable, Generic, Enum, Bounded, Ord, NFData)
 
 parseLintMessageKind :: String -> Maybe LintMessageKind
 parseLintMessageKind = \case
@@ -64,7 +68,7 @@ data TransitionKind
   = FirstTransition
   | IntermediateTransition
   | LastTransition
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NFData)
 
 data LintMessageCode
   = TodoMissingProperty String
@@ -110,14 +114,14 @@ data LintMessageCode
   | BrokenLink String
   | HashesDoNotMatch String String
   | FileFailsToRoundTrip
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NFData)
 
 data LintMessage = LintMessage
   { lintMsgPos :: Int,
     lintMsgKind :: LintMessageKind,
     lintMsgCode :: LintMessageCode
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NFData)
 
 lintOrgFiles ::
   Config ->
@@ -302,18 +306,22 @@ lintOrgFile' cfg level org = do
     ruleCheckAllLinks =
       unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
         forM_ paragraphs $ \paragraph ->
-          case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
-            AllTextSubmatches ([_, tilde, link] :: [String]) ->
+          case paragraph
+            =~ ("\\[\\[(file:|https?:)(~/)?([^]:]+)" :: String) of
+            AllTextSubmatches ([_, protocol, tilde, link] :: [String]) ->
               unless
-                ( unsafePerformIO $ do
-                    home <- getHomeDirectory
-                    doesPathExist
-                      ( if tilde == "~/"
-                          then home </> link
-                          else takeDirectory (org ^. orgFilePath) </> link
-                      )
+                ( if protocol == "file"
+                    then pathExists tilde (org ^. orgFilePath) link
+                    else urlExists (protocol ++ link)
                 )
-                $ report LintError (BrokenLink (tilde ++ link))
+                $ report
+                  LintError
+                  ( BrokenLink
+                      ( if protocol == "file"
+                          then tilde ++ link
+                          else protocol ++ link
+                      )
+                  )
             _ -> pure ()
 
     paragraphs = bodyString (has _Paragraph)
@@ -517,20 +525,48 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
         $ report LintError MisplacedDrawerEnd
 
     ruleCheckAllLinks =
-      unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
-        forM_ paragraphs $ \paragraph ->
-          case paragraph =~ ("\\[\\[file:(~/)?([^]:]+)" :: String) of
-            AllTextSubmatches ([_, tilde, link] :: [String]) ->
+      unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $ do
+        forM_ (e ^? property "URL") $ \doc ->
+          case doc
+            =~ ("\\[\\[(file:|https?:)(~/)?([^]:]+)" :: String) of
+            AllTextSubmatches ([_, protocol, tilde, link] :: [String]) ->
               unless
-                ( unsafePerformIO $ do
-                    home <- getHomeDirectory
-                    doesPathExist
-                      ( if tilde == "~/"
-                          then home </> link
-                          else takeDirectory (org ^. orgFilePath) </> link
-                      )
+                ( if protocol == "file"
+                    then pathExists tilde (org ^. orgFilePath) link
+                    else urlExists (protocol ++ link)
                 )
-                $ report LintError (BrokenLink (tilde ++ link))
+                $ report
+                  LintError
+                  ( BrokenLink
+                      ( if protocol == "file"
+                          then tilde ++ link
+                          else protocol ++ link
+                      )
+                  )
+            _ -> pure ()
+        forM_ (e ^? property "NOTER_DOCUMENT") $ \doc ->
+          case doc =~ ("(~/)?([^]:]+)" :: String) of
+            AllTextSubmatches ([_, tilde, link] :: [String]) ->
+              unless (pathExists tilde (org ^. orgFilePath) link) $
+                report LintError (BrokenLink (tilde ++ link))
+            _ -> pure ()
+        forM_ paragraphs $ \paragraph ->
+          case paragraph
+            =~ ("\\[\\[(file:|https?:)(~/)?([^]:]+)" :: String) of
+            AllTextSubmatches ([_, protocol, tilde, link] :: [String]) ->
+              unless
+                ( if protocol == "file"
+                    then pathExists tilde (org ^. orgFilePath) link
+                    else urlExists (protocol ++ link)
+                )
+                $ report
+                  LintError
+                  ( BrokenLink
+                      ( if protocol == "file"
+                          then tilde ++ link
+                          else protocol ++ link
+                      )
+                  )
             _ -> pure ()
 
     ruleNoWhitespaceAtStartOfLogEntry =
@@ -839,6 +875,32 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
       | otherwise = pure ()
 
     report = report' (e ^. entryLoc)
+
+pathExists :: String -> FilePath -> FilePath -> Bool
+pathExists tilde path link = unsafePerformIO $ do
+  home <- getHomeDirectory
+  doesPathExist
+    ( if tilde == "~/"
+        then home </> link
+        else takeDirectory path </> link
+    )
+
+urlExists :: String -> Bool
+urlExists url = unsafePerformIO $ do
+  (ec, _, _) <-
+    readProcessWithExitCode
+      "curl"
+      [ "--output",
+        "/dev/null",
+        "--silent",
+        "--head",
+        "--fail",
+        "--connect-timeout",
+        "5",
+        url
+      ]
+      ""
+  pure $ ec == ExitSuccess
 
 showLintOrg :: FilePath -> LintMessage -> String
 showLintOrg fl (LintMessage ln kind code) =

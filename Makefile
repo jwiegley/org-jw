@@ -28,6 +28,7 @@ all: $(CABAL_FILES)
 
 lint: $(CABAL_FILES)
 	cabal build all
+	cd ~/org
 	$(FIND_FILES)					\
 	    | time cabal run org-main:exe:org --	\
 		--config ~/org/org.yaml			\
