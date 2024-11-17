@@ -12,6 +12,7 @@ ghc-options:
 
 dependencies:
   - base >= 4.5
+  - deepseq
   - hashable
   - time
 

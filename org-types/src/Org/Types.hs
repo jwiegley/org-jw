@@ -6,6 +6,7 @@
 module Org.Types where
 
 import Control.Applicative (Const (..))
+import Control.DeepSeq
 import Data.Data (Data)
 import Data.Function (on)
 import Data.Functor.Identity (Identity (..))
@@ -31,7 +32,7 @@ data Config = Config
     _tagsColumn :: Int,
     _attachmentsDir :: FilePath
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 defaultConfig :: Config
 defaultConfig =
@@ -50,7 +51,7 @@ data Loc = Loc
   { _file :: FilePath,
     _pos :: Int
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, NFData)
 
 data Property = Property
   { _propertyLoc :: Loc,
@@ -58,24 +59,24 @@ data Property = Property
     _name :: String,
     _value :: String
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, NFData)
 
 data DrawerType
   = PlainDrawer String
   | BeginDrawer String
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 data Block
   = Whitespace Loc String
   | Paragraph Loc [String]
   | Drawer Loc DrawerType [String]
   | InlineTask Loc Entry
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 newtype Body = Body
   { _blocks :: [Block]
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 instance Semigroup Body where
   Body [] <> ys = ys
@@ -97,7 +98,7 @@ emptyBody = (== mempty)
 {-# INLINE emptyBody #-}
 
 newtype Tag = PlainTag String
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, NFData)
 
 data TimeSpan
   = DaySpan
@@ -112,7 +113,8 @@ data TimeSpan
       Generic,
       Data,
       Typeable,
-      Hashable
+      Hashable,
+      NFData
     )
 
 data TimeKind
@@ -127,7 +129,8 @@ data TimeKind
       Generic,
       Data,
       Typeable,
-      Hashable
+      Hashable,
+      NFData
     )
 
 data TimeSuffixKind
@@ -143,7 +146,8 @@ data TimeSuffixKind
       Generic,
       Data,
       Typeable,
-      Hashable
+      Hashable,
+      NFData
     )
 
 data TimeSuffix = TimeSuffix
@@ -152,7 +156,7 @@ data TimeSuffix = TimeSuffix
     _suffixSpan :: TimeSpan,
     _suffixLargerSpan :: Maybe (Integer, TimeSpan)
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, NFData)
 
 data Time = Time
   { _timeKind :: TimeKind,
@@ -164,7 +168,7 @@ data Time = Time
     _timeEnd :: Maybe Integer,
     _timeSuffix :: Maybe TimeSuffix
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 timeStartToUTCTime :: Time -> UTCTime
 timeStartToUTCTime Time {..} =
@@ -203,7 +207,7 @@ data Duration = Duration
   { _hours :: Integer,
     _mins :: Integer
   }
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, NFData)
 
 {-
 _duration :: Traversal' Time Duration
@@ -235,7 +239,7 @@ data Stamp
   | ScheduledStamp Loc Time
   | DeadlineStamp Loc Time
   | ActiveStamp Loc Time
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, NFData)
 
 isLeadingStamp :: Stamp -> Bool
 isLeadingStamp (ClosedStamp _ _) = True
@@ -250,12 +254,12 @@ data Header = Header
     -- _headerStamps :: [Stamp],
     _headerPreamble :: Body
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 data Keyword
   = OpenKeyword Loc String
   | ClosedKeyword Loc String
-  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, NFData)
 
 data LogEntry
   = LogClosing Loc Time (Maybe Body)
@@ -268,7 +272,7 @@ data LogEntry
   | LogRefiling Loc Time (Maybe Body)
   | LogClock Loc Time (Maybe Duration)
   | LogBook Loc [LogEntry]
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 _LogLoc :: (Functor f) => (Loc -> f Loc) -> LogEntry -> f LogEntry
 _LogLoc f e = case e of
@@ -353,24 +357,24 @@ data Entry = Entry
     _entryBody :: Body,
     _entryItems :: [Entry]
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 data OrgFile = OrgFile
   { _orgFilePath :: FilePath,
     _orgFileHeader :: Header,
     _orgFileEntries :: [Entry]
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 data CollectionItem
   = OrgItem OrgFile
   | DataItem FilePath
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 newtype Collection = Collection
   { _items :: [CollectionItem]
   }
-  deriving (Show, Eq, Generic, Data, Typeable, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 previewIsh ::
   ((a -> Const (First a) a) -> s -> Const (First a) s) ->
