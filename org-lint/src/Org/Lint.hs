@@ -53,7 +53,7 @@ consistent :: (Eq a) => [a] -> Bool
 consistent [] = True
 consistent (x : xs) = foldl' (\b y -> b && x == y) True xs
 
-data LintMessageKind = LintDebug | LintInfo | LintWarn | LintError
+data LintMessageKind = LintDebug | LintAll | LintInfo | LintWarn | LintError
   deriving (Data, Show, Eq, Typeable, Generic, Enum, Bounded, Ord, NFData)
 
 parseLintMessageKind :: String -> Maybe LintMessageKind
@@ -61,6 +61,7 @@ parseLintMessageKind = \case
   "ERROR" -> Just LintError
   "WARN" -> Just LintWarn
   "INFO" -> Just LintInfo
+  "ALL" -> Just LintAll
   "DEBUG" -> Just LintDebug
   _ -> Nothing
 
@@ -312,7 +313,7 @@ lintOrgFile' cfg level org = do
               unless
                 ( if protocol == "file"
                     then pathExists tilde (org ^. orgFilePath) link
-                    else urlExists (protocol ++ link)
+                    else level > LintAll || urlExists (protocol ++ link)
                 )
                 $ report
                   LintError
@@ -533,7 +534,7 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
               unless
                 ( if protocol == "file"
                     then pathExists tilde (org ^. orgFilePath) link
-                    else urlExists (protocol ++ link)
+                    else level > LintAll || urlExists (protocol ++ link)
                 )
                 $ report
                   LintError
@@ -557,7 +558,7 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
               unless
                 ( if protocol == "file"
                     then pathExists tilde (org ^. orgFilePath) link
-                    else urlExists (protocol ++ link)
+                    else level > LintAll || urlExists (protocol ++ link)
                 )
                 $ report
                   LintError
@@ -912,6 +913,7 @@ showLintOrg fl (LintMessage ln kind code) =
       LintError -> "ERROR"
       LintWarn -> "WARN"
       LintInfo -> "INFO"
+      LintAll -> "ALL"
       LintDebug -> "DEBUG"
     renderCode = case code of
       FileSlugMismatch slug ->
