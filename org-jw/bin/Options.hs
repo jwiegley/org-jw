@@ -7,6 +7,7 @@
 
 module Options where
 
+import Data.Foldable (Foldable (..))
 import Data.GraphViz
 import Data.GraphViz.Attributes.Complete hiding (Paths)
 import Data.Map.Strict qualified as M
@@ -21,6 +22,7 @@ import Org.Types
 import Site.Options
 import Stats.Options
 import Trip.Options
+import Prelude hiding (Foldable (..))
 
 version :: String
 version = "0.0.1"

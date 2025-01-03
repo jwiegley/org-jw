@@ -20,7 +20,7 @@ import Data.ByteString.Base16 qualified as Base16
 import Data.Char (isLower, isUpper, toLower)
 import Data.Data (Data)
 import Data.Data.Lens
-import Data.Foldable (forM_)
+import Data.Foldable (Foldable (..), forM_)
 import Data.List (intercalate, isInfixOf)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
@@ -48,6 +48,7 @@ import System.Process
 import Text.Regex.TDFA
 import Text.Regex.TDFA.String ()
 import Text.Show.Pretty
+import Prelude hiding (Foldable (..))
 
 consistent :: (Eq a) => [a] -> Bool
 consistent [] = True
