@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           org-main
+name:           org-jw
 version:        0.0.1
 description:    Implementation of expression language used by the Tinderbox application
 author:         John Wiegley

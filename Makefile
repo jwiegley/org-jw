@@ -5,7 +5,7 @@ CABAL_FILES =					\
      org-cbor/org-cbor.cabal			\
      org-json/org-json.cabal			\
      org-lint/org-lint.cabal			\
-     org-main/org-main.cabal			\
+     org-jw/org-jw.cabal			\
      org-parse/org-parse.cabal			\
      org-print/org-print.cabal			\
      org-site/org-site.cabal			\
@@ -16,7 +16,7 @@ FIND_FILES = find -L ~/org/ \( -name template -type d -prune -o -name '*.org' \)
 all: $(CABAL_FILES)
 	cabal build all
 	$(FIND_FILES)					\
-	    | time cabal run org-main:exe:org --	\
+	    | time cabal run org-jw:exe:org --	\
 		--config ~/org/org.yaml			\
 		--keywords ~/org/org.dot		\
 		lint					\
@@ -30,7 +30,7 @@ lint: $(CABAL_FILES)
 	cabal build all
 	cd ~/org
 	$(FIND_FILES)					\
-	    | time cabal run org-main:exe:org --	\
+	    | time cabal run org-jw:exe:org --	\
 		--config ~/org/org.yaml			\
 		--keywords ~/org/org.dot		\
 		lint					\
@@ -42,7 +42,7 @@ lint: $(CABAL_FILES)
 json: $(CABAL_FILES)
 	cabal build all
 	$(FIND_FILES)				\
-	    | cabal run org-main:exe:org --	\
+	    | cabal run org-jw:exe:org --	\
 		--config ~/org/org.yaml		\
 		--keywords ~/org/org.dot	\
 		json				\
@@ -53,7 +53,7 @@ json: $(CABAL_FILES)
 trip: $(CABAL_FILES)
 	cabal build all
 	$(FIND_FILES)				\
-	    | cabal run org-main:exe:org --	\
+	    | cabal run org-jw:exe:org --	\
 		--config ~/org/org.yaml		\
 		--keywords ~/org/org.dot	\
 		trip				\
@@ -63,7 +63,7 @@ trip: $(CABAL_FILES)
 trip-update: $(CABAL_FILES)
 	cabal build all
 	$(FIND_FILES)				\
-	    | cabal run org-main:exe:org --	\
+	    | cabal run org-jw:exe:org --	\
 		--config ~/org/org.yaml		\
 		--keywords ~/org/org.dot	\
 		trip				\
@@ -74,7 +74,7 @@ trip-update: $(CABAL_FILES)
 stats: $(CABAL_FILES)
 	cabal build all
 	$(FIND_FILES)				\
-	    | cabal run org-main:exe:org --	\
+	    | cabal run org-jw:exe:org --	\
 		--config ~/org/org.yaml		\
 		--keywords ~/org/org.dot	\
 		stats				\
@@ -85,7 +85,7 @@ meeting-stats: $(CABAL_FILES)
 	cabal build all
 	find -L ~/org/journal/ -name '*.org' -type f -print0	\
 	    | xargs -0 egrep -l '^#\+filetags.*:kadena:'	\
-	    | cabal run org-main:exe:org --			\
+	    | cabal run org-jw:exe:org --			\
 		--config ~/org/org.yaml				\
 		--keywords ~/org/org.dot			\
 		stats						\
@@ -93,7 +93,7 @@ meeting-stats: $(CABAL_FILES)
 
 newartisans: $(CABAL_FILES)
 	cabal build all
-	cabal run org-main:exe:org --		\
+	cabal run org-jw:exe:org --		\
 	    --config ~/org/org.yaml		\
 	    --keywords ~/org/org.dot		\
 	    site				\
@@ -118,8 +118,8 @@ org-json/org-json.cabal: org-json/package.yaml
 org-lint/org-lint.cabal: org-lint/package.yaml
 	(cd org-lint; hpack -f)
 
-org-main/org-main.cabal: org-main/package.yaml
-	(cd org-main; hpack -f)
+org-jw/org-jw.cabal: org-jw/package.yaml
+	(cd org-jw; hpack -f)
 
 org-parse/org-parse.cabal: org-parse/package.yaml
 	(cd org-parse; hpack -f)

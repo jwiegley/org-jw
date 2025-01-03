@@ -43,6 +43,6 @@
           })
         ];
       in flake // {
-        packages.default = flake.packages."org-main:exe:org";
+        packages.default = flake.packages."org-jw:exe:org";
       });
 }

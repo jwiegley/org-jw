@@ -8,7 +8,7 @@ packages: org-types/
           org-print/
           org-filetags/
           org-site/
-          org-main/
+          org-jw/
 
 source-repository-package
     type: git
