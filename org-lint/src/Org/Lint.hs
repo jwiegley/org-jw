@@ -549,8 +549,11 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
         forM_ (e ^? property "NOTER_DOCUMENT") $ \doc ->
           case doc =~ ("(~/)?([^]:]+)" :: String) of
             AllTextSubmatches ([_, tilde, link] :: [String]) ->
-              unless (pathExists tilde (org ^. orgFilePath) link) $
-                report LintError (BrokenLink (tilde ++ link))
+              unless
+                ( pathExists tilde (org ^. orgFilePath) link
+                    || "devonthink" `isInfixOf` link
+                )
+                $ report LintError (BrokenLink (tilde ++ link))
             _ -> pure ()
         forM_ paragraphs $ \paragraph ->
           case paragraph
