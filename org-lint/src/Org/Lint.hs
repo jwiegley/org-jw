@@ -97,6 +97,7 @@ data LintMessageCode
   | WhitespaceAtStartOfLogEntry
   | FileTitleMissing
   | TitleWithExcessiveWhitespace
+  | OverlyLongHeadline
   | TimestampsOnNonTodo
   | InconsistentWhitespace String
   | InconsistentFilePreambleWhitespace
@@ -398,6 +399,8 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   ruleNoWhitespaceAtStartOfLogEntry
   -- RULE: No title has internal whitespace other than single spaces
   ruleNoExtraSpacesInTitle
+  -- RULE: No headline is too long
+  -- ruleNoOverlyLongHeadline
   -- RULE: No tag is duplicated
   ruleNoDuplicateTags
   -- RULE: No property is duplicated
@@ -586,6 +589,10 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
     ruleNoExtraSpacesInTitle =
       when ("  " `isInfixOf` (e ^. entryTitle)) $
         report LintWarn TitleWithExcessiveWhitespace
+
+    _ruleNoOverlyLongHeadline =
+      when (length (e ^. entryHeadline) > (96 - e ^. entryDepth)) $
+        report LintWarn OverlyLongHeadline
 
     ruleNoDuplicateTags =
       forM_ (findDuplicates (e ^. entryTags)) $ \tag ->
@@ -951,6 +958,8 @@ showLintOrg fl (LintMessage ln kind code) =
         "Title is missing"
       TitleWithExcessiveWhitespace ->
         "Title with excessive whitespace"
+      OverlyLongHeadline ->
+        "Headline is too long"
       DuplicateFileProperty nm ->
         "Duplicated file property " ++ show nm
       DuplicateProperty nm ->
