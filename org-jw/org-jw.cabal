@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.36.1.
+-- This file has been generated from package.yaml by hpack version 0.37.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -43,7 +43,7 @@ executable org
     , flatparse
     , flatparse-util
     , graphviz
-    , hakyll >=4.16.2.1
+    , hakyll >=4.16.6.0
     , lens
     , mtl
     , optparse-applicative

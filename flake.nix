@@ -27,18 +27,16 @@
                   tools = {
                     cabal = {};
                     haskell-language-server = {};
-                    # hlint = {};
-                    ghcid = {};
                   };
                   buildInputs = with pkgs; [
                     pkg-config
                   ];
                   withHoogle = true;
                 };
-                modules = [{
-                  enableLibraryProfiling = true;
-                  enableProfiling = true;
-                }];
+                # modules = [{
+                #   enableLibraryProfiling = true;
+                #   enableProfiling = true;
+                # }];
               };
           })
         ];
