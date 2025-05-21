@@ -751,10 +751,11 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
       when
         ( case e ^. entryBody of
             Body [Whitespace _ _] ->
-              ( e ^. entryTitle `elem` ["Notes", "Transcript"]
-                  && null (e ^. entryItems)
-              )
-                || maybe False (isTodo cfg) (e ^? keyword)
+              -- ( e ^. entryTitle `elem` ["Minutes", "Notes", "Transcript"]
+              --     && null (e ^. entryItems)
+              -- )
+              --   ||
+              maybe False (isTodo cfg) (e ^? keyword)
             _ -> False
         )
         $ report LintInfo EmptyBodyWhitespace
