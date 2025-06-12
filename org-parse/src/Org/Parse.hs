@@ -434,11 +434,20 @@ parseTimeSingle = do
            [|
              case _ of
                "+" ->
-                 pure $
-                   if repeatDotted
-                     then TimeDottedRepeat
-                     else TimeRepeat
-               "-" -> pure TimeWithin
+                 if repeatDotted
+                   then pure TimeDottedRepeat
+                   else do
+                     repeatPlus <- isJust <$> optional ($(char '+'))
+                     pure $
+                       if repeatPlus
+                         then TimeRepeatPlus
+                         else TimeRepeat
+               "-" ->
+                 if repeatDotted
+                   then do
+                     !loc <- getLoc
+                     err (loc, "Uenxpected period")
+                   else pure TimeWithin
              |]
        )
     _suffixNum <- read <$> some digitChar
@@ -449,9 +458,10 @@ parseTimeSingle = do
       $( switch
            [|
              case _ of
-               "m" -> pure MonthSpan
                "d" -> pure DaySpan
                "w" -> pure WeekSpan
+               "m" -> pure MonthSpan
+               "y" -> pure YearSpan
              |]
        )
     _suffixLargerSpan <- optional $ do
@@ -461,9 +471,10 @@ parseTimeSingle = do
         $( switch
              [|
                case _ of
-                 "m" -> pure MonthSpan
                  "d" -> pure DaySpan
                  "w" -> pure WeekSpan
+                 "m" -> pure MonthSpan
+                 "y" -> pure YearSpan
                |]
          )
       pure (num, s)

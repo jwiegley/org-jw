@@ -104,6 +104,7 @@ data TimeSpan
   = DaySpan
   | WeekSpan
   | MonthSpan
+  | YearSpan
   deriving
     ( Show,
       Eq,
@@ -135,6 +136,7 @@ data TimeKind
 
 data TimeSuffixKind
   = TimeRepeat
+  | TimeRepeatPlus
   | TimeDottedRepeat
   | TimeWithin
   deriving

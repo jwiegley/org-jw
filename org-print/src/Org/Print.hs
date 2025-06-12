@@ -97,6 +97,7 @@ showTimeSingle' splitTime Time {..} =
           [ " ",
             case _suffixKind of
               TimeRepeat -> "+"
+              TimeRepeatPlus -> "++"
               TimeDottedRepeat -> ".+"
               TimeWithin -> "-",
             show _suffixNum,
@@ -104,6 +105,7 @@ showTimeSingle' splitTime Time {..} =
               DaySpan -> "d"
               WeekSpan -> "w"
               MonthSpan -> "m"
+              YearSpan -> "y"
           ]
             ++ case _suffixLargerSpan of
               Nothing -> []
@@ -113,6 +115,7 @@ showTimeSingle' splitTime Time {..} =
                     DaySpan -> "d"
                     WeekSpan -> "w"
                     MonthSpan -> "m"
+                    YearSpan -> "y"
                 ]
       ++ [ end
          ]
