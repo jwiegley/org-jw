@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+find -L ~/org/ \(    \( -name .git -o -name template -o -name data \)   \
+                     -type d -prune                                     \
+                  -o -name '*.org'                                      \
+               \) -type f |                                             \
+    cabal run org-jw:exe:org --                                         \
+        --config ~/org/org.yaml                                         \
+        --keywords ~/org/org.dot                                        \
+        lint                                                            \
+        --round-trip                                                    \
+        -l INFO                                                         \
+        -F -                                                            \
+        +RTS -N

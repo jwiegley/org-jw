@@ -75,6 +75,7 @@ data TransitionKind
 data LintMessageCode
   = TodoMissingProperty String
   | FileMissingProperty String
+  | TaskMissingAssignment
   | TodoLinkDoesNotMatchUrl
   | TodoFileDoesNotMatchAttachment
   | ArchiveTagFileDoesNotExist FilePath
@@ -375,6 +376,8 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   --
   -- RULE: All TODO entries have ID and CREATED properties
   ruleTodoMustHaveIdAndCreated
+  -- RULE: All TASK entries must have a tag-indicated assignment
+  ruleTaskMustHaveAssignment
   -- RULE: A :LINK: tag implies a URL property, and vice versa
   ruleLinkTagMatchesUrlProperty
   -- RULE: A LINK keyword implies a :LINK: tag
@@ -439,6 +442,11 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
           report LintWarn (TodoMissingProperty "ID")
         when (isNothing (e ^? property "CREATED")) $
           report LintWarn (TodoMissingProperty "CREATED")
+
+    ruleTaskMustHaveAssignment = do
+      let mkw = e ^? entryKeyword . _Just . keywordString
+      when (mkw == Just "TASK" && null (e ^. entryTags)) $
+        report LintWarn TaskMissingAssignment
 
     ruleLinkTagMatchesUrlProperty =
       if e ^? entryKeyword . _Just . keywordString == Just "LINK"
@@ -942,6 +950,8 @@ showLintOrg fl (LintMessage ln kind code) =
         "Open todo missing property " ++ show nm
       FileMissingProperty nm ->
         "File missing property " ++ show nm
+      TaskMissingAssignment ->
+        "Task missing assignment"
       TodoLinkDoesNotMatchUrl ->
         ":LINK: tag does not match URL property"
       TodoFileDoesNotMatchAttachment ->
