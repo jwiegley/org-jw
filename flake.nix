@@ -42,5 +42,8 @@
         ];
       in flake // {
         packages.default = flake.packages."org-jw:exe:org";
+        devShells.default = flake.devShells.default // {
+          withHoogle = true;
+        };
       });
 }
