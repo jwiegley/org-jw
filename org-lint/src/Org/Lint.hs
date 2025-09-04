@@ -286,6 +286,8 @@ lintOrgFile' cfg level org = do
       when
         ( isJust (org ^? orgFileProperty "LAST_REVIEW")
             || isJust (org ^? orgFileProperty "NEXT_REVIEW")
+            || isJust (org ^? orgFileProperty "REVIEWS")
+            || isJust (org ^? orgFileProperty "Effort")
         )
         $ report LintWarn NonTodoWithReviewProperties
 
@@ -698,6 +700,8 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
         ( maybe True (not . isTodo cfg) (e ^? keyword)
             && ( isJust (e ^? property "LAST_REVIEW")
                    || isJust (e ^? property "NEXT_REVIEW")
+                   || isJust (e ^? property "REVIEWS")
+                   || isJust (e ^? property "Effort")
                )
         )
         $ report LintWarn NonTodoWithReviewProperties
