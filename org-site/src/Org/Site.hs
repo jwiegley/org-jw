@@ -267,7 +267,7 @@ siteRules now site@SiteConfiguration {..} = do
         defaultHakyllReaderOptions
         ( defaultHakyllWriterOptions
             { P.writerTableOfContents = True,
-              P.writerListings = True,
+              P.writerHighlightMethod = P.DefaultHighlighting,
               P.writerTOCDepth = 2
             }
         )
