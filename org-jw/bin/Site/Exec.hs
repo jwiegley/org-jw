@@ -31,8 +31,7 @@ execSite opts siteOpts (Collection (DataItem config : _)) = do
           deployCommand = siteDeploy siteConfig,
           inMemoryCache = True,
           previewHost = "127.0.0.1",
-          previewPort = 8000,
-          provideMetadata = pandocMetadata (Just (siteName siteConfig))
+          previewPort = 8000
         }
       Hakyll.Options
         { verbosity = Org.verbose opts,
