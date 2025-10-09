@@ -13,7 +13,7 @@ packages: org-types/
 source-repository-package
     type: git
     location: https://github.com/jwiegley/hakyll.git
-    tag: 1784bb74b0bfcaa0899c522f34f2063b92728bd8
-    --sha256: sha256-hNr59HQ5hwKctVTfBfgZZMPXJTohsFgAmLKjxuiHqHs=
+    tag: 9ce417ba817d539d98a53a173ecd50963a5ed8cf
+    --sha256: sha256-sVNOr5YOnatHhtUVtCthblIfGLdGETPWORh7oO7aCe4=
 
 allow-newer: hakyll:template-haskell

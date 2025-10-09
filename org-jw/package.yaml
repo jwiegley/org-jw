@@ -20,7 +20,7 @@ dependencies:
   - flatparse
   - flatparse-util
   - graphviz
-  - hakyll       >= 4.16.6.0
+  - hakyll       >= 4.16.7.1
   - lens
   - mtl
   - optparse-applicative
