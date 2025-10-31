@@ -118,6 +118,7 @@ data LintMessageCode
   | BrokenLink String
   | HashesDoNotMatch String String
   | FileFailsToRoundTrip
+  | AudioFileNotFound FilePath
   deriving (Show, Eq, Generic, NFData)
 
 data LintMessage = LintMessage
@@ -199,6 +200,8 @@ lintOrgFile' cfg level org = do
   ruleVerbVocabulary
   -- RULE: Check that all file links point to actual files
   ruleCheckAllLinks
+  -- RULE: Check that AUDIO property points to an existing file
+  ruleAudioFileExists
   -- RULE: No duplicated file properties outside of link and tags
   forM_ (findDuplicates (props ^.. traverse . name . to (map toLower))) $ \nm ->
     unless (nm `elem` ["link", "tags"]) $
@@ -329,6 +332,16 @@ lintOrgFile' cfg level org = do
                       )
                   )
             _ -> pure ()
+
+    ruleAudioFileExists =
+      forM_ (org ^? orgFileProperty "AUDIO") $ \audioPath -> do
+        let normalizedPath = case audioPath of
+              ('~' : '/' : rest) -> do
+                let home = unsafePerformIO getHomeDirectory
+                home </> rest
+              _ -> takeDirectory (org ^. orgFilePath) </> audioPath
+        unless (unsafePerformIO (doesFileExist normalizedPath)) $
+          report LintError (AudioFileNotFound audioPath)
 
     paragraphs = bodyString (has _Paragraph)
 
@@ -1057,3 +1070,5 @@ showLintOrg fl (LintMessage ln kind code) =
         "Hashes do not match: " ++ x ++ " != " ++ y
       FileFailsToRoundTrip ->
         "File fails to round trip through parsing and printing"
+      AudioFileNotFound path ->
+        "Audio file referenced in :AUDIO: property not found: " ++ path
