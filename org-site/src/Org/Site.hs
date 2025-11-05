@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -265,12 +266,21 @@ siteRules now site@SiteConfiguration {..} = do
       ident <- getUnderlying
       pandocCompilerWithTransformM
         defaultHakyllReaderOptions
+#if MIN_VERSION_pandoc(3,8,0)
         ( defaultHakyllWriterOptions
             { P.writerTableOfContents = True,
               P.writerHighlightMethod = P.NoHighlighting,
               P.writerTOCDepth = 2
             }
         )
+#else
+        ( defaultHakyllWriterOptions
+            { P.writerTableOfContents = True,
+              P.writerHighlightStyle = Nothing,
+              P.writerTOCDepth = 2
+            }
+        )
+#endif
         (unsafeCompiler . fixPostLinks ident)
       where
         fixPostLinks :: Identifier -> P.Pandoc -> IO P.Pandoc

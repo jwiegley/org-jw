@@ -36,5 +36,7 @@ library:
   source-dirs: src
   exposed-modules:
     - Org.Site
+  default-extensions:
+    - CPP
   dependencies:
     - org-types
