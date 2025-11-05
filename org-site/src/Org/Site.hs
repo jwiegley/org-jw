@@ -266,7 +266,7 @@ siteRules now site@SiteConfiguration {..} = do
       ident <- getUnderlying
       pandocCompilerWithTransformM
         defaultHakyllReaderOptions
-#if MIN_VERSION_pandoc(3,8,0)
+#if MIN_VERSION_pandoc(3,7,0)
         ( defaultHakyllWriterOptions
             { P.writerTableOfContents = True,
               P.writerHighlightMethod = P.NoHighlighting,
