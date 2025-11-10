@@ -21,12 +21,12 @@ import Data.Char (isLower, isUpper, toLower)
 import Data.Data (Data)
 import Data.Data.Lens
 import Data.Foldable (Foldable (..), forM_)
-import Data.List (intercalate, isInfixOf)
+import Data.List (intercalate, isInfixOf, isPrefixOf)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map (Map)
 import Data.Map qualified as M
-import Data.Maybe (isJust, isNothing)
+import Data.Maybe (fromMaybe, isJust, isNothing)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Typeable (Typeable)
@@ -143,7 +143,7 @@ lintOrgFiles cfg level xs =
                 (DuplicatedIdentifier k)
             ]
           )
-          | not (null locs)
+        | not (null locs)
         ]
    in M.unionWith (<>) (M.fromList ms) (M.fromList idMsgs)
   where
@@ -268,8 +268,11 @@ lintOrgFile' cfg level org = do
       forM_ (org ^? orgFileProperty "ARCHIVE") $ \path -> do
         let path' = takeWhile (/= ':') path
         unless
-          ( unsafePerformIO
-              (doesFileExist (takeDirectory (org ^. orgFilePath) </> path'))
+          ( pathExists
+              cfg
+              doesFileExist
+              (org ^. orgFilePath)
+              path'
           )
           $ report LintWarn (ArchiveTagFileDoesNotExist path')
 
@@ -316,32 +319,38 @@ lintOrgFile' cfg level org = do
       unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
         forM_ paragraphs $ \paragraph ->
           case paragraph
-            =~ ("\\[\\[(file:|https?:)(~/)?([^]:]+)" :: String) of
-            AllTextSubmatches ([_, protocol, tilde, link] :: [String]) ->
+            =~ ("\\[\\[(file:|https?:)([^]:]+)" :: String) of
+            AllTextSubmatches ([_, protocol, link] :: [String]) ->
               unless
                 ( if protocol == "file"
-                    then pathExists tilde (org ^. orgFilePath) link
+                    then
+                      pathExists
+                        cfg
+                        doesPathExist
+                        (org ^. orgFilePath)
+                        link
                     else level > LintAll || urlExists (protocol ++ link)
                 )
                 $ report
                   LintError
                   ( BrokenLink
                       ( if protocol == "file"
-                          then tilde ++ link
+                          then link
                           else protocol ++ link
                       )
                   )
             _ -> pure ()
 
     ruleAudioFileExists =
-      forM_ (org ^? orgFileProperty "AUDIO") $ \audioPath -> do
-        let normalizedPath = case audioPath of
-              ('~' : '/' : rest) -> do
-                let home = unsafePerformIO getHomeDirectory
-                home </> rest
-              _ -> takeDirectory (org ^. orgFilePath) </> audioPath
-        unless (unsafePerformIO (doesFileExist normalizedPath)) $
-          report LintError (AudioFileNotFound audioPath)
+      forM_ (org ^? orgFileProperty "AUDIO") $ \audioPath ->
+        unless
+          ( pathExists
+              cfg
+              doesFileExist
+              (org ^. orgFilePath)
+              audioPath
+          )
+          $ report LintError (AudioFileNotFound audioPath)
 
     paragraphs = bodyString (has _Paragraph)
 
@@ -487,8 +496,11 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
       forM_ (e ^? property "ARCHIVE") $ \path -> do
         let path' = takeWhile (/= ':') path
         unless
-          ( unsafePerformIO
-              (doesFileExist (takeDirectory (org ^. orgFilePath) </> path'))
+          ( pathExists
+              cfg
+              doesFileExist
+              (org ^. orgFilePath)
+              path'
           )
           $ report LintWarn (ArchiveTagFileDoesNotExist path')
 
@@ -509,7 +521,13 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
                        (cfg ^. attachmentsDir)
                          </> take 2 ident
                          </> drop 2 ident
-                  in not (unsafePerformIO (doesDirectoryExist dir))
+                  in not
+                       ( pathExists
+                           cfg
+                           doesDirectoryExist
+                           (org ^. orgFilePath)
+                           dir
+                       )
           )
           $ report LintWarn TodoFileDoesNotMatchAttachment
 
@@ -556,45 +574,55 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
       unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $ do
         forM_ (e ^? property "URL") $ \doc ->
           case doc
-            =~ ("\\[\\[(file:|https?:)(~/)?([^]:]+)" :: String) of
-            AllTextSubmatches ([_, protocol, tilde, link] :: [String]) ->
+            =~ ("\\[\\[(file:|https?:)([^]:]+)" :: String) of
+            AllTextSubmatches ([_, protocol, link] :: [String]) ->
               unless
                 ( if protocol == "file"
-                    then pathExists tilde (org ^. orgFilePath) link
+                    then
+                      pathExists
+                        cfg
+                        doesPathExist
+                        (org ^. orgFilePath)
+                        link
                     else level > LintAll || urlExists (protocol ++ link)
                 )
                 $ report
                   LintError
                   ( BrokenLink
                       ( if protocol == "file"
-                          then tilde ++ link
+                          then link
                           else protocol ++ link
                       )
                   )
             _ -> pure ()
         forM_ (e ^? property "NOTER_DOCUMENT") $ \doc ->
-          case doc =~ ("(~/)?([^]:]+)" :: String) of
-            AllTextSubmatches ([_, tilde, link] :: [String]) ->
+          case doc =~ ("([^]:]+)" :: String) of
+            AllTextSubmatches ([_, link] :: [String]) ->
               unless
-                ( pathExists tilde (org ^. orgFilePath) link
+                ( pathExists cfg doesPathExist (org ^. orgFilePath) link
                     || "devonthink" `isInfixOf` link
                 )
-                $ report LintError (BrokenLink (tilde ++ link))
+                $ report LintError (BrokenLink link)
             _ -> pure ()
         forM_ paragraphs $ \paragraph ->
           case paragraph
-            =~ ("\\[\\[(file:|https?:)(~/)?([^]:]+)" :: String) of
-            AllTextSubmatches ([_, protocol, tilde, link] :: [String]) ->
+            =~ ("\\[\\[(file:|https?:)([^]:]+)" :: String) of
+            AllTextSubmatches ([_, protocol, link] :: [String]) ->
               unless
                 ( if protocol == "file"
-                    then pathExists tilde (org ^. orgFilePath) link
+                    then
+                      pathExists
+                        cfg
+                        doesPathExist
+                        (org ^. orgFilePath)
+                        link
                     else level > LintAll || urlExists (protocol ++ link)
                 )
                 $ report
                   LintError
                   ( BrokenLink
                       ( if protocol == "file"
-                          then tilde ++ link
+                          then link
                           else protocol ++ link
                       )
                   )
@@ -646,7 +674,7 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
               -- indicates that state entries are from most recent to least
               -- recent.
               (reverse (e ^.. entryStateHistory))
-          )
+        )
           $ \(mprev, mprevTm) l -> do
             let mkwt' = l ^? _LogState . _2
                 mkwf' = l ^? _LogState . _3 . _Just
@@ -919,12 +947,12 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
 
     report = report' (e ^. entryLoc)
 
-pathExists :: String -> FilePath -> FilePath -> Bool
-pathExists tilde path link = unsafePerformIO $ do
+pathExists :: Config -> (FilePath -> IO Bool) -> FilePath -> FilePath -> Bool
+pathExists cfg k path link = unsafePerformIO $ do
   home <- getHomeDirectory
-  doesPathExist
-    ( if tilde == "~/"
-        then home </> link
+  k
+    ( if "~/" `isPrefixOf` link
+        then fromMaybe home (cfg ^. homeDirectory) </> drop 2 link
         else takeDirectory path </> link
     )
 
