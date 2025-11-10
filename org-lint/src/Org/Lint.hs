@@ -948,13 +948,15 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
     report = report' (e ^. entryLoc)
 
 pathExists :: Config -> (FilePath -> IO Bool) -> FilePath -> FilePath -> Bool
-pathExists cfg k path link = unsafePerformIO $ do
-  home <- getHomeDirectory
-  k
-    ( if "~/" `isPrefixOf` link
-        then fromMaybe home (cfg ^. homeDirectory) </> drop 2 link
-        else takeDirectory path </> link
-    )
+pathExists cfg k path link
+  | cfg ^. checkFiles = True
+  | otherwise = unsafePerformIO $ do
+      home <- getHomeDirectory
+      k
+        ( if "~/" `isPrefixOf` link
+            then fromMaybe home (cfg ^. homeDirectory) </> drop 2 link
+            else takeDirectory path </> link
+        )
 
 urlExists :: String -> Bool
 urlExists url = unsafePerformIO $ do
