@@ -949,7 +949,7 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
 
 pathExists :: Config -> (FilePath -> IO Bool) -> FilePath -> FilePath -> Bool
 pathExists cfg k path link
-  | cfg ^. checkFiles = True
+  | not (cfg ^. checkFiles) = True
   | otherwise = unsafePerformIO $ do
       home <- getHomeDirectory
       k
