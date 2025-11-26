@@ -25,10 +25,10 @@ import Trip.Options
 import Prelude hiding (Foldable (..))
 
 version :: String
-version = "0.0.1"
+version = "1.0.0"
 
 copyright :: String
-copyright = "2024"
+copyright = "2025"
 
 tradeJournalSummary :: String
 tradeJournalSummary =
