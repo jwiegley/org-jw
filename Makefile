@@ -11,7 +11,7 @@ CABAL_FILES =					\
      org-site/org-site.cabal			\
      org-types/org-types.cabal
 
-FIND_FILES = find -L ~/org/ \( -name template -type d -prune -o -name '*.org' \) -type f
+FIND_FILES = find -L ~/org \( \( -name .git -o -name template -o -name data \) -type d -prune -o -name '*.org' \) -type f
 
 all: $(CABAL_FILES)
 	cabal build all
