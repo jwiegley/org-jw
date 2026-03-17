@@ -1,0 +1,84 @@
+name: CI
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Formatting (fourmolu)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: haskell-actions/run-fourmolu@v10
+      with:
+        pattern: |
+          flatparse-util/**/*.hs
+          org-cbor/**/*.hs
+          org-data/**/*.hs
+          org-filetags/**/*.hs
+          org-json/**/*.hs
+          org-jw/**/*.hs
+          org-lint/**/*.hs
+          org-parse/**/*.hs
+          org-print/**/*.hs
+          org-site/**/*.hs
+          org-types/**/*.hs
+
+  lint:
+    name: Lint (hlint)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: haskell-actions/hlint-run@v2
+      with:
+        path: |
+          flatparse-util/
+          org-cbor/
+          org-data/
+          org-filetags/
+          org-json/
+          org-jw/
+          org-lint/
+          org-parse/
+          org-print/
+          org-site/
+          org-types/
+        fail-on: warning
+
+  build:
+    name: Build (GHC 9.10)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: haskell-actions/setup@v2
+      with:
+        ghc-version: '9.10'
+        cabal-version: '3.12'
+
+    - name: Cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cabal/packages
+          ~/.cabal/store
+          dist-newstyle
+        key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/cabal.project') }}
+        restore-keys: |
+          ${{ runner.os }}-cabal-
+
+    - name: Install dependencies
+      run: cabal v2-update
+
+    - name: Build (warnings as errors)
+      run: cabal v2-build all --ghc-options="-Werror"
+
+    - name: Build Haddock documentation
+      run: cabal haddock all
+
+    - name: Upload Haddock docs
+      uses: actions/upload-artifact@v4
+      with:
+        name: haddock-docs
+        path: dist-newstyle/build/**/doc/html/
