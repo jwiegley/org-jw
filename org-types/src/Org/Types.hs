@@ -13,55 +13,55 @@ import Data.Functor.Identity (Identity (..))
 import Data.Hashable (Hashable)
 import Data.Maybe (fromMaybe)
 import Data.Monoid (First (..))
-import Data.Time
-  ( Day (ModifiedJulianDay),
-    UTCTime (..),
-    diffTimeToPicoseconds,
-    secondsToDiffTime,
-  )
+import Data.Time (
+  Day (ModifiedJulianDay),
+  UTCTime (..),
+  diffTimeToPicoseconds,
+  secondsToDiffTime,
+ )
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
 data Config = Config
-  { _startKeywords :: [String],
-    _openKeywords :: [String],
-    _closedKeywords :: [String],
-    _keywordTransitions :: [(String, [String])],
-    _homeDirectory :: Maybe FilePath,
-    _checkFiles :: Bool,
-    _priorities :: [String],
-    _propertyColumn :: Int,
-    _tagsColumn :: Int,
-    _attachmentsDir :: FilePath
+  { _startKeywords :: [String]
+  , _openKeywords :: [String]
+  , _closedKeywords :: [String]
+  , _keywordTransitions :: [(String, [String])]
+  , _homeDirectory :: Maybe FilePath
+  , _checkFiles :: Bool
+  , _priorities :: [String]
+  , _propertyColumn :: Int
+  , _tagsColumn :: Int
+  , _attachmentsDir :: FilePath
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 defaultConfig :: Config
 defaultConfig =
   Config
-    { _startKeywords = [],
-      _openKeywords = [],
-      _closedKeywords = [],
-      _keywordTransitions = [],
-      _homeDirectory = Nothing,
-      _checkFiles = True,
-      _priorities = [],
-      _propertyColumn = 0,
-      _tagsColumn = 0,
-      _attachmentsDir = ""
+    { _startKeywords = []
+    , _openKeywords = []
+    , _closedKeywords = []
+    , _keywordTransitions = []
+    , _homeDirectory = Nothing
+    , _checkFiles = True
+    , _priorities = []
+    , _propertyColumn = 0
+    , _tagsColumn = 0
+    , _attachmentsDir = ""
     }
 
 data Loc = Loc
-  { _file :: FilePath,
-    _pos :: Int
+  { _file :: FilePath
+  , _pos :: Int
   }
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, NFData)
 
 data Property = Property
-  { _propertyLoc :: Loc,
-    _inherited :: Bool,
-    _name :: String,
-    _value :: String
+  { _propertyLoc :: Loc
+  , _inherited :: Bool
+  , _name :: String
+  , _value :: String
   }
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, NFData)
 
@@ -110,32 +110,32 @@ data TimeSpan
   | MonthSpan
   | YearSpan
   deriving
-    ( Show,
-      Eq,
-      Ord,
-      Enum,
-      Bounded,
-      Generic,
-      Data,
-      Typeable,
-      Hashable,
-      NFData
+    ( Show
+    , Eq
+    , Ord
+    , Enum
+    , Bounded
+    , Generic
+    , Data
+    , Typeable
+    , Hashable
+    , NFData
     )
 
 data TimeKind
   = ActiveTime
   | InactiveTime
   deriving
-    ( Show,
-      Eq,
-      Ord,
-      Enum,
-      Bounded,
-      Generic,
-      Data,
-      Typeable,
-      Hashable,
-      NFData
+    ( Show
+    , Eq
+    , Ord
+    , Enum
+    , Bounded
+    , Generic
+    , Data
+    , Typeable
+    , Hashable
+    , NFData
     )
 
 data TimeSuffixKind
@@ -144,46 +144,46 @@ data TimeSuffixKind
   | TimeDottedRepeat
   | TimeWithin
   deriving
-    ( Show,
-      Eq,
-      Ord,
-      Enum,
-      Bounded,
-      Generic,
-      Data,
-      Typeable,
-      Hashable,
-      NFData
+    ( Show
+    , Eq
+    , Ord
+    , Enum
+    , Bounded
+    , Generic
+    , Data
+    , Typeable
+    , Hashable
+    , NFData
     )
 
 data TimeSuffix = TimeSuffix
-  { _suffixKind :: TimeSuffixKind,
-    _suffixNum :: Integer,
-    _suffixSpan :: TimeSpan,
-    _suffixLargerSpan :: Maybe (Integer, TimeSpan)
+  { _suffixKind :: TimeSuffixKind
+  , _suffixNum :: Integer
+  , _suffixSpan :: TimeSpan
+  , _suffixLargerSpan :: Maybe (Integer, TimeSpan)
   }
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, NFData)
 
 data Time = Time
-  { _timeKind :: TimeKind,
-    _timeDay :: Integer,
-    _timeDayEnd :: Maybe Integer,
-    -- | This is a quantity of minutes into the day.
-    _timeStart :: Maybe Integer,
-    -- | This is a quantity of minutes into the day.
-    _timeEnd :: Maybe Integer,
-    _timeSuffix :: Maybe TimeSuffix
+  { _timeKind :: TimeKind
+  , _timeDay :: Integer
+  , _timeDayEnd :: Maybe Integer
+  , _timeStart :: Maybe Integer
+  -- ^ This is a quantity of minutes into the day.
+  , _timeEnd :: Maybe Integer
+  -- ^ This is a quantity of minutes into the day.
+  , _timeSuffix :: Maybe TimeSuffix
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 timeStartToUTCTime :: Time -> UTCTime
-timeStartToUTCTime Time {..} =
+timeStartToUTCTime Time{..} =
   UTCTime
     (ModifiedJulianDay _timeDay)
     (secondsToDiffTime $ fromMaybe 0 _timeStart * 60)
 
 timeEndToUTCTime :: Time -> Maybe UTCTime
-timeEndToUTCTime Time {..} = do
+timeEndToUTCTime Time{..} = do
   day <- _timeDayEnd
   pure $
     UTCTime
@@ -193,25 +193,25 @@ timeEndToUTCTime Time {..} = do
 utcTimeToTime :: TimeKind -> UTCTime -> Time
 utcTimeToTime kind (UTCTime (ModifiedJulianDay day) diff) =
   Time
-    { _timeKind = kind,
-      _timeDay = day,
-      _timeDayEnd = Nothing,
-      _timeStart =
+    { _timeKind = kind
+    , _timeDay = day
+    , _timeDayEnd = Nothing
+    , _timeStart =
         Just
           ( diffTimeToPicoseconds diff
               `div` ((10 :: Integer) ^ (12 :: Integer))
               `div` 60
-          ),
-      _timeEnd = Nothing,
-      _timeSuffix = Nothing
+          )
+    , _timeEnd = Nothing
+    , _timeSuffix = Nothing
     }
 
 instance Ord Time where
   compare = compare `on` timeStartToUTCTime
 
 data Duration = Duration
-  { _hours :: Integer,
-    _mins :: Integer
+  { _hours :: Integer
+  , _mins :: Integer
   }
   deriving (Show, Eq, Ord, Generic, Data, Typeable, Hashable, NFData)
 
@@ -254,9 +254,9 @@ isLeadingStamp (DeadlineStamp _ _) = True
 isLeadingStamp _ = False
 
 data Header = Header
-  { _headerPropertiesDrawer :: [Property],
-    _headerFileProperties :: [Property],
-    -- _headerTags :: [Tag],
+  { _headerPropertiesDrawer :: [Property]
+  , _headerFileProperties :: [Property]
+  , -- _headerTags :: [Tag],
     -- _headerStamps :: [Stamp],
     _headerPreamble :: Body
   }
@@ -323,7 +323,7 @@ _LogTime f e = case e of
     (\t' -> LogRefiling loc t' mbody) <$> f t
   LogClock loc t mbody ->
     (\t' -> LogClock loc t' mbody) <$> f t
-  LogBook {} -> pure e
+  LogBook{} -> pure e
 
 _LogBody :: (Applicative f) => (Body -> f Body) -> LogEntry -> f LogEntry
 _LogBody f e = case e of
@@ -343,32 +343,32 @@ _LogBody f e = case e of
     LogNoDeadline loc t1 t2 <$> traverse f mbody
   LogRefiling loc t mbody ->
     LogRefiling loc t <$> traverse f mbody
-  LogClock {} -> pure e
-  LogBook {} -> pure e
+  LogClock{} -> pure e
+  LogBook{} -> pure e
 
 data Entry = Entry
-  { _entryLoc :: Loc,
-    _entryDepth :: Int,
-    _entryKeyword :: Maybe Keyword,
-    _entryPriority :: Maybe String,
-    _entryHeadline :: String,
-    _entryVerb :: Maybe String,
-    _entryTitle :: String,
-    _entryContext :: Maybe String,
-    _entryLocator :: Maybe String,
-    _entryTags :: [Tag],
-    _entryStamps :: [Stamp],
-    _entryProperties :: [Property],
-    _entryLogEntries :: [LogEntry],
-    _entryBody :: Body,
-    _entryItems :: [Entry]
+  { _entryLoc :: Loc
+  , _entryDepth :: Int
+  , _entryKeyword :: Maybe Keyword
+  , _entryPriority :: Maybe String
+  , _entryHeadline :: String
+  , _entryVerb :: Maybe String
+  , _entryTitle :: String
+  , _entryContext :: Maybe String
+  , _entryLocator :: Maybe String
+  , _entryTags :: [Tag]
+  , _entryStamps :: [Stamp]
+  , _entryProperties :: [Property]
+  , _entryLogEntries :: [LogEntry]
+  , _entryBody :: Body
+  , _entryItems :: [Entry]
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 
 data OrgFile = OrgFile
-  { _orgFilePath :: FilePath,
-    _orgFileHeader :: Header,
-    _orgFileEntries :: [Entry]
+  { _orgFilePath :: FilePath
+  , _orgFileHeader :: Header
+  , _orgFileEntries :: [Entry]
   }
   deriving (Show, Eq, Generic, Data, Typeable, Hashable, NFData)
 

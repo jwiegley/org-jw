@@ -1,13 +1,10 @@
-{-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Site.Exec where
 
 import Data.Time
-import Hakyll as Hakyll
+import Hakyll
 import Options as Org
 import Org.Site
 import Org.Types
@@ -24,19 +21,19 @@ execSite opts siteOpts (Collection (DataItem config : _)) = do
   withCurrentDirectory (takeDirectory config) $
     hakyllWithArgs
       defaultConfiguration
-        { destinationDirectory = "_site",
-          storeDirectory = "_cache",
-          tmpDirectory = "_cache/tmp",
-          providerDirectory = ".",
-          deployCommand = siteDeploy siteConfig,
-          inMemoryCache = True,
-          previewHost = "127.0.0.1",
-          previewPort = 8000,
-          provideMetadata = pandocMetadata (Just (siteName siteConfig))
+        { destinationDirectory = "_site"
+        , storeDirectory = "_cache"
+        , tmpDirectory = "_cache/tmp"
+        , providerDirectory = "."
+        , deployCommand = siteDeploy siteConfig
+        , inMemoryCache = True
+        , previewHost = "127.0.0.1"
+        , previewPort = 8000
+        , provideMetadata = pandocMetadata (Just (siteName siteConfig))
         }
       Hakyll.Options
-        { verbosity = Org.verbose opts,
-          optCommand = Site._hakyllCommand siteOpts
+        { verbosity = Org.verbose opts
+        , optCommand = Site._hakyllCommand siteOpts
         }
       (siteRules now siteConfig)
 execSite _ _ _ = do

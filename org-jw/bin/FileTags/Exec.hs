@@ -1,7 +1,5 @@
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module FileTags.Exec where
@@ -28,7 +26,7 @@ execTags _cfg opts coll = case opts ^. command of
       dir
       overwrite
       depth
-      (tagForUntagged)
+      tagForUntagged
       (collectionPaths coll)
   Filter dryRun dir overwrite expr ->
     makeFilter dryRun dir overwrite expr (collectionPaths coll)

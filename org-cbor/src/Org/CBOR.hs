@@ -19,7 +19,7 @@
 module Org.CBOR (orgFileToCBOR, orgFileFromCBOR) where
 
 import Codec.Serialise
-import Data.Bifunctor
+import Data.Bifunctor (first)
 import Data.ByteString.Lazy qualified as B
 import Org.Types
 
@@ -65,4 +65,4 @@ orgFileToCBOR :: FilePath -> OrgFile -> IO ()
 orgFileToCBOR path org = B.writeFile path (serialise org)
 
 orgFileFromCBOR :: FilePath -> IO (Either String OrgFile)
-orgFileFromCBOR path = bimap show id . deserialiseOrFail <$> B.readFile path
+orgFileFromCBOR path = first show . deserialiseOrFail <$> B.readFile path

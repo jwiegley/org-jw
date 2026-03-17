@@ -1,7 +1,5 @@
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
@@ -64,25 +62,25 @@ execLint cfg opts (Collection xs) = do
       putStrLn $ show (length xs) ++ " files passed lint"
       exitSuccess
     else exitWith (ExitFailure n')
-  where
-    orgItems = xs ^.. traverse . _OrgItem
+ where
+  orgItems = xs ^.. traverse . _OrgItem
 
-    findPositions :: FilePath -> [LintMessage] -> IO [LintMessage]
-    findPositions path msgs = do
-      contents <- B.readFile path
-      let poss = map (\(LintMessage p _ _) -> FP.Pos p) msgs
-          linesCols = FP.posLineCols contents poss
-      pure $
-        zipWith
-          ( curry
-              ( \((ln, _col), LintMessage _ k c) ->
-                  LintMessage (succ ln) k c
-              )
-          )
-          linesCols
-          msgs
+  findPositions :: FilePath -> [LintMessage] -> IO [LintMessage]
+  findPositions path msgs = do
+    contents <- B.readFile path
+    let poss = map (\(LintMessage p _ _) -> FP.Pos p) msgs
+        linesCols = FP.posLineCols contents poss
+    pure $
+      zipWith
+        ( curry
+            ( \((ln, _col), LintMessage _ k c) ->
+                LintMessage (succ ln) k c
+            )
+        )
+        linesCols
+        msgs
 
-    writeOrgFile h org = do
-      forM_ (showOrgFile cfg org) $
-        hPutStrLn h
-      hClose h
+  writeOrgFile h org = do
+    forM_ (showOrgFile cfg org) $
+      hPutStrLn h
+    hClose h

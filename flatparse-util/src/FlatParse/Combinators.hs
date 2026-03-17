@@ -33,9 +33,9 @@ count ::
   FP.Parser r e a ->
   FP.Parser r e [a]
 count cnt p = go cnt
-  where
-    go 0 = pure []
-    go n = (:) <$> p <*> go (pred n)
+ where
+  go 0 = pure []
+  go n = (:) <$> p <*> go (pred n)
 
 between ::
   FP.Parser r e () ->
@@ -68,31 +68,31 @@ manyTill ::
   FP.Parser r e () ->
   FP.Parser r e [a]
 manyTill p e = go []
-  where
-    go acc =
-      (reverse acc <$ e)
-        <|> (go . (: acc) =<< p)
+ where
+  go acc =
+    (reverse acc <$ e)
+      <|> (go . (: acc) =<< p)
 
 manyTill_ ::
   FP.Parser r e a ->
   FP.Parser r e end ->
   FP.Parser r e ([a], end)
 manyTill_ p e = go []
-  where
-    go !acc = do
-      (let !y = reverse acc in ((y,) <$> e))
-        <|> (go . (: acc) =<< p)
+ where
+  go !acc = do
+    (let !y = reverse acc in ((y,) <$> e))
+      <|> (go . (: acc) =<< p)
 
 someTill ::
   FP.Parser r e a ->
   FP.Parser r e () ->
   FP.Parser r e [a]
 someTill p e = go []
-  where
-    go acc = do
-      x <- p
-      ((x : acc) <$ e)
-        <|> go (x : acc)
+ where
+  go acc = do
+    x <- p
+    ((x : acc) <$ e)
+      <|> go (x : acc)
 
 newline :: FP.Parser r e ()
 newline = $(char '\n')

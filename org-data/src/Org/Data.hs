@@ -133,10 +133,10 @@ fileNameRe ::
   FP.Parser
     r
     String
-    ( Maybe FilePath,
-      FilePath,
-      Maybe [String],
-      Maybe FilePath
+    ( Maybe FilePath
+    , FilePath
+    , Maybe [String]
+    , Maybe FilePath
     )
 fileNameRe = do
   date <- optional (pDate <* optional pDateSlugSeparator)
@@ -144,37 +144,37 @@ fileNameRe = do
   tags <- optional pTags
   ext <- optional pExt
   pure (date, slug, words <$> tags, ext)
-  where
-    pDate =
-      try $
-        (++)
-          <$> count 8 (satisfy isDigit)
-          <*> many (satisfy isDigit)
-    pDateSlugSeparator = $(char '-') <|> $(char '_')
-    pSlug = do
-      manyTill
-        anyChar
-        (lookahead (void pTags <|> void pExt <|> eof))
-    pTags =
-      try
-        ( spaces_
-            *> $(string "--")
-            *> spaces_
-            *> someTill anyChar (lookahead ($(char '.') <|> eof))
+ where
+  pDate =
+    try $
+      (++)
+        <$> count 8 (satisfy isDigit)
+        <*> many (satisfy isDigit)
+  pDateSlugSeparator = $(char '-') <|> $(char '_')
+  pSlug = do
+    manyTill
+      anyChar
+      (lookahead (void pTags <|> void pExt <|> eof))
+  pTags =
+    try
+      ( spaces_
+          *> $(string "--")
+          *> spaces_
+          *> someTill anyChar (lookahead ($(char '.') <|> eof))
+      )
+      <|> try
+        ( skipMany singleSpace
+            *> between
+              $(char '[')
+              $(char ']')
+              (someTill anyChar (lookahead $(char ']')))
         )
-        <|> try
-          ( skipMany singleSpace
-              *> between
-                $(char '[')
-                $(char ']')
-                (someTill anyChar (lookahead $(char ']')))
-          )
-    pExt = try $ do
-      _ <- $(char '.')
-      str <- many anyChar <* eof
-      when ("." `isInfixOf` str) $
-        err "Error parsing file extension"
-      pure str
+  pExt = try $ do
+    _ <- $(char '.')
+    str <- many anyChar <* eof
+    when ("." `isInfixOf` str) $
+      err "Error parsing file extension"
+    pure str
 
 fileNameReTest :: IO ()
 fileNameReTest = do
@@ -271,32 +271,32 @@ fileNameReTest = do
   test
     "foo.."
     (Nothing, "foo.", Nothing, Just "")
-  where
-    test ::
-      FilePath ->
-      ( Maybe FilePath,
-        FilePath,
-        Maybe [String],
-        Maybe FilePath
-      ) ->
-      IO ()
-    test path expect = do
-      let res =
-            parseMaybe
-              ("<path \"" ++ path ++ "\">", defaultConfig)
-              fileNameRe
-              (T.encodeUtf8 (T.pack path))
-      unless (res == Just expect) $
-        error $
-          "Failed to parse " ++ show path ++ ", got: " ++ show res
+ where
+  test ::
+    FilePath ->
+    ( Maybe FilePath
+    , FilePath
+    , Maybe [String]
+    , Maybe FilePath
+    ) ->
+    IO ()
+  test path expect = do
+    let res =
+          parseMaybe
+            ("<path \"" ++ path ++ "\">", defaultConfig)
+            fileNameRe
+            (T.encodeUtf8 (T.pack path))
+    unless (res == Just expect) $
+      error $
+        "Failed to parse " ++ show path ++ ", got: " ++ show res
 
 fileNameParts ::
   Lens'
     FilePath
-    ( Maybe FilePath,
-      FilePath,
-      Maybe [String],
-      Maybe FilePath
+    ( Maybe FilePath
+    , FilePath
+    , Maybe [String]
+    , Maybe FilePath
     )
 fileNameParts f nm = do
   case runParser fileNameRe () 0 (T.encodeUtf8 (T.pack nm)) of
@@ -364,24 +364,24 @@ sluggify =
     . changeCertainCharacters
     . removeCertainCharacters
     . map toLower
-  where
-    dropMultipleUnderscores =
-      intercalate "_" . filter (not . null) . splitOn "_"
-    squashNonAlphanumerics =
-      map (\c -> if isAlphaNum c then c else '_')
-    changeCertainCharacters =
-      map
-        ( \c ->
-            if
-              | c == 'á' -> 'a'
-              | c == 'í' -> 'i'
-              | c == 'ú' -> 'u'
-              | otherwise -> c
-        )
-    removeCertainCharacters =
-      filter (\c -> c `notElem` ['’', '‘', '“', '”', '`', '\''])
-    useDashes =
-      map (\c -> if c == '_' then '-' else c)
+ where
+  dropMultipleUnderscores =
+    intercalate "_" . filter (not . null) . splitOn "_"
+  squashNonAlphanumerics =
+    map (\c -> if isAlphaNum c then c else '_')
+  changeCertainCharacters =
+    map
+      ( \c ->
+          if
+            | c == 'á' -> 'a'
+            | c == 'í' -> 'i'
+            | c == 'ú' -> 'u'
+            | otherwise -> c
+      )
+  removeCertainCharacters =
+    filter (\c -> c `notElem` ['’', '‘', '“', '”', '`', '\''])
+  useDashes =
+    map (\c -> if c == '_' then '-' else c)
 
 fileSlug :: Fold CollectionItem String
 fileSlug =
@@ -454,55 +454,56 @@ anyProperty cfg n =
 specialProperties :: Config -> [(String, ReifiedFold Entry String)]
 specialProperties cfg =
   [ -- All tags, including inherited ones.
-    ("ALLTAGS", undefined),
-    -- t if task is currently blocked by children or siblings.
-    ("BLOCKED", undefined),
-    -- The category of an entry. jww (2024-05-13): NYI
-    ("CATEGORY", Fold (entryLoc . file)),
-    -- The sum of CLOCK intervals in the subtree. org-clock-sum must be run
+    ("ALLTAGS", undefined)
+  , -- t if task is currently blocked by children or siblings.
+    ("BLOCKED", undefined)
+  , -- The category of an entry. jww (2024-05-13): NYI
+    ("CATEGORY", Fold (entryLoc . file))
+  , -- The sum of CLOCK intervals in the subtree. org-clock-sum must be run
     -- first to compute the values in the current buffer.
-    ("CLOCKSUM", undefined),
-    -- The sum of CLOCK intervals in the subtree for today.
+    ("CLOCKSUM", undefined)
+  , -- The sum of CLOCK intervals in the subtree for today.
     -- org-clock-sum-today must be run first to compute the values in the
     -- current buffer.
-    ("CLOCKSUM_T", undefined),
-    -- When was this entry closed?
-    ("CLOSED", Fold (closedTime . re _Time)),
-    -- The deadline timestamp.
-    ("DEADLINE", Fold (deadlineTime . re _Time)),
-    -- The filename the entry is located in.
-    ("FILE", Fold (entryLoc . file)),
-    -- The headline of the entry.
-    ("ITEM", Fold entryHeadline),
-    -- The priority of the entry, a string with a single letter.
-    ("PRIORITY", Fold (entryPriority . _Just)),
-    -- The scheduling timestamp.
-    ("SCHEDULED", Fold (scheduledTime . re _Time)),
-    -- The tags defined directly in the headline.
-    ("TAGS", Fold entryTagString),
-    -- The first keyword-less timestamp in the entry.
-    ("TIMESTAMP", undefined),
-    -- The first inactive timestamp in the entry.
-    ("TIMESTAMP_IA", undefined),
-    -- The TODO keyword of the entry.
-    ( "TODO",
-      Fold
+    ("CLOCKSUM_T", undefined)
+  , -- When was this entry closed?
+    ("CLOSED", Fold (closedTime . re _Time))
+  , -- The deadline timestamp.
+    ("DEADLINE", Fold (deadlineTime . re _Time))
+  , -- The filename the entry is located in.
+    ("FILE", Fold (entryLoc . file))
+  , -- The headline of the entry.
+    ("ITEM", Fold entryHeadline)
+  , -- The priority of the entry, a string with a single letter.
+    ("PRIORITY", Fold (entryPriority . _Just))
+  , -- The scheduling timestamp.
+    ("SCHEDULED", Fold (scheduledTime . re _Time))
+  , -- The tags defined directly in the headline.
+    ("TAGS", Fold entryTagString)
+  , -- The first keyword-less timestamp in the entry.
+    ("TIMESTAMP", undefined)
+  , -- The first inactive timestamp in the entry.
+    ("TIMESTAMP_IA", undefined)
+  , -- The TODO keyword of the entry.
+
+    ( "TODO"
+    , Fold
         ( entryKeyword
             . _Just
             . keywordString
             . filtered (isTodo cfg)
         )
-    ),
-    ------------------------------------------------------------------------
+    )
+  , ------------------------------------------------------------------------
     -- The following are not defined by Org-mode as special
     ------------------------------------------------------------------------
-    ("OFFSET", Fold (entryLoc . pos . re _Show)),
-    ("DEPTH", Fold (entryDepth . re _Show)),
-    ("KEYWORD", Fold (entryKeyword . _Just . keywordString)),
-    ("TITLE", Fold entryTitle),
-    ("CONTEXT", Fold (entryContext . _Just)),
-    ("VERB", Fold (entryVerb . _Just)),
-    ("LOCATOR", Fold (entryLocator . _Just))
+    ("OFFSET", Fold (entryLoc . pos . re _Show))
+  , ("DEPTH", Fold (entryDepth . re _Show))
+  , ("KEYWORD", Fold (entryKeyword . _Just . keywordString))
+  , ("TITLE", Fold entryTitle)
+  , ("CONTEXT", Fold (entryContext . _Just))
+  , ("VERB", Fold (entryVerb . _Just))
+  , ("LOCATOR", Fold (entryLocator . _Just))
   ]
 
 keywordString :: Lens' Keyword String
@@ -572,20 +573,20 @@ stringTime f str =
     Nothing -> pure str
     Just (tf, utct) -> do
       tm' <- f $ case tf of
-        JustDay -> tm {_timeStart = Nothing}
+        JustDay -> tm{_timeStart = Nothing}
         _ -> tm
       pure $
         formatTime
           defaultTimeLocale
           (tsFormatFmt tf)
           (timeStartToUTCTime tm')
-      where
-        tm = utcTimeToTime InactiveTime utct
-  where
-    ptime :: TimestampFormat -> Maybe (TimestampFormat, UTCTime)
-    ptime tf = (tf,) <$> parseTime' (tsFormatFmt tf)
-    parseTime' :: String -> Maybe UTCTime
-    parseTime' fmt = parseTimeM False defaultTimeLocale fmt str
+     where
+      tm = utcTimeToTime InactiveTime utct
+ where
+  ptime :: TimestampFormat -> Maybe (TimestampFormat, UTCTime)
+  ptime tf = (tf,) <$> parseTime' (tsFormatFmt tf)
+  parseTime' :: String -> Maybe UTCTime
+  parseTime' fmt = parseTimeM False defaultTimeLocale fmt str
 
 createdTime :: Traversal' Entry Time
 createdTime = property "CREATED" . _Time
@@ -680,9 +681,9 @@ addEntryToMap e =
   at ident
     %~ Just . \case
       Nothing -> [e]
-      Just es -> (e : es)
-  where
-    ident = fromMaybe "" (e ^? entryId)
+      Just es -> e : es
+ where
+  ident = fromMaybe "" (e ^? entryId)
 
 addRefToMap :: String -> Map String [Entry] -> Map String [Entry]
 addRefToMap ident =
@@ -697,8 +698,8 @@ foldAllEntries cs z f =
 
 findDuplicates :: (Ord a) => [a] -> [a]
 findDuplicates = M.keys . M.filter (> 1) . foldr go M.empty
-  where
-    go x = at x %~ Just . maybe (1 :: Int) succ
+ where
+  go x = at x %~ Just . maybe (1 :: Int) succ
 
 tallyEntry ::
   (IxValue b1 ~ Int, At b1) =>

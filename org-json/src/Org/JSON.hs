@@ -12,7 +12,7 @@ import Prelude hiding (readFile)
 
 lowerFirst :: String -> String
 lowerFirst [] = []
-lowerFirst (x : xs) = (toLower x : xs)
+lowerFirst (x : xs) = toLower x : xs
 
 instance FromJSON Config where
   parseJSON =

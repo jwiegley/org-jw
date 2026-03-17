@@ -1,7 +1,4 @@
-{-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Trip.Exec where
@@ -33,8 +30,8 @@ execTrip cfg opts coll = do
               <> "\" \""
               <> tmp
               <> "\""
-  where
-    writeOrgFile h org = do
-      forM_ (showOrgFile cfg org) $
-        hPutStrLn h
-      hClose h
+ where
+  writeOrgFile h org = do
+    forM_ (showOrgFile cfg org) $
+      hPutStrLn h
+    hClose h

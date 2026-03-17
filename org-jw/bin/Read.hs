@@ -27,9 +27,9 @@ import System.IO
 checkFilePath :: FilePath -> FilePath -> FilePath
 checkFilePath cdir path =
   cdir </> takeBaseName (map repl path) <.> "chk"
-  where
-    repl '/' = '!'
-    repl c = c
+ where
+  repl '/' = '!'
+  repl c = c
 
 createCheckFile :: FilePath -> FilePath -> IO ()
 createCheckFile cdir path = do
@@ -37,8 +37,8 @@ createCheckFile cdir path = do
   unless existsDir $
     createDirectoryIfMissing True cdir
   writeFile checkFile ""
-  where
-    checkFile = checkFilePath cdir path
+ where
+  checkFile = checkFilePath cdir path
 
 fileIsChanged :: Maybe FilePath -> FilePath -> IO Bool
 fileIsChanged (Just cdir) path = do
@@ -53,8 +53,8 @@ fileIsChanged (Just cdir) path = do
           pure $ diffUTCTime fileTime checkTime >= 0
         else pure True
     else pure True
-  where
-    checkFile = checkFilePath cdir path
+ where
+  checkFile = checkFilePath cdir path
 fileIsChanged Nothing _ = pure True
 
 winnowPaths :: Maybe FilePath -> [FilePath] -> IO [FilePath]
@@ -90,21 +90,21 @@ readOrgFile opts cfg path = case cacheDir opts of
           else go (Just cacheFile)
       else go (Just cacheFile)
   Nothing -> go Nothing
-  where
-    repl '/' = '!'
-    repl c = c
+ where
+  repl '/' = '!'
+  repl c = c
 
-    go mjson = do
-      eres <-
-        liftIO $
-          withFile path ReadMode $
-            fmap (parseOrgFile cfg path) . B.hGetContents
-      case (mjson, eres) of
-        (_, Left err) -> throwError err
-        (Nothing, Right org) -> pure org
-        (Just json, Right org) -> do
-          liftIO $ orgFileToCBOR json org
-          pure org
+  go mjson = do
+    eres <-
+      liftIO $
+        withFile path ReadMode $
+          fmap (parseOrgFile cfg path) . B.hGetContents
+    case (mjson, eres) of
+      (_, Left err) -> throwError err
+      (Nothing, Right org) -> pure org
+      (Just json, Right org) -> do
+        liftIO $ orgFileToCBOR json org
+        pure org
 
 readStdin :: (MonadIO m) => m ByteString
 readStdin = liftIO B.getContents
@@ -147,9 +147,9 @@ readCollection ::
   m Collection
 readCollection opts cfg paths =
   Collection <$> foldCollection opts cfg paths [] go
-  where
-    go _path (Left err) _ = throwError err
-    go _path (Right x) acc = pure (x : acc)
+ where
+  go _path (Left err) _ = throwError err
+  go _path (Right x) acc = pure (x : acc)
 
 mapCollection ::
   Options ->

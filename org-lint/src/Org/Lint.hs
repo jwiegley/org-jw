@@ -35,12 +35,12 @@ import GHC.Generics (Generic)
 import Org.Data
 import Org.Print
 import Org.Types
-import System.Directory
-  ( doesDirectoryExist,
-    doesFileExist,
-    doesPathExist,
-    getHomeDirectory,
-  )
+import System.Directory (
+  doesDirectoryExist,
+  doesFileExist,
+  doesPathExist,
+  getHomeDirectory,
+ )
 import System.Exit
 import System.FilePath.Posix
 import System.IO.Unsafe (unsafePerformIO)
@@ -122,9 +122,9 @@ data LintMessageCode
   deriving (Show, Eq, Generic, NFData)
 
 data LintMessage = LintMessage
-  { lintMsgPos :: Int,
-    lintMsgKind :: LintMessageKind,
-    lintMsgCode :: LintMessageCode
+  { lintMsgPos :: Int
+  , lintMsgKind :: LintMessageKind
+  , lintMsgCode :: LintMessageCode
   }
   deriving (Show, Eq, Generic, NFData)
 
@@ -136,7 +136,8 @@ lintOrgFiles ::
 lintOrgFiles cfg level xs =
   let (entriesById, ms) = foldr doLint (M.empty, []) xs
       idMsgs = flip concatMap (M.assocs entriesById) $ \(k, loc :| locs) ->
-        [ ( loc ^. file,
+        [ ( loc ^. file
+          ,
             [ LintMessage
                 (loc ^. pos)
                 LintError
@@ -146,29 +147,29 @@ lintOrgFiles cfg level xs =
         | not (null locs)
         ]
    in M.unionWith (<>) (M.fromList ms) (M.fromList idMsgs)
-  where
-    doLint ::
-      OrgFile ->
-      (Map String (NonEmpty Loc), [(FilePath, [LintMessage])]) ->
-      (Map String (NonEmpty Loc), [(FilePath, [LintMessage])])
-    doLint org (entriesById, ms) =
-      (entriesById', (org ^. orgFilePath, msgs) : ms)
-      where
-        entriesById' =
-          (\f -> foldr f entriesById (org ^.. allEntries)) $ \e m ->
-            let loc = e ^. entryLoc
-             in maybe
+ where
+  doLint ::
+    OrgFile ->
+    (Map String (NonEmpty Loc), [(FilePath, [LintMessage])]) ->
+    (Map String (NonEmpty Loc), [(FilePath, [LintMessage])])
+  doLint org (entriesById, ms) =
+    (entriesById', (org ^. orgFilePath, msgs) : ms)
+   where
+    entriesById' =
+      (\f -> foldr f entriesById (org ^.. allEntries)) $ \e m ->
+        let loc = e ^. entryLoc
+         in maybe
+              m
+              ( \ident ->
                   m
-                  ( \ident ->
-                      m
-                        & at ident
-                          %~ Just
-                            . maybe
-                              (NE.singleton loc)
-                              (NE.cons loc)
-                  )
-                  (e ^? entryId)
-        msgs = lintOrgFile cfg level org
+                    & at ident
+                      %~ Just
+                        . maybe
+                          (NE.singleton loc)
+                          (NE.cons loc)
+              )
+              (e ^? entryId)
+    msgs = lintOrgFile cfg level org
 
 lintOrgFile :: Config -> LintMessageKind -> OrgFile -> [LintMessage]
 lintOrgFile cfg level org = execWriter (lintOrgFile' cfg level org)
@@ -217,165 +218,165 @@ lintOrgFile' cfg level org = do
         (lintOrgEntry cfg org False ignoreWhitespace level)
         (reverse es)
       lintOrgEntry cfg org True ignoreWhitespace level e
-  where
-    ignoreWhitespace = org ^? orgFileProperty "WHITESPACE" == Just "ignore"
+ where
+  ignoreWhitespace = org ^? orgFileProperty "WHITESPACE" == Just "ignore"
 
-    ruleFileShouldHaveTitle =
-      when (isNothing (org ^? orgFileProperty "title")) $
-        report LintInfo FileTitleMissing
+  ruleFileShouldHaveTitle =
+    when (isNothing (org ^? orgFileProperty "title")) $
+      report LintInfo FileTitleMissing
 
-    ruleFileShouldHaveIdAndCreated = do
-      when (isNothing (org ^? orgFileProperty "ID")) $
-        report LintInfo (FileMissingProperty "ID")
-      when (isNothing (org ^? orgFileProperty "CREATED")) $
-        report
-          ( if isNothing (OrgItem org ^? fileCreatedTime)
-              then LintWarn
-              else LintInfo
-          )
-          (FileMissingProperty "CREATED")
-
-    ruleSlugMustMatchTitle =
-      unless (isJust (org ^? orgFileProperty "NOSLUG")) $
-        forM_ (OrgItem org ^? fileSlug) $ \slug ->
-          unless (OrgItem org ^? fileActualSlug == OrgItem org ^? fileSlug) $
-            report LintInfo (FileSlugMismatch slug)
-
-    ruleCreationTimeMatchesCreated =
-      forM_
-        ( (,)
-            <$> OrgItem org ^? fileTimestamp
-            <*> OrgItem org ^? fileCreatedTime
+  ruleFileShouldHaveIdAndCreated = do
+    when (isNothing (org ^? orgFileProperty "ID")) $
+      report LintInfo (FileMissingProperty "ID")
+    when (isNothing (org ^? orgFileProperty "CREATED")) $
+      report
+        ( if isNothing (OrgItem org ^? fileCreatedTime)
+            then LintWarn
+            else LintInfo
         )
-        $ \(created, created') ->
-          unless (created == created') $
-            report LintWarn (FileCreatedTimeMismatch created created')
+        (FileMissingProperty "CREATED")
 
-    ruleTitleProperyAlwaysLast =
-      forM_
-        ( org
-            ^? orgFileHeader
-              . headerFileProperties
-              . _last
-              . name
-              . to (map toLower)
+  ruleSlugMustMatchTitle =
+    unless (isJust (org ^? orgFileProperty "NOSLUG")) $
+      forM_ (OrgItem org ^? fileSlug) $ \slug ->
+        unless (OrgItem org ^? fileActualSlug == OrgItem org ^? fileSlug) $
+          report LintInfo (FileSlugMismatch slug)
+
+  ruleCreationTimeMatchesCreated =
+    forM_
+      ( (,)
+          <$> OrgItem org ^? fileTimestamp
+          <*> OrgItem org ^? fileCreatedTime
+      )
+      $ \(created, created') ->
+        unless (created == created') $
+          report LintWarn (FileCreatedTimeMismatch created created')
+
+  ruleTitleProperyAlwaysLast =
+    forM_
+      ( org
+          ^? orgFileHeader
+            . headerFileProperties
+            . _last
+            . name
+            . to (map toLower)
+      )
+      $ \lastProp ->
+        unless (lastProp == "title") $
+          report LintWarn TitlePropertyNotLast
+
+  ruleArchiveTagFileExists =
+    forM_ (org ^? orgFileProperty "ARCHIVE") $ \path -> do
+      let path' = takeWhile (/= ':') path
+      unless
+        ( pathExists
+            cfg
+            doesFileExist
+            (org ^. orgFilePath)
+            path'
         )
-        $ \lastProp ->
-          unless (lastProp == "title") $
-            report LintWarn TitlePropertyNotLast
+        $ report LintWarn (ArchiveTagFileDoesNotExist path')
 
-    ruleArchiveTagFileExists =
-      forM_ (org ^? orgFileProperty "ARCHIVE") $ \path -> do
-        let path' = takeWhile (/= ':') path
+  ruleFileTagsTodo =
+    unless (isJust (org ^? orgFileProperty "HAS_TODO")) $
+      forM_ (OrgItem org ^? fileTags) $ \tags ->
         unless
-          ( pathExists
-              cfg
-              doesFileExist
-              (org ^. orgFilePath)
-              path'
-          )
-          $ report LintWarn (ArchiveTagFileDoesNotExist path')
-
-    ruleFileTagsTodo =
-      unless (isJust (org ^? orgFileProperty "HAS_TODO")) $
-        forM_ (OrgItem org ^? fileTags) $ \tags ->
-          unless
-            ( ( if PlainTag "todo" `elem` tags
-                  then id
-                  else not
-              )
-                $ any id (org ^.. allEntries . keyword . to (isOpenTodo cfg))
+          ( ( if PlainTag "todo" `elem` tags
+                then id
+                else not
             )
-            $ report LintWarn FileTagsTodoMismatch
-
-    ruleOnlyTodosReview =
-      when
-        ( isJust (org ^? orgFileProperty "LAST_REVIEW")
-            || isJust (org ^? orgFileProperty "NEXT_REVIEW")
-            || isJust (org ^? orgFileProperty "REVIEWS")
-            || isJust (org ^? orgFileProperty "Effort")
-        )
-        $ report LintWarn NonTodoWithReviewProperties
-
-    ruleTagsVocabulary =
-      forM_ (org ^? orgFileProperty "TAGS_ALL") $ \tags -> do
-        let tags' = words tags
-        forM_ (org ^.. allEntries) $ \e ->
-          forM_ (e ^.. entryTags . traverse) $ \(PlainTag entryTag) ->
-            unless (entryTag `elem` tags') $
-              report' (e ^. entryLoc . pos) LintWarn $
-                TagInFileUnknown entryTag
-
-    ruleVerbVocabulary =
-      forM_ (org ^? orgFileProperty "VERB_ALL") $ \verbs -> do
-        let verbs' = words verbs
-        forM_ (org ^.. allEntries) $ \e ->
-          forM_ (e ^.. entryVerb . _Just) $ \verb ->
-            unless (verb `elem` verbs') $
-              report' (e ^. entryLoc . pos) LintWarn $
-                VerbInFileUnknown verb
-
-    ruleCheckAllLinks =
-      unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
-        forM_ paragraphs $ \paragraph ->
-          case paragraph
-            =~ ("\\[\\[(file:|https?:)([^]:]+)" :: String) of
-            AllTextSubmatches ([_, protocol, link] :: [String]) ->
-              unless
-                ( if protocol == "file"
-                    then
-                      pathExists
-                        cfg
-                        doesPathExist
-                        (org ^. orgFilePath)
-                        link
-                    else level > LintAll || urlExists (protocol ++ link)
-                )
-                $ report
-                  LintError
-                  ( BrokenLink
-                      ( if protocol == "file"
-                          then link
-                          else protocol ++ link
-                      )
-                  )
-            _ -> pure ()
-
-    ruleAudioFileExists =
-      forM_ (org ^? orgFileProperty "AUDIO") $ \audioPath ->
-        unless
-          ( pathExists
-              cfg
-              doesFileExist
-              (org ^. orgFilePath)
-              audioPath
+              $ or (org ^.. allEntries . keyword . to (isOpenTodo cfg))
           )
-          $ report LintError (AudioFileNotFound audioPath)
+          $ report LintWarn FileTagsTodoMismatch
 
-    paragraphs = bodyString (has _Paragraph)
+  ruleOnlyTodosReview =
+    when
+      ( isJust (org ^? orgFileProperty "LAST_REVIEW")
+          || isJust (org ^? orgFileProperty "NEXT_REVIEW")
+          || isJust (org ^? orgFileProperty "REVIEWS")
+          || isJust (org ^? orgFileProperty "Effort")
+      )
+      $ report LintWarn NonTodoWithReviewProperties
 
-    bodyString f =
-      org
-        ^. orgFileHeader
-          . headerPreamble
-          . blocks
-          . traverse
-          . filtered f
-          . to (\b -> runReader (showBlock "" b) cfg)
+  ruleTagsVocabulary =
+    forM_ (org ^? orgFileProperty "TAGS_ALL") $ \tags -> do
+      let tags' = words tags
+      forM_ (org ^.. allEntries) $ \e ->
+        forM_ (e ^.. entryTags . traverse) $ \(PlainTag entryTag) ->
+          unless (entryTag `elem` tags') $
+            report' (e ^. entryLoc . pos) LintWarn $
+              TagInFileUnknown entryTag
 
-    props =
-      org ^. orgFileHeader . headerPropertiesDrawer
-        ++ org ^. orgFileHeader . headerFileProperties
+  ruleVerbVocabulary =
+    forM_ (org ^? orgFileProperty "VERB_ALL") $ \verbs -> do
+      let verbs' = words verbs
+      forM_ (org ^.. allEntries) $ \e ->
+        forM_ (e ^.. entryVerb . _Just) $ \verb ->
+          unless (verb `elem` verbs') $
+            report' (e ^. entryLoc . pos) LintWarn $
+              VerbInFileUnknown verb
 
-    report' loc kind code
-      | kind >= level = do
-          when (level == LintDebug) $
-            traceM $
-              "file: " ++ ppShow org
-          tell [LintMessage loc kind code]
-      | otherwise = pure ()
+  ruleCheckAllLinks =
+    unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $
+      forM_ paragraphs $ \paragraph ->
+        case paragraph
+          =~ ("\\[\\[(file:|https?:)([^]:]+)" :: String) of
+          AllTextSubmatches ([_, protocol, link] :: [String]) ->
+            unless
+              ( if protocol == "file"
+                  then
+                    pathExists
+                      cfg
+                      doesPathExist
+                      (org ^. orgFilePath)
+                      link
+                  else level > LintAll || urlExists (protocol ++ link)
+              )
+              $ report
+                LintError
+                ( BrokenLink
+                    ( if protocol == "file"
+                        then link
+                        else protocol ++ link
+                    )
+                )
+          _ -> pure ()
 
-    report = report' 1
+  ruleAudioFileExists =
+    forM_ (org ^? orgFileProperty "AUDIO") $ \audioPath ->
+      unless
+        ( pathExists
+            cfg
+            doesFileExist
+            (org ^. orgFilePath)
+            audioPath
+        )
+        $ report LintError (AudioFileNotFound audioPath)
+
+  paragraphs = bodyString (has _Paragraph)
+
+  bodyString f =
+    org
+      ^. orgFileHeader
+        . headerPreamble
+        . blocks
+        . traverse
+        . filtered f
+        . to (\b -> runReader (showBlock "" b) cfg)
+
+  props =
+    org ^. orgFileHeader . headerPropertiesDrawer
+      ++ org ^. orgFileHeader . headerFileProperties
+
+  report' loc kind code
+    | kind >= level = do
+        when (level == LintDebug) $
+          traceM $
+            "file: " ++ ppShow org
+        tell [LintMessage loc kind code]
+    | otherwise = pure ()
+
+  report = report' 1
 
 lintOrgEntry ::
   Config ->
@@ -456,496 +457,496 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   ruleDrawerCase
   -- RULE: Entries with hashes match when hashed
   ruleHashesMatch
-  where
-    inArchive = isArchive org
+ where
+  inArchive = isArchive org
 
-    ruleTodoMustHaveIdAndCreated = do
-      let mkw = e ^? entryKeyword . _Just . keywordString
-      when (isJust mkw || isJust (e ^? entryCategory)) $ do
-        when (isNothing (e ^? property "ID")) $
-          report LintWarn (TodoMissingProperty "ID")
-        when (isNothing (e ^? property "CREATED")) $
-          report LintWarn (TodoMissingProperty "CREATED")
+  ruleTodoMustHaveIdAndCreated = do
+    let mkw = e ^? entryKeyword . _Just . keywordString
+    when (isJust mkw || isJust (e ^? entryCategory)) $ do
+      when (isNothing (e ^? property "ID")) $
+        report LintWarn (TodoMissingProperty "ID")
+      when (isNothing (e ^? property "CREATED")) $
+        report LintWarn (TodoMissingProperty "CREATED")
 
-    ruleTaskMustHaveAssignment = do
-      let mkw = e ^? entryKeyword . _Just . keywordString
-      when (mkw == Just "TASK" && null (e ^. entryTags)) $
-        report LintWarn TaskMissingAssignment
+  ruleTaskMustHaveAssignment = do
+    let mkw = e ^? entryKeyword . _Just . keywordString
+    when (mkw == Just "TASK" && null (e ^. entryTags)) $
+      report LintWarn TaskMissingAssignment
 
-    ruleLinkTagMatchesUrlProperty =
-      if e ^? entryKeyword . _Just . keywordString == Just "LINK"
-        then
-          unless
-            ("URL" `elem` e ^.. entryProperties . traverse . name)
-            $ report LintWarn TodoLinkDoesNotMatchUrl
-        else
-          when
-            ( (PlainTag "LINK" `elem` e ^. entryTags)
-                /= ("URL" `elem` e ^.. entryProperties . traverse . name)
-            )
-            $ report LintWarn TodoLinkDoesNotMatchUrl
-
-    ruleLinkKeywordImpliesLinkTag = do
-      when
-        ( (e ^? entryKeyword . _Just . keywordString == Just "LINK")
-            && (PlainTag "LINK" `elem` e ^. entryTags)
-        )
-        $ report LintWarn TodoLinkKeywordImpliesLinkTag
-
-    ruleArchiveTagFileExists = do
-      forM_ (e ^? property "ARCHIVE") $ \path -> do
-        let path' = takeWhile (/= ':') path
+  ruleLinkTagMatchesUrlProperty =
+    if e ^? entryKeyword . _Just . keywordString == Just "LINK"
+      then
         unless
-          ( pathExists
-              cfg
-              doesFileExist
-              (org ^. orgFilePath)
-              path'
+          ("URL" `elem` e ^.. entryProperties . traverse . name)
+          $ report LintWarn TodoLinkDoesNotMatchUrl
+      else
+        when
+          ( (PlainTag "LINK" `elem` e ^. entryTags)
+              /= ("URL" `elem` e ^.. entryProperties . traverse . name)
           )
-          $ report LintWarn (ArchiveTagFileDoesNotExist path')
+          $ report LintWarn TodoLinkDoesNotMatchUrl
 
-    ruleFileTagMatchesAttachment = do
+  ruleLinkKeywordImpliesLinkTag = do
+    when
+      ( (e ^? entryKeyword . _Just . keywordString == Just "LINK")
+          && (PlainTag "LINK" `elem` e ^. entryTags)
+      )
+      $ report LintWarn TodoLinkKeywordImpliesLinkTag
+
+  ruleArchiveTagFileExists = do
+    forM_ (e ^? property "ARCHIVE") $ \path -> do
+      let path' = takeWhile (/= ':') path
+      unless
+        ( pathExists
+            cfg
+            doesFileExist
+            (org ^. orgFilePath)
+            path'
+        )
+        $ report LintWarn (ArchiveTagFileDoesNotExist path')
+
+  ruleFileTagMatchesAttachment = do
+    when
+      ( ("Attachments" `elem` e ^.. entryProperties . traverse . name)
+          && (PlainTag "FILE" `notElem` e ^. entryTags)
+      )
+      $ report LintWarn TodoFileDoesNotMatchAttachment
+    forM_ (e ^? property "ID") $ \ident ->
       when
-        ( ("Attachments" `elem` e ^.. entryProperties . traverse . name)
-            && (PlainTag "FILE" `notElem` e ^. entryTags)
+        ( ( (PlainTag "FILE" `elem` e ^. entryTags)
+              || ( "Attachments"
+                     `elem` e ^.. entryProperties . traverse . name
+                 )
+          )
+            && let dir =
+                     (cfg ^. attachmentsDir)
+                       </> take 2 ident
+                       </> drop 2 ident
+                in not
+                     ( pathExists
+                         cfg
+                         doesDirectoryExist
+                         (org ^. orgFilePath)
+                         dir
+                     )
         )
         $ report LintWarn TodoFileDoesNotMatchAttachment
-      forM_ (e ^? property "ID") $ \ident ->
-        when
-          ( ( (PlainTag "FILE" `elem` e ^. entryTags)
-                || ( "Attachments"
-                       `elem` e ^.. entryProperties . traverse . name
-                   )
-            )
-              && let dir =
-                       (cfg ^. attachmentsDir)
-                         </> take 2 ident
-                         </> drop 2 ident
-                  in not
-                       ( pathExists
-                           cfg
-                           doesDirectoryExist
-                           (org ^. orgFilePath)
-                           dir
-                       )
-          )
-          $ report LintWarn TodoFileDoesNotMatchAttachment
 
-    ruleCategoryNameCannotBeTooLong =
-      forM_ (e ^? entryCategory) $ \cat ->
-        when (length cat > 10) $
-          report LintWarn (CategoryTooLong cat)
+  ruleCategoryNameCannotBeTooLong =
+    forM_ (e ^? entryCategory) $ \cat ->
+      when (length cat > 10) $
+        report LintWarn (CategoryTooLong cat)
 
-    paragraphs = bodyString (has _Paragraph)
+  paragraphs = bodyString (has _Paragraph)
 
-    rulePropertiesDrawerNeverInBody =
-      when
-        ( any
-            (=~ ("(:properties:|:PROPERTIES:)" :: String))
-            paragraphs
-        )
-        $ report LintError MisplacedProperty
+  rulePropertiesDrawerNeverInBody =
+    when
+      ( any
+          (=~ ("(:properties:|:PROPERTIES:)" :: String))
+          paragraphs
+      )
+      $ report LintError MisplacedProperty
 
-    ruleTimestampsNeverInBody =
-      when
-        ( any
-            (=~ ("(SCHEDULED:|DEADLINE:|CLOSED:)" :: String))
-            paragraphs
-        )
-        $ report LintError MisplacedTimestamp
+  ruleTimestampsNeverInBody =
+    when
+      ( any
+          (=~ ("(SCHEDULED:|DEADLINE:|CLOSED:)" :: String))
+          paragraphs
+      )
+      $ report LintError MisplacedTimestamp
 
-    ruleLogEntriesNeverInBody =
-      when
-        ( any
-            (=~ ("(- (CLOSING NOTE|State \"|Note taken on|Rescheduled from|Not scheduled, was|New deadline from|Removed deadline, was|Refiled on) |:LOGBOOK:|:logbook:)" :: String))
-            paragraphs
-        )
-        $ report LintError MisplacedLogEntry
+  ruleLogEntriesNeverInBody =
+    when
+      ( any
+          (=~ ("(- (CLOSING NOTE|State \"|Note taken on|Rescheduled from|Not scheduled, was|New deadline from|Removed deadline, was|Refiled on) |:LOGBOOK:|:logbook:)" :: String))
+          paragraphs
+      )
+      $ report LintError MisplacedLogEntry
 
-    ruleMisplacedDrawerEnd =
-      when
-        ( any
-            (=~ ("(:end:|:END:|#\\+end|#\\+END)" :: String))
-            paragraphs
-        )
-        $ report LintError MisplacedDrawerEnd
+  ruleMisplacedDrawerEnd =
+    when
+      ( any
+          (=~ ("(:end:|:END:|#\\+end|#\\+END)" :: String))
+          paragraphs
+      )
+      $ report LintError MisplacedDrawerEnd
 
-    ruleCheckAllLinks =
-      unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $ do
-        forM_ (e ^? property "URL") $ \doc ->
-          case doc
-            =~ ("\\[\\[(file:|https?:)([^]:]+)" :: String) of
-            AllTextSubmatches ([_, protocol, link] :: [String]) ->
-              unless
-                ( if protocol == "file"
-                    then
-                      pathExists
-                        cfg
-                        doesPathExist
-                        (org ^. orgFilePath)
-                        link
-                    else level > LintAll || urlExists (protocol ++ link)
-                )
-                $ report
-                  LintError
-                  ( BrokenLink
-                      ( if protocol == "file"
-                          then link
-                          else protocol ++ link
-                      )
-                  )
-            _ -> pure ()
-        forM_ (e ^? property "NOTER_DOCUMENT") $ \doc ->
-          case doc =~ ("([^]:]+)" :: String) of
-            AllTextSubmatches ([_, link] :: [String]) ->
-              unless
-                ( pathExists cfg doesPathExist (org ^. orgFilePath) link
-                    || "devonthink" `isInfixOf` link
-                )
-                $ report LintError (BrokenLink link)
-            _ -> pure ()
-        forM_ paragraphs $ \paragraph ->
-          case paragraph
-            =~ ("\\[\\[(file:|https?:)([^]:]+)" :: String) of
-            AllTextSubmatches ([_, protocol, link] :: [String]) ->
-              unless
-                ( if protocol == "file"
-                    then
-                      pathExists
-                        cfg
-                        doesPathExist
-                        (org ^. orgFilePath)
-                        link
-                    else level > LintAll || urlExists (protocol ++ link)
-                )
-                $ report
-                  LintError
-                  ( BrokenLink
-                      ( if protocol == "file"
-                          then link
-                          else protocol ++ link
-                      )
-                  )
-            _ -> pure ()
-
-    ruleNoWhitespaceAtStartOfLogEntry =
-      forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
-        when
-          ( case b ^? _LogBody of
-              Just (Body (Whitespace _ _ : _)) -> True
-              _ -> False
-          )
-          $ report' (b ^. _LogLoc) LintWarn WhitespaceAtStartOfLogEntry
-
-    ruleNoExtraSpacesInTitle =
-      when ("  " `isInfixOf` (e ^. entryTitle)) $
-        report LintWarn TitleWithExcessiveWhitespace
-
-    _ruleNoOverlyLongHeadline =
-      when (length (e ^. entryHeadline) > (96 - e ^. entryDepth)) $
-        report LintWarn OverlyLongHeadline
-
-    ruleNoDuplicateTags =
-      forM_ (findDuplicates (e ^. entryTags)) $ \tag ->
-        report LintError (DuplicateTag (tag ^. tagString))
-
-    ruleNoDuplicateProperties =
-      forM_
-        ( findDuplicates
-            ( e
-                ^.. entryProperties
-                  . traverse
-                  . name
-                  . to (map toLower)
-            )
-        )
-        $ \nm ->
-          report LintError (DuplicateProperty nm)
-
-    ruleNoInvalidStateChanges = do
-      (mfinalKeyword, _mfinalTime) <-
-        ( \f ->
-            foldM
-              f
-              ( Nothing,
-                Nothing
+  ruleCheckAllLinks =
+    unless (isJust (org ^? orgFileProperty "IGNORE_LINKS")) $ do
+      forM_ (e ^? property "URL") $ \doc ->
+        case doc
+          =~ ("\\[\\[(file:|https?:)([^]:]+)" :: String) of
+          AllTextSubmatches ([_, protocol, link] :: [String]) ->
+            unless
+              ( if protocol == "file"
+                  then
+                    pathExists
+                      cfg
+                      doesPathExist
+                      (org ^. orgFilePath)
+                      link
+                  else level > LintAll || urlExists (protocol ++ link)
               )
-              -- jww (2024-05-28): Only reverse here if the configuration
-              -- indicates that state entries are from most recent to least
-              -- recent.
-              (reverse (e ^.. entryStateHistory))
+              $ report
+                LintError
+                ( BrokenLink
+                    ( if protocol == "file"
+                        then link
+                        else protocol ++ link
+                    )
+                )
+          _ -> pure ()
+      forM_ (e ^? property "NOTER_DOCUMENT") $ \doc ->
+        case doc =~ ("([^]:]+)" :: String) of
+          AllTextSubmatches ([_, link] :: [String]) ->
+            unless
+              ( pathExists cfg doesPathExist (org ^. orgFilePath) link
+                  || "devonthink" `isInfixOf` link
+              )
+              $ report LintError (BrokenLink link)
+          _ -> pure ()
+      forM_ paragraphs $ \paragraph ->
+        case paragraph
+          =~ ("\\[\\[(file:|https?:)([^]:]+)" :: String) of
+          AllTextSubmatches ([_, protocol, link] :: [String]) ->
+            unless
+              ( if protocol == "file"
+                  then
+                    pathExists
+                      cfg
+                      doesPathExist
+                      (org ^. orgFilePath)
+                      link
+                  else level > LintAll || urlExists (protocol ++ link)
+              )
+              $ report
+                LintError
+                ( BrokenLink
+                    ( if protocol == "file"
+                        then link
+                        else protocol ++ link
+                    )
+                )
+          _ -> pure ()
+
+  ruleNoWhitespaceAtStartOfLogEntry =
+    forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
+      when
+        ( case b ^? _LogBody of
+            Just (Body (Whitespace _ _ : _)) -> True
+            _ -> False
         )
-          $ \(mprev, mprevTm) l -> do
-            let mkwt' = l ^? _LogState . _2
-                mkwf' = l ^? _LogState . _3 . _Just
-                mtm = l ^? _LogTime
-            forM_ ((,) <$> mtm <*> mprevTm) $ \(tm, prevTm) ->
-              when (tm < prevTm) $
-                report LintWarn (InvalidStateChangeWrongTimeOrder tm prevTm)
-            let mkwt = fmap (^. keywordString) mkwt'
-                mkwf = fmap (^. keywordString) mkwf'
-                mallowed = transitionsOf cfg <$> mkwf
-            unless inArchive $
-              forM_ mkwf $ \kwf ->
-                case mprev of
-                  Nothing ->
-                    unless (kwf `elem` cfg ^. startKeywords) $
-                      report
-                        LintWarn
-                        ( InvalidStateChangeInvalidTransition
-                            FirstTransition
-                            kwf
-                            (cfg ^?! startKeywords . _head)
-                        )
-                  Just prev ->
-                    unless
-                      ( prev == kwf
-                          || isJust (e ^? property "LAST_REPEAT")
-                      )
-                      $ report
-                        LintWarn
-                        ( InvalidStateChangeInvalidTransition
-                            IntermediateTransition
-                            kwf
-                            prev
-                        )
-            forM_ mkwt $ \kwt -> do
-              if mkwf == Just kwt
-                then report LintWarn (InvalidStateChangeIdempotent kwt)
-                else forM_ mallowed $ \allowed ->
-                  unless (kwt `elem` allowed) $
+        $ report' (b ^. _LogLoc) LintWarn WhitespaceAtStartOfLogEntry
+
+  ruleNoExtraSpacesInTitle =
+    when ("  " `isInfixOf` (e ^. entryTitle)) $
+      report LintWarn TitleWithExcessiveWhitespace
+
+  _ruleNoOverlyLongHeadline =
+    when (length (e ^. entryHeadline) > (96 - e ^. entryDepth)) $
+      report LintWarn OverlyLongHeadline
+
+  ruleNoDuplicateTags =
+    forM_ (findDuplicates (e ^. entryTags)) $ \tag ->
+      report LintError (DuplicateTag (tag ^. tagString))
+
+  ruleNoDuplicateProperties =
+    forM_
+      ( findDuplicates
+          ( e
+              ^.. entryProperties
+                . traverse
+                . name
+                . to (map toLower)
+          )
+      )
+      $ \nm ->
+        report LintError (DuplicateProperty nm)
+
+  ruleNoInvalidStateChanges = do
+    (mfinalKeyword, _mfinalTime) <-
+      ( \f ->
+          foldM
+            f
+            ( Nothing
+            , Nothing
+            )
+            -- jww (2024-05-28): Only reverse here if the configuration
+            -- indicates that state entries are from most recent to least
+            -- recent.
+            (reverse (e ^.. entryStateHistory))
+      )
+        $ \(mprev, mprevTm) l -> do
+          let mkwt' = l ^? _LogState . _2
+              mkwf' = l ^? _LogState . _3 . _Just
+              mtm = l ^? _LogTime
+          forM_ ((,) <$> mtm <*> mprevTm) $ \(tm, prevTm) ->
+            when (tm < prevTm) $
+              report LintWarn (InvalidStateChangeWrongTimeOrder tm prevTm)
+          let mkwt = fmap (^. keywordString) mkwt'
+              mkwf = fmap (^. keywordString) mkwf'
+              mallowed = transitionsOf cfg <$> mkwf
+          unless inArchive $
+            forM_ mkwf $ \kwf ->
+              case mprev of
+                Nothing ->
+                  unless (kwf `elem` cfg ^. startKeywords) $
                     report
                       LintWarn
-                      (InvalidStateChangeTransitionNotAllowed kwt mkwf allowed)
-            pure (mkwt <|> mprev, mtm <|> mprevTm)
-      unless (inArchive || isJust (e ^? property "LAST_REPEAT")) $ do
-        let mkw = e ^? entryKeyword . _Just . keywordString
-        forM_ ((,) <$> mkw <*> mfinalKeyword) $ \(kw, finalKeyword) ->
-          unless (kw == finalKeyword) $
-            report
-              LintWarn
-              ( InvalidStateChangeInvalidTransition
-                  LastTransition
-                  kw
-                  finalKeyword
-              )
-    ruleNoTimestampsOnNonTodos =
-      when
-        ( any isLeadingStamp (e ^. entryStamps)
-            && maybe True (not . isTodo cfg) (e ^? keyword)
-        )
-        $ report LintWarn TimestampsOnNonTodo
+                      ( InvalidStateChangeInvalidTransition
+                          FirstTransition
+                          kwf
+                          (cfg ^?! startKeywords . _head)
+                      )
+                Just prev ->
+                  unless
+                    ( prev == kwf
+                        || isJust (e ^? property "LAST_REPEAT")
+                    )
+                    $ report
+                      LintWarn
+                      ( InvalidStateChangeInvalidTransition
+                          IntermediateTransition
+                          kwf
+                          prev
+                      )
+          forM_ mkwt $ \kwt -> do
+            if mkwf == Just kwt
+              then report LintWarn (InvalidStateChangeIdempotent kwt)
+              else forM_ mallowed $ \allowed ->
+                unless (kwt `elem` allowed) $
+                  report
+                    LintWarn
+                    (InvalidStateChangeTransitionNotAllowed kwt mkwf allowed)
+          pure (mkwt <|> mprev, mtm <|> mprevTm)
+    unless (inArchive || isJust (e ^? property "LAST_REPEAT")) $ do
+      let mkw = e ^? entryKeyword . _Just . keywordString
+      forM_ ((,) <$> mkw <*> mfinalKeyword) $ \(kw, finalKeyword) ->
+        unless (kw == finalKeyword) $
+          report
+            LintWarn
+            ( InvalidStateChangeInvalidTransition
+                LastTransition
+                kw
+                finalKeyword
+            )
+  ruleNoTimestampsOnNonTodos =
+    when
+      ( any isLeadingStamp (e ^. entryStamps)
+          && maybe True (not . isTodo cfg) (e ^? keyword)
+      )
+      $ report LintWarn TimestampsOnNonTodo
 
-    ruleOnlyTodosReview =
-      when
-        ( maybe True (not . isTodo cfg) (e ^? keyword)
-            && ( isJust (e ^? property "LAST_REVIEW")
-                   || isJust (e ^? property "NEXT_REVIEW")
-                   || isJust (e ^? property "REVIEWS")
-                   || isJust (e ^? property "Effort")
-               )
-        )
-        $ report LintWarn NonTodoWithReviewProperties
+  ruleOnlyTodosReview =
+    when
+      ( maybe True (not . isTodo cfg) (e ^? keyword)
+          && ( isJust (e ^? property "LAST_REVIEW")
+                 || isJust (e ^? property "NEXT_REVIEW")
+                 || isJust (e ^? property "REVIEWS")
+                 || isJust (e ^? property "Effort")
+             )
+      )
+      $ report LintWarn NonTodoWithReviewProperties
 
-    ruleNoInconsistentWhitespace = do
-      unless (consistent logLeading) $
-        report LintWarn (InconsistentWhitespace "before log entries")
-      unless (consistent logTrailing) $
-        report LintWarn (InconsistentWhitespace "after log entries")
+  ruleNoInconsistentWhitespace = do
+    unless (consistent logLeading) $
+      report LintWarn (InconsistentWhitespace "before log entries")
+    unless (consistent logTrailing) $
+      report LintWarn (InconsistentWhitespace "after log entries")
+    when
+      ( isBodyEmpty
+          && isJust
+            ( e
+                ^? entryLogEntries
+                  . _last
+                  . _LogBody
+                  . blocks
+                  . _last
+                  . _Whitespace
+            )
+      )
+      $ report LintInfo EmptyBodyWhitespace
+    unless
+      ( (isLastEntry && isNothing bodyTrailing)
+          || bodyLeading == bodyTrailing
+      )
+      $ report LintInfo (InconsistentWhitespace "surrounding body")
+   where
+    bodyLeading = do
+      ws <- bodyWhitespace _head
+      ws ^? _Whitespace . _2
+    bodyTrailing = do
+      ws <- bodyWhitespace _last
+      ws ^? _Whitespace . _2
+    bodyWhitespace f = e ^? entryBody . blocks . f
+    isBodyEmpty = null (e ^. entryBody . blocks)
+    logLeading = map (^? _Whitespace . _2) (logWhitespace _head)
+    logTrailing =
+      logTrailing'
+        & _last %~ \case
+          Nothing
+            | isBodyEmpty -> logTrailing' ^? _head . _Just
+            | Just ws <- bodyLeading -> do
+                _ <- logTrailing' ^? _head . _Just
+                pure ws
+            | otherwise -> Nothing
+          x -> x
+    logTrailing' = map (^? _Whitespace . _2) (logWhitespace _last)
+    logWhitespace f =
+      e
+        ^.. entryLogEntries
+          . traverse
+          . cosmos
+          . _LogBody
+          . blocks
+          . f
+
+  ruleNoEmptyBodyWhitespace =
+    when
+      ( case e ^. entryBody of
+          Body [Whitespace _ _] ->
+            ( e ^. entryTitle
+                `elem` [ "Attending"
+                       , "Agenda"
+                       , "Minutes"
+                       , "Notes"
+                       , "Transcript"
+                       ]
+                && null (e ^. entryItems)
+            )
+              || maybe False (isTodo cfg) (e ^? keyword)
+          _ -> False
+      )
+      $ report LintInfo EmptyBodyWhitespace
+
+  ruleNoUnnecessaryWhitespace = do
+    forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
       when
-        ( isBodyEmpty
-            && isJust
+        ( case b ^? _LogBody of
+            Just (Body (Paragraph _ ((' ' : _) : _) : _)) ->
+              True
+            _ -> False
+        )
+        $ report' (b ^. _LogLoc) LintInfo UnnecessaryWhitespace
+    when
+      ( case e ^. entryBody of
+          Body (Paragraph _ ((' ' : _) : _) : _) -> True
+          _ -> False
+      )
+      $ report LintInfo UnnecessaryWhitespace
+
+  ruleNoMultipleBlankLines =
+    when (any ((> 1) . length . lines) (bodyString (has _Whitespace))) $
+      report LintWarn MultipleBlankLines
+
+  ruleAtMostOneLogBook =
+    when (length (e ^.. entryLogEntries . traverse . cosmos . _LogBook) > 1) $
+      report LintError MultipleLogbooks
+
+  ruleConsistentLogBook =
+    when
+      ( not
+          ( null
               ( e
-                  ^? entryLogEntries
-                    . _last
-                    . _LogBody
-                    . blocks
-                    . _last
-                    . _Whitespace
+                  ^.. entryLogEntries
+                    . traverse
+                    . _LogBook
+                    . _2
+                    . traverse
+                    . filtered (hasn't _LogClock)
               )
-        )
-        $ report LintInfo EmptyBodyWhitespace
-      unless
-        ( (isLastEntry && bodyTrailing == Nothing)
-            || bodyLeading == bodyTrailing
-        )
-        $ report LintInfo (InconsistentWhitespace "surrounding body")
-      where
-        bodyLeading = do
-          ws <- bodyWhitespace _head
-          ws ^? _Whitespace . _2
-        bodyTrailing = do
-          ws <- bodyWhitespace _last
-          ws ^? _Whitespace . _2
-        bodyWhitespace f = e ^? entryBody . blocks . f
-        isBodyEmpty = null (e ^. entryBody . blocks)
-        logLeading = map (^? _Whitespace . _2) (logWhitespace _head)
-        logTrailing =
-          logTrailing'
-            & _last %~ \case
-              Nothing
-                | isBodyEmpty -> logTrailing' ^? _head . _Just
-                | Just ws <- bodyLeading -> do
-                    _ <- logTrailing' ^? _head . _Just
-                    pure ws
-                | otherwise -> Nothing
-              x -> x
-        logTrailing' = map (^? _Whitespace . _2) (logWhitespace _last)
-        logWhitespace f =
-          e
-            ^.. entryLogEntries
-              . traverse
-              . cosmos
-              . _LogBody
-              . blocks
-              . f
-
-    ruleNoEmptyBodyWhitespace =
-      when
-        ( case e ^. entryBody of
-            Body [Whitespace _ _] ->
-              ( e ^. entryTitle
-                  `elem` [ "Attending",
-                           "Agenda",
-                           "Minutes",
-                           "Notes",
-                           "Transcript"
-                         ]
-                  && null (e ^. entryItems)
-              )
-                || maybe False (isTodo cfg) (e ^? keyword)
-            _ -> False
-        )
-        $ report LintInfo EmptyBodyWhitespace
-
-    ruleNoUnnecessaryWhitespace = do
-      forM_ (e ^.. entryLogEntries . traverse . uniplate) $ \b ->
-        when
-          ( case b ^? _LogBody of
-              Just (Body (Paragraph _ ((' ' : _) : _) : _)) ->
-                True
-              _ -> False
           )
-          $ report' (b ^. _LogLoc) LintInfo UnnecessaryWhitespace
-      when
-        ( case e ^. entryBody of
-            Body (Paragraph _ ((' ' : _) : _) : _) -> True
-            _ -> False
-        )
-        $ report LintInfo UnnecessaryWhitespace
-
-    ruleNoMultipleBlankLines =
-      when (any ((> 1) . length . lines) (bodyString (has _Whitespace))) $
-        report LintWarn MultipleBlankLines
-
-    ruleAtMostOneLogBook =
-      when (length (e ^.. entryLogEntries . traverse . cosmos . _LogBook) > 1) $
-        report LintError MultipleLogbooks
-
-    ruleConsistentLogBook =
-      when
-        ( not
+          && not
             ( null
                 ( e
                     ^.. entryLogEntries
                       . traverse
-                      . _LogBook
-                      . _2
-                      . traverse
-                      . filtered (hasn't _LogClock)
+                      . filtered (hasn't _LogBook)
                 )
             )
-            && not
-              ( null
-                  ( e
-                      ^.. entryLogEntries
-                        . traverse
-                        . filtered (hasn't _LogBook)
+      )
+      $ report LintError MixedLogbooks
+
+  ruleLocationIsValid =
+    forM_ (e ^? property "LOCATION") $ \loc ->
+      when (loc == "0.0,0.0") $
+        report LintError (InvalidLocation loc)
+
+  ruleDrawerCase =
+    forM_
+      ( e
+          ^.. entryBody
+            . blocks
+            . traverse
+            . _Drawer
+            . _2
+      )
+      $ \drawerType ->
+        unless
+          ( case drawerType of
+              PlainDrawer nm ->
+                all (\c -> c == ':' || isUpper c) (words nm ^?! _head)
+              BeginDrawer nm ->
+                all
+                  ( \c ->
+                      c `elem` ['#', '+', '_', ':']
+                        || isLower c
                   )
-              )
-        )
-        $ report LintError MixedLogbooks
+                  (words nm ^?! _head)
+          )
+          $ report LintInfo (InvalidDrawerCase drawerType)
 
-    ruleLocationIsValid =
-      forM_ (e ^? property "LOCATION") $ \loc ->
-        when (loc == "0.0,0.0") $
-          report LintError (InvalidLocation loc)
+  ruleHashesMatch =
+    forM_ (e ^? property "HASH_sha512") $ \definedHash ->
+      let entryWithoutHash =
+            e & entryProperties %~ filter (\p -> p ^. name /= "HASH_sha512")
+          actualHash = hashEntry entryWithoutHash
+       in when (definedHash /= actualHash) $
+            report LintWarn (HashesDoNotMatch definedHash actualHash)
+   where
+    hashEntry ent =
+      take 64 $
+        T.unpack $
+          T.decodeUtf8 $
+            Base16.encode $
+              hash $
+                T.encodeUtf8 $
+                  T.pack $
+                    (++ "\n") $
+                      intercalate "\n" $
+                        runReader (showEntry ent) cfg
 
-    ruleDrawerCase =
-      forM_
-        ( e
-            ^.. entryBody
-              . blocks
-              . traverse
-              . _Drawer
-              . _2
-        )
-        $ \drawerType ->
-          unless
-            ( case drawerType of
-                PlainDrawer nm ->
-                  all (\c -> c == ':' || isUpper c) (words nm ^?! _head)
-                BeginDrawer nm ->
-                  all
-                    ( \c ->
-                        c `elem` ['#', '+', '_', ':']
-                          || isLower c
-                    )
-                    (words nm ^?! _head)
-            )
-            $ report LintInfo (InvalidDrawerCase drawerType)
-
-    ruleHashesMatch =
-      forM_ (e ^? property "HASH_sha512") $ \definedHash ->
-        let entryWithoutHash =
-              e & entryProperties %~ filter (\p -> p ^. name /= "HASH_sha512")
-            actualHash = hashEntry entryWithoutHash
-         in when (definedHash /= actualHash) $
-              report LintWarn (HashesDoNotMatch definedHash actualHash)
-      where
-        hashEntry ent =
-          take 64 $
-            T.unpack $
-              T.decodeUtf8 $
-                Base16.encode $
-                  hash $
-                    T.encodeUtf8 $
-                      T.pack $
-                        (++ "\n") $
-                          intercalate "\n" $
-                            runReader (showEntry ent) cfg
-
-    bodyString f =
-      e
-        ^. entryBody
+  bodyString f =
+    e
+      ^. entryBody
+        . blocks
+        . traverse
+        . filtered f
+        . to (\b -> runReader (showBlock "" b) cfg)
+      ++ e
+        ^. entryLogEntries
+          . traverse
+          . failing (_LogState . _5) (_LogNote . _3)
+          . _Just
           . blocks
           . traverse
           . filtered f
           . to (\b -> runReader (showBlock "" b) cfg)
-        ++ e
-          ^. entryLogEntries
-            . traverse
-            . failing (_LogState . _5) (_LogNote . _3)
-            . _Just
-            . blocks
-            . traverse
-            . filtered f
-            . to (\b -> runReader (showBlock "" b) cfg)
 
-    report' loc kind code
-      | kind >= level = do
-          when (level == LintDebug) $
-            traceM $
-              "entry: " ++ ppShow e
-          tell
-            [ LintMessage
-                (loc ^. pos)
-                kind
-                code
-            ]
-      | otherwise = pure ()
+  report' loc kind code
+    | kind >= level = do
+        when (level == LintDebug) $
+          traceM $
+            "entry: " ++ ppShow e
+        tell
+          [ LintMessage
+              (loc ^. pos)
+              kind
+              code
+          ]
+    | otherwise = pure ()
 
-    report = report' (e ^. entryLoc)
+  report = report' (e ^. entryLoc)
 
 pathExists :: Config -> (FilePath -> IO Bool) -> FilePath -> FilePath -> Bool
 pathExists cfg k path link
@@ -963,14 +964,14 @@ urlExists url = unsafePerformIO $ do
   (ec, _, _) <-
     readProcessWithExitCode
       "curl"
-      [ "--output",
-        "/dev/null",
-        "--silent",
-        "--head",
-        "--fail",
-        "--connect-timeout",
-        "5",
-        url
+      [ "--output"
+      , "/dev/null"
+      , "--silent"
+      , "--head"
+      , "--fail"
+      , "--connect-timeout"
+      , "5"
+      , url
       ]
       ""
   pure $ ec == ExitSuccess
@@ -978,127 +979,127 @@ urlExists url = unsafePerformIO $ do
 showLintOrg :: FilePath -> LintMessage -> String
 showLintOrg fl (LintMessage ln kind code) =
   prefix ++ " " ++ renderCode
-  where
-    loc = fl ++ ":" ++ show ln
-    prefix = loc ++ ": " ++ renderKind
-    renderKind = case kind of
-      LintError -> "ERROR"
-      LintWarn -> "WARN"
-      LintInfo -> "INFO"
-      LintAll -> "ALL"
-      LintDebug -> "DEBUG"
-    renderCode = case code of
-      FileSlugMismatch slug ->
-        "Mismatch in file slug:\ngit mv -k -- "
-          ++ show fl
-          ++ " "
-          ++ show (fl & fileName . fileNameParts . _2 .~ slug)
-      TodoMissingProperty nm ->
-        "Open todo missing property " ++ show nm
-      FileMissingProperty nm ->
-        "File missing property " ++ show nm
-      TaskMissingAssignment ->
-        "Task missing assignment"
-      TodoLinkDoesNotMatchUrl ->
-        ":LINK: tag does not match URL property"
-      TodoFileDoesNotMatchAttachment ->
-        ":FILE: tag does not match presence of attachments"
-      TodoLinkKeywordImpliesLinkTag ->
-        "LINK keyword implies :LINK: tag, therefore it is not needed"
-      ArchiveTagFileDoesNotExist path ->
-        ":ARCHIVE: tag refers to a non-existent file: " ++ path
-      MisplacedProperty ->
-        "Misplaced :PROPERTIES: block"
-      MisplacedTimestamp ->
-        "Misplaced timestamp (SCHEDULED, DEADLINE or CLOSED)"
-      MisplacedLogEntry ->
-        "Misplaced log entry or log book"
-      MisplacedDrawerEnd ->
-        "Misplaced end of drawer"
-      WhitespaceAtStartOfLogEntry ->
-        "Log entry begins with whitespace"
-      FileTitleMissing ->
-        "Title is missing"
-      TitleWithExcessiveWhitespace ->
-        "Title with excessive whitespace"
-      OverlyLongHeadline ->
-        "Headline is too long"
-      DuplicateFileProperty nm ->
-        "Duplicated file property " ++ show nm
-      DuplicateProperty nm ->
-        "Duplicated property " ++ show nm
-      DuplicateTag nm ->
-        "Duplicated tag " ++ show nm
-      DuplicatedIdentifier ident ->
-        "Duplicated identifier " ++ ident
-      InvalidStateChangeTransitionNotAllowed kwt mkwf allowed ->
-        "Transition not allowed "
-          ++ show mkwf
-          ++ " -> "
-          ++ show kwt
-          ++ ", allowed: "
-          ++ show allowed
-      InvalidStateChangeInvalidTransition trans kwt kwf ->
-        "Invalid "
-          ++ case trans of
-            FirstTransition -> "initial"
-            IntermediateTransition -> "intermediate"
-            LastTransition -> "final"
-          ++ " state transition "
-          ++ show kwf
-          ++ " -> "
-          ++ show kwt
-      InvalidStateChangeWrongTimeOrder a b ->
-        "Wrong time order in log "
-          ++ show (showTime b)
-          ++ " > "
-          ++ show (showTime a)
-      InvalidStateChangeIdempotent kw ->
-        "Idempotent state transition " ++ show kw
-      MultipleLogbooks ->
-        "Multiple logbooks found"
-      MixedLogbooks ->
-        "Log entries inside and outside of logbooks found"
-      TimestampsOnNonTodo ->
-        "Timestamps found on non-todo entry"
-      InconsistentWhitespace desc ->
-        "Whitespace " ++ desc ++ " is inconsistent"
-      InconsistentFilePreambleWhitespace ->
-        "Whitespace surrounding file preamble is inconsistent"
-      EmptyBodyWhitespace ->
-        "Whitespace only body"
-      UnnecessaryWhitespace ->
-        "Unnecessary whitespace"
-      MultipleBlankLines ->
-        "Multiple blank lines"
-      CategoryTooLong cat ->
-        "Category name is too long: " ++ show cat
-      FileCreatedTimeMismatch t1 t2 ->
-        "Created time does not match file: "
-          ++ show (showTime t1)
-          ++ " != "
-          ++ show (showTime t2)
-      TitlePropertyNotLast ->
-        "Title is not the last file property"
-      FileTagsTodoMismatch ->
-        "Filetags :todo: does not reflect todo entries in file"
-      TagInFileUnknown tag ->
-        "Tag in file is not part of tags vocabulary: " ++ tag
-      VerbInFileUnknown tag ->
-        "Verb in file is not part of verb vocabulary: " ++ tag
-      InvalidLocation l ->
-        "Location is not valid: " ++ l
-      InvalidDrawerCase d ->
-        "Drawer has invalid case: " ++ show d
-      TodoMissingReviewProperties ->
-        "Todo missing LAST_REVIEW and NEXT_REVIEW properties"
-      NonTodoWithReviewProperties ->
-        "Non-todo with LAST_REVIEW and NEXT_REVIEW properties"
-      BrokenLink link ->
-        "Link to missing file: " ++ link
-      HashesDoNotMatch x y ->
-        "Hashes do not match: " ++ x ++ " != " ++ y
-      FileFailsToRoundTrip ->
-        "File fails to round trip through parsing and printing"
-      AudioFileNotFound path ->
-        "Audio file referenced in :AUDIO: property not found: " ++ path
+ where
+  loc = fl ++ ":" ++ show ln
+  prefix = loc ++ ": " ++ renderKind
+  renderKind = case kind of
+    LintError -> "ERROR"
+    LintWarn -> "WARN"
+    LintInfo -> "INFO"
+    LintAll -> "ALL"
+    LintDebug -> "DEBUG"
+  renderCode = case code of
+    FileSlugMismatch slug ->
+      "Mismatch in file slug:\ngit mv -k -- "
+        ++ show fl
+        ++ " "
+        ++ show (fl & fileName . fileNameParts . _2 .~ slug)
+    TodoMissingProperty nm ->
+      "Open todo missing property " ++ show nm
+    FileMissingProperty nm ->
+      "File missing property " ++ show nm
+    TaskMissingAssignment ->
+      "Task missing assignment"
+    TodoLinkDoesNotMatchUrl ->
+      ":LINK: tag does not match URL property"
+    TodoFileDoesNotMatchAttachment ->
+      ":FILE: tag does not match presence of attachments"
+    TodoLinkKeywordImpliesLinkTag ->
+      "LINK keyword implies :LINK: tag, therefore it is not needed"
+    ArchiveTagFileDoesNotExist path ->
+      ":ARCHIVE: tag refers to a non-existent file: " ++ path
+    MisplacedProperty ->
+      "Misplaced :PROPERTIES: block"
+    MisplacedTimestamp ->
+      "Misplaced timestamp (SCHEDULED, DEADLINE or CLOSED)"
+    MisplacedLogEntry ->
+      "Misplaced log entry or log book"
+    MisplacedDrawerEnd ->
+      "Misplaced end of drawer"
+    WhitespaceAtStartOfLogEntry ->
+      "Log entry begins with whitespace"
+    FileTitleMissing ->
+      "Title is missing"
+    TitleWithExcessiveWhitespace ->
+      "Title with excessive whitespace"
+    OverlyLongHeadline ->
+      "Headline is too long"
+    DuplicateFileProperty nm ->
+      "Duplicated file property " ++ show nm
+    DuplicateProperty nm ->
+      "Duplicated property " ++ show nm
+    DuplicateTag nm ->
+      "Duplicated tag " ++ show nm
+    DuplicatedIdentifier ident ->
+      "Duplicated identifier " ++ ident
+    InvalidStateChangeTransitionNotAllowed kwt mkwf allowed ->
+      "Transition not allowed "
+        ++ show mkwf
+        ++ " -> "
+        ++ show kwt
+        ++ ", allowed: "
+        ++ show allowed
+    InvalidStateChangeInvalidTransition trans kwt kwf ->
+      "Invalid "
+        ++ case trans of
+          FirstTransition -> "initial"
+          IntermediateTransition -> "intermediate"
+          LastTransition -> "final"
+        ++ " state transition "
+        ++ show kwf
+        ++ " -> "
+        ++ show kwt
+    InvalidStateChangeWrongTimeOrder a b ->
+      "Wrong time order in log "
+        ++ show (showTime b)
+        ++ " > "
+        ++ show (showTime a)
+    InvalidStateChangeIdempotent kw ->
+      "Idempotent state transition " ++ show kw
+    MultipleLogbooks ->
+      "Multiple logbooks found"
+    MixedLogbooks ->
+      "Log entries inside and outside of logbooks found"
+    TimestampsOnNonTodo ->
+      "Timestamps found on non-todo entry"
+    InconsistentWhitespace desc ->
+      "Whitespace " ++ desc ++ " is inconsistent"
+    InconsistentFilePreambleWhitespace ->
+      "Whitespace surrounding file preamble is inconsistent"
+    EmptyBodyWhitespace ->
+      "Whitespace only body"
+    UnnecessaryWhitespace ->
+      "Unnecessary whitespace"
+    MultipleBlankLines ->
+      "Multiple blank lines"
+    CategoryTooLong cat ->
+      "Category name is too long: " ++ show cat
+    FileCreatedTimeMismatch t1 t2 ->
+      "Created time does not match file: "
+        ++ show (showTime t1)
+        ++ " != "
+        ++ show (showTime t2)
+    TitlePropertyNotLast ->
+      "Title is not the last file property"
+    FileTagsTodoMismatch ->
+      "Filetags :todo: does not reflect todo entries in file"
+    TagInFileUnknown tag ->
+      "Tag in file is not part of tags vocabulary: " ++ tag
+    VerbInFileUnknown tag ->
+      "Verb in file is not part of verb vocabulary: " ++ tag
+    InvalidLocation l ->
+      "Location is not valid: " ++ l
+    InvalidDrawerCase d ->
+      "Drawer has invalid case: " ++ show d
+    TodoMissingReviewProperties ->
+      "Todo missing LAST_REVIEW and NEXT_REVIEW properties"
+    NonTodoWithReviewProperties ->
+      "Non-todo with LAST_REVIEW and NEXT_REVIEW properties"
+    BrokenLink link ->
+      "Link to missing file: " ++ link
+    HashesDoNotMatch x y ->
+      "Hashes do not match: " ++ x ++ " != " ++ y
+    FileFailsToRoundTrip ->
+      "File fails to round trip through parsing and printing"
+    AudioFileNotFound path ->
+      "Audio file referenced in :AUDIO: property not found: " ++ path

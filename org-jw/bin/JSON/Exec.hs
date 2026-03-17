@@ -1,7 +1,5 @@
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module JSON.Exec where
@@ -28,6 +26,6 @@ execJson _cfg opts coll =
 jsonFilePath :: FilePath -> FilePath -> FilePath
 jsonFilePath jdir path =
   jdir </> takeBaseName (map repl path) <.> "json"
-  where
-    repl '/' = '!'
-    repl c = c
+ where
+  repl '/' = '!'
+  repl c = c

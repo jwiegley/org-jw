@@ -18,6 +18,7 @@ import Data.Maybe (isJust, maybeToList)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Time
+
 -- import Debug.Trace
 import FlatParse.Combinators
 import FlatParse.Stateful hiding (Parser)
@@ -69,7 +70,7 @@ parseProperties = do
     -- traceM "parseProperties..8"
     let _inherited = False
     -- traceM "parseProperties..9"
-    pure Property {..}
+    pure Property{..}
   -- traceM $ "parseProperties..10: props = " ++ show props
   $(string ":END:") *> trailingSpace
   -- traceM "parseProperties..11"
@@ -114,7 +115,7 @@ parseHeader = do
   --     <*> stampFromProperty EditedStamp "edited" _headerPropertiesDrawer
   --     <*> stampFromProperty DateStamp "date" _headerFileProperties
   _headerPreamble <- parseEntryBody 1
-  pure Header {..}
+  pure Header{..}
 
 parseHeaderStars :: Parser Int
 parseHeaderStars = do
@@ -129,7 +130,7 @@ parseFileProperty = do
   skipMany singleSpace
   _value <- restOfLine
   let _inherited = False
-  pure Property {..}
+  pure Property{..}
 
 parseKeyword :: Parser Keyword
 parseKeyword = do
@@ -203,14 +204,13 @@ parseEntry parseAtDepth = do
               l : ls -> case previewIsh _LogBody l of
                 Just bdy -> case reverse (_blocks bdy) of
                   (le@(Whitespace _ _) : les) ->
-                    case ( _blocks text,
-                           reverse (_blocks text)
+                    case ( _blocks text
+                         , reverse (_blocks text)
                          ) of
                       (b : bs, Whitespace _ _ : _) ->
                         ( reverse
-                            ( setIsh _LogBody (Body (reverse les)) l : ls
-                            ),
-                          Body (le : b : bs)
+                            (setIsh _LogBody (Body (reverse les)) l : ls)
+                        , Body (le : b : bs)
                         )
                       _ -> dflt
                   _ -> dflt
@@ -218,7 +218,7 @@ parseEntry parseAtDepth = do
   -- traceM "parseEntry..17"
   _entryItems <- many (parseEntry (succ _entryDepth))
   -- traceM "parseEntry..18"
-  pure Entry {..}
+  pure Entry{..}
 
 parseEntryPriority :: Parser String
 parseEntryPriority = do
@@ -235,7 +235,7 @@ parseEntryPriority = do
 parseEntryVerb :: Parser String
 parseEntryVerb = do
   -- traceM "parseEntryVerb..1"
-  verb <- some (satisfy (\c -> isAlpha c))
+  verb <- some (satisfy isAlpha)
   $(char ':')
   spaces_
   pure verb
@@ -278,19 +278,19 @@ parseTags :: Parser [Tag]
 parseTags = do
   -- traceM "parseTags..1"
   colon *> endBy1 parseTag colon
-  where
-    colon = $(char ':')
+ where
+  colon = $(char ':')
 
 parseTag :: FP.Parser r e Tag
 parseTag = PlainTag <$> tag
-  where
-    tag :: FP.Parser r e String
-    tag =
-      many
-        ( satisfy $ \ch ->
-            isAlphaNum ch
-              || ch `elem` ['-', '_', '=', '/']
-        )
+ where
+  tag :: FP.Parser r e String
+  tag =
+    many
+      ( satisfy $ \ch ->
+          isAlphaNum ch
+            || ch `elem` ['-', '_', '=', '/']
+      )
 
 parseStamps :: Parser [Stamp]
 parseStamps = do
@@ -311,10 +311,10 @@ parseStamp = do
    )
 
 blendTimes :: Time -> Time -> Time
-blendTimes start Time {..} =
+blendTimes start Time{..} =
   start
-    { _timeDayEnd = Just _timeDay,
-      _timeEnd = _timeStart
+    { _timeDayEnd = Just _timeDay
+    , _timeEnd = _timeStart
     }
 
 parseTime :: Parser Time
@@ -324,7 +324,7 @@ parseTime = do
   mend <- optional $ $(string "--") *> parseTimeSingle
   case mend of
     Nothing -> pure start
-    Just tm@Time {..} -> do
+    Just tm@Time{..} -> do
       forM_ _timeDayEnd $ \_ -> do
         !loc <- getLoc
         err (loc, "Invalid ending time (has day end): " ++ show tm)
@@ -372,8 +372,8 @@ parseTimeSingle = do
     Nothing -> do
       !loc <- getLoc
       err
-        ( loc,
-          "Could not parse gregorian date: "
+        ( loc
+        , "Could not parse gregorian date: "
             ++ show year
             ++ "-"
             ++ show month
@@ -478,13 +478,13 @@ parseTimeSingle = do
                |]
          )
       pure (num, s)
-    pure TimeSuffix {..}
+    pure TimeSuffix{..}
   -- traceM "parseTimeSingle..14"
   _ <- case _timeKind of
     ActiveTime -> $(char '>')
     InactiveTime -> $(char ']')
   -- traceM "parseTimeSingle..15"
-  pure Time {..}
+  pure Time{..}
 
 parseLogEntry :: Parser LogEntry
 parseLogEntry = do
@@ -515,120 +515,120 @@ parseLogEntry = do
              parseLogBook loc
          |]
    )
-  where
-    trailingNote = do
-      -- traceM "trailingNote..1"
-      ( Just
-          <$> ( spaces_
-                  *> $(string "\\\\")
-                  *> trailingSpace
-                  *> parseNoteBody
-              )
-        )
-        <|> ( do
-                -- traceM "trailingNote..2"
-                Nothing <$ trailingSpace
+ where
+  trailingNote = do
+    -- traceM "trailingNote..1"
+    ( Just
+        <$> ( spaces_
+                *> $(string "\\\\")
+                *> trailingSpace
+                *> parseNoteBody
             )
+      )
+      <|> ( do
+              -- traceM "trailingNote..2"
+              Nothing <$ trailingSpace
+          )
 
-    parseClockEntry loc = do
-      -- traceM "parseClockEntry..1"
-      _ <- spaces_
-      -- traceM "parseClockEntry..2"
-      start <- parseTimeSingle
-      -- traceM "parseClockEntry..3"
-      mend <- optional $ do
-        -- traceM "parseClockEntry..4"
-        $(string "--")
-        -- traceM "parseClockEntry..5"
-        end <- parseTimeSingle
-        -- traceM "parseClockEntry..6"
-        let tm = blendTimes start end
-        -- traceM "parseClockEntry..7"
-        spaces_ *> $(string "=>") *> spaces_
-        -- traceM "parseClockEntry..8"
-        -- traceM "parseClockEntry..9"
-        _hours <- read <$> some digitChar
-        -- traceM "parseClockEntry..10"
-        _ <- $(char ':')
-        -- traceM "parseClockEntry..11"
-        _mins <- read <$> some digitChar
-        -- traceM "parseClockEntry..12"
-        trailingSpace
-        -- traceM "parseClockEntry..13"
-        pure (tm, Just (Duration {..}))
-      case mend of
-        Nothing -> trailingSpace
-        _ -> pure ()
-      -- traceM "parseClockEntry..14"
-      pure $
-        maybe
-          (LogClock loc start Nothing)
-          (uncurry (LogClock loc))
-          mend
-
-    parseLogBook loc = do
-      -- traceM "parseLogBook..1"
+  parseClockEntry loc = do
+    -- traceM "parseClockEntry..1"
+    _ <- spaces_
+    -- traceM "parseClockEntry..2"
+    start <- parseTimeSingle
+    -- traceM "parseClockEntry..3"
+    mend <- optional $ do
+      -- traceM "parseClockEntry..4"
+      $(string "--")
+      -- traceM "parseClockEntry..5"
+      end <- parseTimeSingle
+      -- traceM "parseClockEntry..6"
+      let tm = blendTimes start end
+      -- traceM "parseClockEntry..7"
+      spaces_ *> $(string "=>") *> spaces_
+      -- traceM "parseClockEntry..8"
+      -- traceM "parseClockEntry..9"
+      _hours <- read <$> some digitChar
+      -- traceM "parseClockEntry..10"
+      _ <- $(char ':')
+      -- traceM "parseClockEntry..11"
+      _mins <- read <$> some digitChar
+      -- traceM "parseClockEntry..12"
       trailingSpace
-      -- traceM "parseLogBook..2"
-      book <- many parseLogEntry
-      -- traceM $ "parseLogBook..3: " ++ show book
-      $(string ":END:") *> trailingSpace
-      -- traceM "parseLogBook..4"
-      return $ LogBook loc book
+      -- traceM "parseClockEntry..13"
+      pure (tm, Just (Duration{..}))
+    case mend of
+      Nothing -> trailingSpace
+      _ -> pure ()
+    -- traceM "parseClockEntry..14"
+    pure $
+      maybe
+        (LogClock loc start Nothing)
+        (uncurry (LogClock loc))
+        mend
 
-    parseClosing loc = do
-      -- traceM "parseClosing..1"
-      spaces_
-      LogClosing loc <$> parseTimeSingle
+  parseLogBook loc = do
+    -- traceM "parseLogBook..1"
+    trailingSpace
+    -- traceM "parseLogBook..2"
+    book <- many parseLogEntry
+    -- traceM $ "parseLogBook..3: " ++ show book
+    $(string ":END:") *> trailingSpace
+    -- traceM "parseLogBook..4"
+    return $ LogBook loc book
 
-    parseState loc = do
-      -- traceM "parseState..1"
-      fromKeyword <- parseKeyword <* $(char '"') <* spaces_
-      -- traceM "parseState..2"
-      toKeyword <-
-        optional $
-          $(string "from")
-            *> spaces_
-            *> $(char '"')
-            *> parseKeyword
-            <* $(char '"')
-            <* spaces_
-      -- traceM "parseState..3"
-      LogState loc fromKeyword toKeyword <$> parseTimeSingle
+  parseClosing loc = do
+    -- traceM "parseClosing..1"
+    spaces_
+    LogClosing loc <$> parseTimeSingle
 
-    parseNote loc = do
-      -- traceM "parseNote..1"
-      spaces_
-      LogNote loc <$> parseTimeSingle
+  parseState loc = do
+    -- traceM "parseState..1"
+    fromKeyword <- parseKeyword <* $(char '"') <* spaces_
+    -- traceM "parseState..2"
+    toKeyword <-
+      optional $
+        $(string "from")
+          *> spaces_
+          *> $(char '"')
+          *> parseKeyword
+          <* $(char '"')
+          <* spaces_
+    -- traceM "parseState..3"
+    LogState loc fromKeyword toKeyword <$> parseTimeSingle
 
-    parseRescheduled loc = do
-      -- traceM "parseRescheduled..1"
-      origTime <- parseTimeSingle
-      $(string "\" on") <* spaces_
-      LogRescheduled loc origTime <$> parseTimeSingle
+  parseNote loc = do
+    -- traceM "parseNote..1"
+    spaces_
+    LogNote loc <$> parseTimeSingle
 
-    parseNotScheduled loc = do
-      -- traceM "parseNotScheduled..1"
-      origTime <- parseTimeSingle
-      $(string "\" on") <* spaces_
-      LogNotScheduled loc origTime <$> parseTimeSingle
+  parseRescheduled loc = do
+    -- traceM "parseRescheduled..1"
+    origTime <- parseTimeSingle
+    $(string "\" on") <* spaces_
+    LogRescheduled loc origTime <$> parseTimeSingle
 
-    parseDeadline loc = do
-      -- traceM "parseDeadline..1"
-      origTime <- parseTimeSingle
-      $(string "\" on") <* spaces_
-      LogDeadline loc origTime <$> parseTimeSingle
+  parseNotScheduled loc = do
+    -- traceM "parseNotScheduled..1"
+    origTime <- parseTimeSingle
+    $(string "\" on") <* spaces_
+    LogNotScheduled loc origTime <$> parseTimeSingle
 
-    parseNoDeadline loc = do
-      -- traceM "parseNoDeadline..1"
-      origTime <- parseTimeSingle
-      $(string "\" on") <* spaces_
-      LogNoDeadline loc origTime <$> parseTimeSingle
+  parseDeadline loc = do
+    -- traceM "parseDeadline..1"
+    origTime <- parseTimeSingle
+    $(string "\" on") <* spaces_
+    LogDeadline loc origTime <$> parseTimeSingle
 
-    parseRefiling loc = do
-      -- traceM "parseRefiling..1"
-      spaces_
-      LogRefiling loc <$> parseTimeSingle
+  parseNoDeadline loc = do
+    -- traceM "parseNoDeadline..1"
+    origTime <- parseTimeSingle
+    $(string "\" on") <* spaces_
+    LogNoDeadline loc origTime <$> parseTimeSingle
+
+  parseRefiling loc = do
+    -- traceM "parseRefiling..1"
+    spaces_
+    LogRefiling loc <$> parseTimeSingle
 
 parseEntryBody :: Int -> Parser Body
 parseEntryBody parseAtDepth = do
@@ -670,35 +670,35 @@ parseBlock leader = do
     <|> parseDrawerBlock loc
     <|> parseInlineTask loc
     <|> parseParagraphBlock loc
-  where
-    parseWhitespaceBlock loc = do
-      -- traceM "parseWhitespaceBlock..1"
-      Whitespace loc <$> manyTill (satisfy (== ' ')) newline
+ where
+  parseWhitespaceBlock loc = do
+    -- traceM "parseWhitespaceBlock..1"
+    Whitespace loc <$> manyTill (satisfy (== ' ')) newline
 
-    parseDrawerBlock loc = do
-      -- traceM "parseDrawerBlock..1"
-      uncurry (Drawer loc) <$> (leader *> parseDrawer leader)
+  parseDrawerBlock loc = do
+    -- traceM "parseDrawerBlock..1"
+    uncurry (Drawer loc) <$> (leader *> parseDrawer leader)
 
-    parseInlineTask loc = do
-      -- traceM "parseInlineTask..1"
-      InlineTask loc
-        <$> try
-          ( parseEntry 15 <* do
-              -- traceM "parseInlineTask..2"
-              depth <- parseHeaderStars
-              -- traceM $ "parseInlineTask..3: " ++ show depth
-              guard $ depth == 15
-              -- traceM "parseInlineTask..4"
-              $(string "END")
-              -- traceM "parseInlineTask..5"
-              _ <- restOfLine
-              -- traceM "parseInlineTask..6"
-              pure ()
-          )
+  parseInlineTask loc = do
+    -- traceM "parseInlineTask..1"
+    InlineTask loc
+      <$> try
+        ( parseEntry 15 <* do
+            -- traceM "parseInlineTask..2"
+            depth <- parseHeaderStars
+            -- traceM $ "parseInlineTask..3: " ++ show depth
+            guard $ depth == 15
+            -- traceM "parseInlineTask..4"
+            $(string "END")
+            -- traceM "parseInlineTask..5"
+            _ <- restOfLine
+            -- traceM "parseInlineTask..6"
+            pure ()
+        )
 
-    parseParagraphBlock loc = do
-      -- traceM "parseParagraphBlock..1"
-      Paragraph loc . (: []) <$> (leader *> lineOrEof)
+  parseParagraphBlock loc = do
+    -- traceM "parseParagraphBlock..1"
+    Paragraph loc . (: []) <$> (leader *> lineOrEof)
 
 parseDrawer :: Parser a -> Parser (DrawerType, [String])
 parseDrawer leader = do
@@ -712,81 +712,81 @@ parseDrawer leader = do
            "#+BEGIN" -> parseSrcDrawer prefix "#+BEGIN"
          |]
    )
-  where
-    endDrawerString =
-      $( switch
-           [|
-             case _ of
-               ":end:" -> pure ":end:"
-               ":END:" -> pure ":END:"
-             |]
-       )
+ where
+  endDrawerString =
+    $( switch
+         [|
+           case _ of
+             ":end:" -> pure ":end:"
+             ":END:" -> pure ":END:"
+           |]
+     )
 
-    parsePlainDrawer prefix = do
-      -- traceM "parsePlainDrawer..1"
-      txt <- do
-        -- traceM "parsePlainDrawer..2"
-        -- jww (2024-09-11): Draw name should be included as:
-        -- @Drawer Loc String [String]@
-        ident <- identifier <* $(char ':') <* trailingSpace
-        -- traceM "parsePlainDrawer..3"
-        pure $ ":" <> ident <> ":"
-      -- traceM "parsePlainDrawer..4"
-      content <-
-        manyTill
-          (("\n" <$ newline) <|> (leader *> restOfLine))
-          ( lookahead
-              ( void
-                  ( leader
-                      *> byteString (T.encodeUtf8 (T.pack prefix))
-                      *> endDrawerString
-                  )
-                  <|> eof
-              )
-          )
-      -- traceM "parsePlainDrawer..5"
-      endLine <- do
-        -- traceM "parsePlainDrawer..6"
-        _ <- leader *> byteString (T.encodeUtf8 (T.pack prefix))
-        -- traceM "parsePlainDrawer..7"
-        ending <- endDrawerString <* trailingSpace
-        -- traceM "parsePlainDrawer..8"
-        pure $ prefix <> ending
-      -- traceM "parsePlainDrawer..9"
-      pure (PlainDrawer txt, prefix <> txt : content ++ [endLine])
-
-    endBlockString =
-      $( switch
-           [|
-             case _ of
-               "#+end" -> pure "#+end"
-               "#+END" -> pure "#+END"
-             |]
-       )
-
-    parseSrcDrawer prefix begin = do
-      -- traceM "parseSrcDrawer..1"
-      txt <- do
-        suffix <- wholeLine
-        pure $ begin <> suffix
-      content <-
-        manyTill
-          (("" <$ newline) <|> (leader *> restOfLine))
-          ( lookahead
-              ( void
-                  ( leader
-                      *> byteString (T.encodeUtf8 (T.pack prefix))
-                      *> endBlockString
-                  )
-                  <|> eof
-              )
-          )
-      endLine <- do
-        _ <- leader *> byteString (T.encodeUtf8 (T.pack prefix))
-        ending <- endBlockString
-        suffix <- wholeLine
-        pure $ prefix <> ending <> suffix
-      pure
-        ( BeginDrawer (unwords (Prelude.take 2 (words txt))),
-          prefix <> txt : content ++ [endLine]
+  parsePlainDrawer prefix = do
+    -- traceM "parsePlainDrawer..1"
+    txt <- do
+      -- traceM "parsePlainDrawer..2"
+      -- jww (2024-09-11): Draw name should be included as:
+      -- @Drawer Loc String [String]@
+      ident <- identifier <* $(char ':') <* trailingSpace
+      -- traceM "parsePlainDrawer..3"
+      pure $ ":" <> ident <> ":"
+    -- traceM "parsePlainDrawer..4"
+    content <-
+      manyTill
+        (("\n" <$ newline) <|> (leader *> restOfLine))
+        ( lookahead
+            ( void
+                ( leader
+                    *> byteString (T.encodeUtf8 (T.pack prefix))
+                    *> endDrawerString
+                )
+                <|> eof
+            )
         )
+    -- traceM "parsePlainDrawer..5"
+    endLine <- do
+      -- traceM "parsePlainDrawer..6"
+      _ <- leader *> byteString (T.encodeUtf8 (T.pack prefix))
+      -- traceM "parsePlainDrawer..7"
+      ending <- endDrawerString <* trailingSpace
+      -- traceM "parsePlainDrawer..8"
+      pure $ prefix <> ending
+    -- traceM "parsePlainDrawer..9"
+    pure (PlainDrawer txt, prefix <> txt : content ++ [endLine])
+
+  endBlockString =
+    $( switch
+         [|
+           case _ of
+             "#+end" -> pure "#+end"
+             "#+END" -> pure "#+END"
+           |]
+     )
+
+  parseSrcDrawer prefix begin = do
+    -- traceM "parseSrcDrawer..1"
+    txt <- do
+      suffix <- wholeLine
+      pure $ begin <> suffix
+    content <-
+      manyTill
+        (("" <$ newline) <|> (leader *> restOfLine))
+        ( lookahead
+            ( void
+                ( leader
+                    *> byteString (T.encodeUtf8 (T.pack prefix))
+                    *> endBlockString
+                )
+                <|> eof
+            )
+        )
+    endLine <- do
+      _ <- leader *> byteString (T.encodeUtf8 (T.pack prefix))
+      ending <- endBlockString
+      suffix <- wholeLine
+      pure $ prefix <> ending <> suffix
+    pure
+      ( BeginDrawer (unwords (Prelude.take 2 (words txt)))
+      , prefix <> txt : content ++ [endLine]
+      )

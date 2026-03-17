@@ -14,9 +14,9 @@ import Options.Applicative as OA
 import Org.Lint
 
 data LintOptions = LintOptions
-  { _kind :: !LintMessageKind,
-    _checkDir :: !(Maybe FilePath),
-    _roundTrip :: !Bool
+  { _kind :: !LintMessageKind
+  , _checkDir :: !(Maybe FilePath)
+  , _roundTrip :: !Bool
   }
   deriving (Show, Eq, Typeable, Generic)
 

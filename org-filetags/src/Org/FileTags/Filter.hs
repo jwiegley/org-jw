@@ -33,18 +33,18 @@ tagName =
 
 parseTagExpr :: FP.Parser r String TagExpr
 parseTagExpr = f TagAnd TagTrue
-  where
-    f binop end = foldr binop end <$> (sepBy1 go spaces_ <* eof)
-    go =
-      $( switch
-           [|
-             case _ of
-               "-" -> TagNot . TagVar <$> tagName
-               "(" -> parseTagExpr <* $(char ')')
-               "(|" -> f TagOr TagFalse <* $(char ')')
-               _ -> TagVar <$> tagName
-             |]
-       )
+ where
+  f binop end = foldr binop end <$> (sepBy1 go spaces_ <* eof)
+  go =
+    $( switch
+         [|
+           case _ of
+             "-" -> TagNot . TagVar <$> tagName
+             "(" -> parseTagExpr <* $(char ')')
+             "(|" -> f TagOr TagFalse <* $(char ')')
+             _ -> TagVar <$> tagName
+           |]
+     )
 
 tagsMatch :: TagExpr -> [String] -> Bool
 tagsMatch (TagVar tag) ts = tag `elem` ts

@@ -9,6 +9,7 @@ import Control.Monad.State
 import Data.Foldable (forM_)
 import Data.List (sortOn)
 import Data.Map.Strict qualified as M
+import Data.Ord (Down (..))
 import Org.Data
 import Org.Types
 import Stats.Options
@@ -107,50 +108,50 @@ execStats cfg _opts coll = do
             )
             register
   showStats stampsUsed id
-  where
-    _StampKey :: (Applicative f) => (String -> f String) -> Stamp -> f Stamp
-    _StampKey f e = case e of
-      ClosedStamp _ _ -> e <$ f "Closed"
-      ScheduledStamp _ _ -> e <$ f "Scheduled"
-      DeadlineStamp _ _ -> e <$ f "Deadline"
-      ActiveStamp _ _ -> e <$ f "Active"
+ where
+  _StampKey :: (Applicative f) => (String -> f String) -> Stamp -> f Stamp
+  _StampKey f e = case e of
+    ClosedStamp _ _ -> e <$ f "Closed"
+    ScheduledStamp _ _ -> e <$ f "Scheduled"
+    DeadlineStamp _ _ -> e <$ f "Deadline"
+    ActiveStamp _ _ -> e <$ f "Active"
 
-    _LogKey :: (Applicative f) => (String -> f String) -> LogEntry -> f LogEntry
-    _LogKey f e = case e of
-      LogClosing _ _ _ -> e <$ f "LogClosing"
-      LogState _ _ _ _ _ -> e <$ f "LogState"
-      LogNote _ _ _ -> e <$ f "LogNote"
-      LogRescheduled _ _ _ _ -> e <$ f "LogRescheduled"
-      LogNotScheduled _ _ _ _ -> e <$ f "LogNotScheduled"
-      LogDeadline _ _ _ _ -> e <$ f "LogDeadline"
-      LogNoDeadline _ _ _ _ -> e <$ f "LogNoDeadline"
-      LogRefiling _ _ _ -> e <$ f "LogRefiling"
-      LogClock _ _ _ -> e <$ f "LogClock"
-      LogBook _ _ -> e <$ f "LogBook"
+  _LogKey :: (Applicative f) => (String -> f String) -> LogEntry -> f LogEntry
+  _LogKey f e = case e of
+    LogClosing _ _ _ -> e <$ f "LogClosing"
+    LogState _ _ _ _ _ -> e <$ f "LogState"
+    LogNote _ _ _ -> e <$ f "LogNote"
+    LogRescheduled _ _ _ _ -> e <$ f "LogRescheduled"
+    LogNotScheduled _ _ _ _ -> e <$ f "LogNotScheduled"
+    LogDeadline _ _ _ _ -> e <$ f "LogDeadline"
+    LogNoDeadline _ _ _ _ -> e <$ f "LogNoDeadline"
+    LogRefiling _ _ _ -> e <$ f "LogRefiling"
+    LogClock _ _ _ -> e <$ f "LogClock"
+    LogBook _ _ -> e <$ f "LogBook"
 
-    orgItems = coll ^.. items . traverse . _OrgItem
-    orgEntries = orgItems ^.. traverse . allEntries
-    orgTodos = orgEntries ^.. traverse . keyword . filtered (isTodo cfg)
-    orgOpenTodos = orgTodos ^.. traverse . filtered (isOpenTodo cfg)
+  orgItems = coll ^.. items . traverse . _OrgItem
+  orgEntries = orgItems ^.. traverse . allEntries
+  orgTodos = orgEntries ^.. traverse . keyword . filtered (isTodo cfg)
+  orgOpenTodos = orgTodos ^.. traverse . filtered (isOpenTodo cfg)
 
-    allKeywords = countEntries coll $ \e m k ->
-      k m $ case e ^. entryKeyword of
-        Nothing -> "<plain>"
-        Just (OpenKeyword _ kw) -> kw
-        Just (ClosedKeyword _ kw) -> kw
+  allKeywords = countEntries coll $ \e m k ->
+    k m $ case e ^. entryKeyword of
+      Nothing -> "<plain>"
+      Just (OpenKeyword _ kw) -> kw
+      Just (ClosedKeyword _ kw) -> kw
 
-    allTags = countEntries coll $ \e m k ->
-      foldr (flip k) m (e ^. entryTags)
+  allTags = countEntries coll $ \e m k ->
+    foldr (flip k) m (e ^. entryTags)
 
-    register k =
-      at k %= \case
-        Nothing -> Just (1 :: Int)
-        Just n -> Just (succ n)
+  register k =
+    at k %= \case
+      Nothing -> Just (1 :: Int)
+      Just n -> Just (succ n)
 
-    itemsUsed l = flip execState M.empty $
-      forM_ orgEntries $ \ent ->
-        forM_ (ent ^. l) register
+  itemsUsed l = flip execState M.empty $
+    forM_ orgEntries $ \ent ->
+      forM_ (ent ^. l) register
 
-    showStats m k =
-      forM_ (reverse (sortOn snd (M.assocs m))) $ \(x, n) ->
-        putStrLn $ "  " ++ show n ++ " " ++ k x
+  showStats m k =
+    forM_ (sortOn (Down . snd) (M.assocs m)) $ \(x, n) ->
+      putStrLn $ "  " ++ show n ++ " " ++ k x
