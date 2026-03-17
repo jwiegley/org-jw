@@ -34,18 +34,7 @@ jobs:
     - uses: haskell-actions/hlint-setup@v2
     - uses: haskell-actions/hlint-run@v2
       with:
-        path: |
-          flatparse-util/
-          org-cbor/
-          org-data/
-          org-filetags/
-          org-json/
-          org-jw/
-          org-lint/
-          org-parse/
-          org-print/
-          org-site/
-          org-types/
+        path: "flatparse-util/ org-cbor/ org-data/ org-filetags/ org-json/ org-jw/ org-lint/ org-parse/ org-print/ org-site/ org-types/"
         fail-on: warning
 
   build:
