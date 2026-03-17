@@ -14,8 +14,6 @@
           inherit system overlays;
           inherit (haskellNix) config;
         };
-        flake = pkgs.org-jw.flake {
-        };
         overlays = [ haskellNix.overlay
           (final: prev: {
             org-jw =
@@ -30,6 +28,10 @@
                   };
                   buildInputs = with pkgs; [
                     pkg-config
+                    haskellPackages.fourmolu
+                    haskellPackages.hlint
+                    haskellPackages.hpc
+                    lefthook
                   ];
                   withHoogle = true;
                 };
@@ -40,10 +42,51 @@
               };
           })
         ];
+        flake = pkgs.org-jw.flake {
+        };
+
+        # All Haskell source directories (excluding dist-newstyle)
+        hsDirs = builtins.concatStringsSep " " [
+          "flatparse-util"
+          "org-cbor"
+          "org-data"
+          "org-filetags"
+          "org-json"
+          "org-jw"
+          "org-lint"
+          "org-parse"
+          "org-print"
+          "org-site"
+          "org-types"
+        ];
+
       in flake // {
         packages.default = flake.packages."org-jw:exe:org";
+
         devShells.default = flake.devShells.default // {
           withHoogle = true;
+        };
+
+        checks = (flake.checks or {}) // {
+          formatting = pkgs.runCommand "check-formatting" {
+            nativeBuildInputs = [ pkgs.haskellPackages.fourmolu pkgs.findutils ];
+            src = self;
+          } ''
+            cd $src
+            find ${hsDirs} -name '*.hs' -type f \
+              | xargs fourmolu --mode check
+            touch $out
+          '';
+
+          hlint = pkgs.runCommand "check-hlint" {
+            nativeBuildInputs = [ pkgs.haskellPackages.hlint pkgs.findutils ];
+            src = self;
+          } ''
+            cd $src
+            find ${hsDirs} -name '*.hs' -type f \
+              | xargs hlint
+            touch $out
+          '';
         };
       });
 }
