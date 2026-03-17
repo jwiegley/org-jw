@@ -1,0 +1,22 @@
+- arguments:
+    - --threads
+
+# Ignore hints that conflict with FlatParse patterns
+- ignore: {name: "Use camelCase"}
+- ignore: {name: "Redundant bracket", within: [Org.Parse]}
+- ignore: {name: "Reduce duplication", within: [Org.Parse]}
+
+# Allow explicit lambda in lens definitions
+- ignore: {name: "Avoid lambda", within: [Org.Data]}
+
+# Style preferences: keep data over newtype for options types (strictness annotations)
+- ignore: {name: "Use newtype instead of data"}
+
+# Style preferences: explicit wildcard patterns are more readable
+- ignore: {name: "Use record patterns"}
+
+# Style preferences: explicit list concatenation can be clearer
+- ignore: {name: "Use :"}
+
+# Allow lambda + case in place of LambdaCase extension
+- ignore: {name: "Use lambda-case"}
