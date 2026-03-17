@@ -1,3 +1,6 @@
+.PHONY: all lint json trip trip-update stats meeting-stats newartisans \
+       format format-check hlint build-werror coverage profile fuzz haddock check test
+
 CABAL_FILES =					\
      flatparse-util/flatparse-util.cabal	\
      org-data/org-data.cabal			\
@@ -12,6 +15,7 @@ CABAL_FILES =					\
      org-types/org-types.cabal
 
 FIND_FILES = find -L ~/org \( \( -name .git -o -name template -o -name data \) -type d -prune -o -name '*.org' \) -type f
+HS_FILES = find flatparse-util org-cbor org-data org-filetags org-json org-jw org-lint org-parse org-print org-site org-types -name '*.hs' -type f
 
 all: $(CABAL_FILES)
 	cabal build all
@@ -99,6 +103,51 @@ newartisans: $(CABAL_FILES)
 	    site				\
 	    rebuild				\
 	    ~/org/newartisans/config.yaml
+
+###############################################################################
+# Development targets
+###############################################################################
+
+format:
+	$(HS_FILES) | xargs fourmolu --mode inplace
+
+format-check:
+	$(HS_FILES) | xargs fourmolu --mode check
+
+hlint:
+	$(HS_FILES) | xargs hlint
+
+build-werror: $(CABAL_FILES)
+	cabal build all --ghc-options="-Werror"
+
+coverage: $(CABAL_FILES)
+	scripts/check-coverage.sh
+
+profile: $(CABAL_FILES)
+	cabal build all --enable-profiling --enable-library-profiling
+	$(FIND_FILES)				\
+	    | cabal run org-jw:exe:org --	\
+		--config ~/org/org.yaml		\
+		--keywords ~/org/org.dot	\
+		lint				\
+		--round-trip			\
+		-F -				\
+		+RTS -N -p
+	@echo "Profile written to org.prof"
+
+test: all
+
+fuzz:
+	scripts/fuzz.sh
+
+haddock: $(CABAL_FILES)
+	cabal haddock all
+
+check: format-check hlint build-werror
+
+###############################################################################
+# hpack-generated .cabal files
+###############################################################################
 
 flatparse-util/flatparse-util.cabal: flatparse-util/package.yaml
 	(cd flatparse-util; hpack -f)

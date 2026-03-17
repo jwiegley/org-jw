@@ -1,2 +1,8 @@
 /.format
 /org.prof
+/dist-newstyle/
+/combined.tix
+/coverage-report/
+/.coverage-baseline
+/.perf-baseline
+/result
