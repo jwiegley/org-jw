@@ -17,3 +17,9 @@ source-repository-package
     --sha256: sha256-A7T8mXGsoZ3DhCk9u06vOoovJwKUSU+FMOfZU4Ukh/U=
 
 allow-newer: hakyll:template-haskell
+
+-- graphviz 2999.5.0.0 (from Stackage) doesn't compile with GHC 9.10
+-- due to ambiguous <> between Prelude.<> and Text.PrettyPrint.<>
+-- (see https://github.com/ivan-m/graphviz/issues/54).
+-- Version 2999.20+ switched to wl-pprint-text and fixed this.
+constraints: graphviz >= 2999.20
