@@ -1,6 +1,7 @@
 /.format
 /org.prof
 /dist-newstyle/
+/dist-coverage/
 /combined.tix
 /coverage-report/
 /.coverage-baseline

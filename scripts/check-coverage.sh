@@ -11,6 +11,7 @@ set -euo pipefail
 # it depends on the set of org files available on the machine.
 
 BASELINE_FILE=".coverage-baseline"
+COVERAGE_BUILDDIR="dist-coverage"
 ORG_YAML="${ORG_YAML:-$HOME/org/org.yaml}"
 ORG_DOT="${ORG_DOT:-$HOME/org/org.dot}"
 FIND_FILES="find -L $HOME/org \( \( -name .git -o -name template -o -name data \) -type d -prune -o -name '*.org' \) -type f"
@@ -21,11 +22,11 @@ if [ ! -f "$ORG_YAML" ]; then
 fi
 
 echo "Building with HPC coverage instrumentation..."
-cabal build all --enable-coverage 2>&1 | tail -1
+cabal build all --enable-coverage --builddir="$COVERAGE_BUILDDIR" 2>&1 | tail -1
 
 echo "Running round-trip with coverage..."
 eval "$FIND_FILES" \
-    | cabal run org-jw:exe:org -- \
+    | cabal run org-jw:exe:org --builddir="$COVERAGE_BUILDDIR" -- \
         --config "$ORG_YAML" \
         --keywords "$ORG_DOT" \
         lint \
@@ -34,7 +35,7 @@ eval "$FIND_FILES" \
         +RTS -N 2>/dev/null
 
 # Find and merge .tix files
-TIX_FILES=$(find dist-newstyle -name "*.tix" -type f 2>/dev/null || true)
+TIX_FILES=$(find "$COVERAGE_BUILDDIR" -name "*.tix" -type f 2>/dev/null || true)
 if [ -z "$TIX_FILES" ]; then
     echo "WARN: No .tix files found. Coverage data unavailable."
     exit 0
@@ -42,7 +43,7 @@ fi
 
 # Collect HPC mix directories
 HPCDIRS=""
-for mixdir in $(find dist-newstyle -path "*/hpc/vanilla/mix/*" -type d 2>/dev/null); do
+for mixdir in $(find "$COVERAGE_BUILDDIR" -path "*/hpc/vanilla/mix/*" -type d 2>/dev/null); do
     HPCDIRS="$HPCDIRS --hpcdir=$mixdir"
 done
 
