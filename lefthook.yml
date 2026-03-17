@@ -1,0 +1,29 @@
+pre-commit:
+  parallel: true
+  commands:
+    fourmolu:
+      glob: "*.hs"
+      run: >-
+        fourmolu --mode check
+        {staged_files}
+    hlint:
+      glob: "*.hs"
+      run: >-
+        hlint
+        {staged_files}
+    build:
+      glob: "*.{hs,yaml,cabal}"
+      run: cabal build all --ghc-options="-Werror"
+
+pre-push:
+  parallel: true
+  commands:
+    round-trip:
+      glob: "*.hs"
+      run: make all
+    coverage:
+      glob: "*.hs"
+      run: scripts/check-coverage.sh
+    perf:
+      glob: "*.hs"
+      run: scripts/check-perf.sh
