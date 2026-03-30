@@ -50,6 +50,7 @@
           "flatparse-util"
           "org-cbor"
           "org-data"
+          "org-db"
           "org-filetags"
           "org-json"
           "org-jw"

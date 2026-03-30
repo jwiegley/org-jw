@@ -17,6 +17,7 @@ jobs:
           flatparse-util/**/*.hs
           org-cbor/**/*.hs
           org-data/**/*.hs
+          org-db/**/*.hs
           org-filetags/**/*.hs
           org-json/**/*.hs
           org-jw/**/*.hs
@@ -33,7 +34,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: haskell-actions/hlint-setup@v2
     - name: Run hlint
-      run: hlint flatparse-util/ org-cbor/ org-data/ org-filetags/ org-json/ org-jw/ org-lint/ org-parse/ org-print/ org-site/ org-types/
+      run: hlint flatparse-util/ org-cbor/ org-data/ org-db/ org-filetags/ org-json/ org-jw/ org-lint/ org-parse/ org-print/ org-site/ org-types/
 
   build:
     name: Build (GHC 9.10)

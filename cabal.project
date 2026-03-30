@@ -2,6 +2,7 @@ packages: org-types/
           flatparse-util/
           org-cbor/
           org-json/
+          org-db/
           org-data/
           org-lint/
           org-parse/
