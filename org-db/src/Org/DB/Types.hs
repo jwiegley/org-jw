@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StrictData #-}
@@ -75,6 +76,10 @@ data SqlValue
 -- | Row parser: convert a list of 'SqlValue' into a typed row.
 class FromRow a where
   fromRow :: [SqlValue] -> Either String a
+
+-- | Raw passthrough: a list of SqlValue is already a valid row.
+instance FromRow [SqlValue] where
+  fromRow = Right
 
 -- | Backend-agnostic database handle using the record-of-functions pattern.
 data DBHandle = DBHandle

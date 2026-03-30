@@ -8,9 +8,14 @@ module Org.DB.Store (
   storeOrgFile,
   deleteFile,
   queryFiles,
+  queryFileByPath,
   queryEntries,
+  queryEntriesByFile,
   queryEntriesByKeyword,
   queryEntriesByTag,
+  queryEntryProperties,
+  queryEntryTags,
+  queryEntryStamps,
 ) where
 
 import Control.Lens hiding ((<.>))
@@ -100,6 +105,21 @@ queryEntriesByKeyword db kw =
     \FROM entries WHERE keyword = ?"
     [SqlText kw]
 
+-- | Query a single file by path.
+queryFileByPath :: DBHandle -> Text -> IO (Maybe FileRow)
+queryFileByPath db path =
+  dbQueryOne db "SELECT id, path, mtime, hash FROM files WHERE path = ?" [SqlText path]
+
+-- | Query entries for a specific file.
+queryEntriesByFile :: DBHandle -> Text -> IO [EntryRow]
+queryEntriesByFile db fileId =
+  dbQuery
+    db
+    "SELECT entry_id, file_id, parent_id, depth, keyword, keyword_closed, \
+    \priority, headline, verb, title, context, locator, file_line, path \
+    \FROM entries WHERE file_id = ?"
+    [SqlText fileId]
+
 -- | Query entries that have a specific tag.
 queryEntriesByTag :: DBHandle -> Text -> IO [EntryRow]
 queryEntriesByTag db tag =
@@ -111,6 +131,32 @@ queryEntriesByTag db tag =
     \FROM entries e JOIN entry_tags t ON e.entry_id = t.entry_id \
     \WHERE t.tag = ?"
     [SqlText tag]
+
+-- | Query properties for an entry.
+queryEntryProperties :: DBHandle -> Text -> IO [EntryPropertyRow]
+queryEntryProperties db entryId =
+  dbQuery
+    db
+    "SELECT entry_id, name, value, inherited, file_line \
+    \FROM entry_properties WHERE entry_id = ?"
+    [SqlText entryId]
+
+-- | Query tags for an entry.
+queryEntryTags :: DBHandle -> Text -> IO [EntryTagRow]
+queryEntryTags db entryId =
+  dbQuery
+    db
+    "SELECT entry_id, tag FROM entry_tags WHERE entry_id = ?"
+    [SqlText entryId]
+
+-- | Query stamps for an entry.
+queryEntryStamps :: DBHandle -> Text -> IO [EntryStampRow]
+queryEntryStamps db entryId =
+  dbQuery
+    db
+    "SELECT entry_id, stamp_type, time_start, time_end, time_kind, file_line \
+    \FROM entry_stamps WHERE entry_id = ?"
+    [SqlText entryId]
 
 ------------------------------------------------------------------------
 -- Internal: Insert helpers
