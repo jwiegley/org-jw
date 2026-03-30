@@ -40,6 +40,8 @@ executables:
     other-modules:
       - Options
       - Read
+      - DB.Options
+      - DB.Exec
       - JSON.Options
       - JSON.Exec
       - Lint.Options
@@ -57,6 +59,7 @@ executables:
       - org-parse
       - org-print
       - org-data
+      - org-db
       - org-lint
       - org-cbor
       - org-json

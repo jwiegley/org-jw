@@ -17,6 +17,8 @@ library
       Org.DB
       Org.DB.Types
       Org.DB.Connection
+      Org.DB.Schema
+      Org.DB.Store
   other-modules:
       Paths_org_db
   hs-source-dirs:
@@ -26,10 +28,13 @@ library
       base >=4.5
     , bytestring
     , containers
+    , cryptohash-md5
     , deepseq
     , direct-sqlite
+    , directory
     , filepath
     , hashable
+    , lens
     , org-data
     , org-types
     , postgresql-simple >=0.7

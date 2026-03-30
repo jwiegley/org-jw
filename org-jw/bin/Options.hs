@@ -6,6 +6,7 @@
 
 module Options where
 
+import DB.Options (DbOptions, dbOptions)
 import Data.Foldable (Foldable (..))
 import Data.GraphViz
 import Data.GraphViz.Attributes.Complete hiding (Paths)
@@ -49,6 +50,7 @@ data Command
   | Test
   | Site SiteOptions
   | Trip TripOptions
+  | Db DbOptions
   deriving (Show, Eq, Typeable, Generic)
 
 data InputFiles
@@ -105,6 +107,7 @@ tradeJournalOpts =
           <> testCommand
           <> siteCommand
           <> tripCommand
+          <> dbCommand
       )
     <*> filesOptions
  where
@@ -209,6 +212,12 @@ tradeJournalOpts =
     OA.command
       "trip"
       (info (Trip <$> tripOptions) (progDesc "Org-mode website builder"))
+
+  dbCommand :: Mod CommandFields Command
+  dbCommand =
+    OA.command
+      "db"
+      (info (Db <$> dbOptions) (progDesc "Database operations"))
 
 optionsDefinition :: ParserInfo Options
 optionsDefinition =

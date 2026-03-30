@@ -4,6 +4,7 @@
 module Main where
 
 import Control.Lens hiding ((<.>))
+import DB.Exec
 import Data.Foldable (forM_)
 import Data.Text.Lazy.IO (readFile)
 import Data.Yaml qualified as Yaml
@@ -65,6 +66,7 @@ main = do
     Stats statsOpts -> execStats cfg statsOpts coll
     Tags tagsOpts -> execTags cfg tagsOpts coll
     Trip tripOpts -> execTrip cfg tripOpts coll
+    Db dbOpts -> execDb cfg dbOpts coll
     Site siteOpts -> execSite opts siteOpts coll
     Test -> case orgItems ^.. traverse . allEntries of
       [] -> pure ()
