@@ -16,6 +16,10 @@ module Org.DB.Store (
   queryEntryProperties,
   queryEntryTags,
   queryEntryStamps,
+
+  -- * Vector embedding operations
+  storeEmbedding,
+  querySimilar,
 ) where
 
 import Control.Lens hiding ((<.>))
@@ -215,6 +219,30 @@ entryColumnsSQL =
   \keyword_type, keyword_value, priority, headline, title, verb, \
   \context, locator, hash, mod_time, created_time, path::text \
   \FROM entries"
+
+------------------------------------------------------------------------
+-- Vector embeddings
+------------------------------------------------------------------------
+
+-- | Store a vector embedding for an entry.
+storeEmbedding :: DBHandle -> Text -> [Double] -> IO ()
+storeEmbedding db entryId vec =
+  let vecText = "[" <> T.intercalate "," (map (T.pack . show) vec) <> "]"
+   in dbExecute_
+        db
+        "UPDATE entries SET embedding = ?::vector WHERE id = ?"
+        [SqlText vecText, SqlText entryId]
+
+-- | Find entries similar to a given embedding vector, ordered by cosine distance.
+querySimilar :: DBHandle -> [Double] -> Int -> IO [EntryRow]
+querySimilar db vec limit =
+  let vecText = "[" <> T.intercalate "," (map (T.pack . show) vec) <> "]"
+   in dbQuery
+        db
+        ( entryColumnsSQL
+            <> " WHERE embedding IS NOT NULL ORDER BY embedding <=> ?::vector LIMIT ?"
+        )
+        [SqlText vecText, SqlInt (fromIntegral limit)]
 
 ------------------------------------------------------------------------
 -- Internal: Insert helpers

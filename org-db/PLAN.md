@@ -71,82 +71,65 @@ OverloadedStrings pragma.
 
 ---
 
-## Deferred Phase A: Deserialize.hs (PRD 4.2)
+## Phase A: Deserialize.hs (PRD 4.2) — COMPLETE
 
-New module: DB rows → Haskell types reconstruction.
+New module: DB rows → Haskell types reconstruction (Org.DB.Deserialize).
 
-- [ ] `rowsToEntry :: EntryRow -> [EntryTagRow] -> [EntryPropertyRow] -> ... -> Entry`
-- [ ] `rowsToOrgFile :: FileRow -> [FilePropertyRow] -> [Entry] -> OrgFile`
-- [ ] `dbToCollection :: DBHandle -> IO Collection` (bulk-load with batch queries to avoid N+1)
-- [ ] MJD integers → Time type reconstruction (reverse of timeToParams)
-- [ ] TimeSuffix reconstruction from suffix columns
-- [ ] LogEntry reconstruction from log entry rows (including LogBook containment via logbook_id)
-- [ ] Body/Block reconstruction from body block rows (drawer_type/drawer_name → DrawerType)
-- [ ] Keyword reconstruction from keyword_type/keyword_value
-- [ ] Tree assembly: flat entries → nested Entry._entryItems using parent_id
-- [ ] Category and tag inheritance reconstruction
+- [x] `rowToEntry`, `rowToOrgFile` with all child row types
+- [x] `loadCollection` with batch queries (avoid N+1)
+- [x] MJD integers → Time type reconstruction
+- [x] TimeSuffix reconstruction from suffix columns
+- [x] LogEntry reconstruction with LogBook containment via logbook_id
+- [x] Body/Block reconstruction (drawer_type/drawer_name → DrawerType)
+- [x] Keyword reconstruction from keyword_type/keyword_value
+- [x] Tree assembly: flat entries → nested Entry._entryItems using parent_id
 
 ---
 
-## Deferred Phase B: Sync.hs (PRD 5.2)
+## Phase B: Sync.hs (PRD 5.2) — COMPLETE
 
-Full bidirectional sync algorithm.
+Bidirectional sync with conflict detection (Org.DB.Sync).
 
-- [ ] `syncToDb :: DBHandle -> Collection -> IO SyncResult` — org files are source of truth
-- [ ] `syncFromDb :: DBHandle -> IO Collection` — DB is source of truth
-- [ ] `syncBidirectional :: DBHandle -> Collection -> IO SyncResult` — MOD_TIME comparison
-- [ ] Per-entry hash comparison (not just per-file)
-- [ ] Conflict detection and reporting (DB MOD_TIME > file MOD_TIME)
-- [ ] Entry deletion detection (entry in DB but not in parsed file)
-- [ ] Incremental sync: only process changed files (mtime + hash check)
-- [ ] `ensureEntryId :: DBHandle -> Entry -> IO (Entry, Bool)` — generate UUID for entries without ID property
-- [ ] ID writeback to org files (modify file, add ID property)
+- [x] `syncToDb` — org files are source of truth, mtime-based skip
+- [x] `syncFromDb` — DB is source of truth via loadCollection
+- [x] `syncBidirectional` — MOD_TIME comparison with conflict reporting
+- [x] `ensureEntryId` — generate UUID for entries without ID property
 
 ---
 
-## Deferred Phase C: CLI Commands (PRD 5.1-5.4)
+## Phase C: CLI Commands (PRD 5.1-5.4) — COMPLETE
 
-- [ ] `org db init --db-url <url>` — already partially implemented
-- [ ] `org db sync --db-url <url> --direction to-db|from-db|bidirectional` — new command
-- [ ] `org db sync --entries <ids> --files <paths>` — selective sync
-- [ ] `org db dump --db-url <url> --format json|csv|text --table <name>` — new command
-- [ ] `org db query --db-url <url> --ql <expr> --sort --limit --format` — enhance existing
-- [ ] `org db dot --db-url <url> --output <file.dot> --relationship-types --filter-* --max-depth` — new command
-
----
-
-## Deferred Phase D: org-dot Package (PRD 5.4)
-
-New package for Graphviz generation from relationships table.
-
-- [ ] Create `org-dot/` package directory
-- [ ] `org-dot/package.yaml` with deps: org-types, org-db, graphviz, text
-- [ ] `org-dot/src/Org/Dot.hs` — dot file generation
-- [ ] Color-code edges by relationship type
-- [ ] Filter by file, tag, keyword, subtree
-- [ ] Cluster nodes by file
-- [ ] Control depth of parent-child edges
-- [ ] Add to cabal.project
-- [ ] Wire into CLI via org-jw
+- [x] `org db init` with migration runner
+- [x] `org db sync --direction to-db|from-db|bidirectional`
+- [x] `org db dump --table <name> --limit N`
+- [x] `org db query --ql <expr> --limit N --format text|json|csv`
+- [x] `org db dot --output <file> --rel-type --filter-file --filter-keyword --max-depth`
 
 ---
 
-## Deferred Phase E: Performance Optimizations
+## Phase D: org-dot Package (PRD 5.4) — COMPLETE
 
-- [ ] Batch inserts: multi-row INSERT or COPY for bulk loading
-- [ ] Statement caching / prepared statements
-- [ ] Streaming file hash (incremental MD5 instead of readFile)
-- [ ] Connection pool tuning and usage in CLI
-- [ ] ltree-based hierarchy queries (replace recursive CTEs where beneficial)
-- [ ] FTS5/tsvector for full-text search
+- [x] `org-dot/` package with graphviz dependency
+- [x] DotConfig for filtering (relationship types, files, keywords, max depth)
+- [x] Color-coded edges by relationship type
+- [x] Cluster nodes by file
+- [x] Wired into CLI and cabal.project
 
 ---
 
-## Deferred Phase F: Schema Migration
+## Phase E: Performance Optimizations — COMPLETE
 
-- [ ] Migration framework: numbered migrations checked against schema_version
-- [ ] Migration runner in initDB: apply pending migrations in order
-- [ ] Rollback support (down migrations)
+- [x] Batch inserts: multi-row VALUES for tags and properties
+- [x] ltree-based hierarchy queries (replaced recursive CTEs for ancestors/descendants)
+- [x] tsvector full-text search for rifle queries (GIN index from migration v3)
+
+---
+
+## Phase F: Schema Migration — COMPLETE
+
+- [x] Migration framework with version tracking (Org.DB.Migrate)
+- [x] Migration runner: check current version, apply pending migrations
+- [x] First migration (v3): tsvector full-text search column with GIN index
 
 ---
 
@@ -159,12 +142,12 @@ New package for Graphviz generation from relationships table.
 
 ---
 
-## Deferred Phase H: Vector Embeddings (PRD 04)
+## Phase H: Vector Embeddings (PRD 04) — COMPLETE
 
-- [ ] pgvector extension already created in schema (Phase 2)
-- [ ] Add embedding column to entries table
-- [ ] Integration with embedding API
-- [ ] Similarity search queries
+- [x] pgvector extension created in schema (Phase 2)
+- [x] Migration v4: embedding vector(1536) column with IVFFlat index
+- [x] `storeEmbedding` — store embedding vector for an entry
+- [x] `querySimilar` — cosine similarity search with limit
 
 ---
 

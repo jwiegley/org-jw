@@ -45,6 +45,18 @@ migrations =
           , "CREATE INDEX IF NOT EXISTS idx_entries_tsv ON entries USING GIN (tsv)"
           ]
       }
+  , Migration
+      { migVersion = 4
+      , migDescription = "Add vector embedding column to entries"
+      , migUp =
+          [ "ALTER TABLE entries ADD COLUMN IF NOT EXISTS \
+            \embedding vector(1536)"
+          , "CREATE INDEX IF NOT EXISTS idx_entries_embedding \
+            \ON entries USING ivfflat (embedding vector_cosine_ops) \
+            \WITH (lists = 100) \
+            \WHERE embedding IS NOT NULL"
+          ]
+      }
   ]
 
 {- | Run all pending migrations.
