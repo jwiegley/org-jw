@@ -1,7 +1,5 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Org.DB.Connection (
@@ -16,12 +14,10 @@ module Org.DB.Connection (
 
 import Control.Exception (bracket)
 import Control.Monad (replicateM, void)
-import Data.ByteString (ByteString)
 import Data.Pool (Pool)
 import Data.Pool qualified as Pool
-import Data.Text (Text, pack)
+import Data.Text (Text)
 import Data.Text.Encoding qualified as TE
-import Data.Time.Format (defaultTimeLocale, formatTime)
 import Database.PostgreSQL.Simple qualified as PG
 import Database.PostgreSQL.Simple.FromField (typeOid)
 import Database.PostgreSQL.Simple.FromField qualified as PGF
@@ -29,9 +25,6 @@ import Database.PostgreSQL.Simple.FromRow qualified as PGR
 import Database.PostgreSQL.Simple.ToField qualified as PGT
 import Database.PostgreSQL.Simple.TypeInfo.Static qualified as PGTI
 import Database.PostgreSQL.Simple.Types (Binary (..), Null (..), Query (..))
-import Database.SQLite.Simple qualified as SQLite
-import Database.SQLite.Simple.Internal (Connection (connectionHandle))
-import Database.SQLite3 qualified as Direct
 import Org.DB.Types
 
 ------------------------------------------------------------------------
@@ -51,24 +44,10 @@ toPGAction (SqlUTCTime t) = PGT.toField t
 toPGAction (SqlDay d) = PGT.toField d
 toPGAction SqlNull = PGT.toField Null
 
-toDirectParams :: [SqlValue] -> [Direct.SQLData]
-toDirectParams = map toDirectData
-
-toDirectData :: SqlValue -> Direct.SQLData
-toDirectData (SqlText t) = Direct.SQLText t
-toDirectData (SqlInt i) = Direct.SQLInteger (fromIntegral i)
-toDirectData (SqlDouble d) = Direct.SQLFloat d
-toDirectData (SqlBool b) = Direct.SQLInteger (if b then 1 else 0)
-toDirectData (SqlBlob bs) = Direct.SQLBlob bs
-toDirectData (SqlUTCTime t) = Direct.SQLText (pack (formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S%Q" t))
-toDirectData (SqlDay d) = Direct.SQLText (pack (formatTime defaultTimeLocale "%Y-%m-%d" d))
-toDirectData SqlNull = Direct.SQLNull
-
 ------------------------------------------------------------------------
 -- SQL results → [SqlValue] (database → Haskell)
 ------------------------------------------------------------------------
 
--- PostgreSQL: use RowParser with OID-based type dispatch
 pgRawRowParser :: PGR.RowParser [SqlValue]
 pgRawRowParser = do
   n <- PGR.numFieldsRemaining
@@ -100,14 +79,6 @@ readPGField = PGR.fieldWith $ \field mbs -> case mbs of
           | otherwise ->
               SqlText <$> PGF.fromField field mbs
 
--- SQLite: use direct-sqlite for raw column access
-directToSqlValue :: Direct.SQLData -> SqlValue
-directToSqlValue Direct.SQLNull = SqlNull
-directToSqlValue (Direct.SQLInteger i) = SqlInt (fromIntegral i)
-directToSqlValue (Direct.SQLFloat d) = SqlDouble d
-directToSqlValue (Direct.SQLText t) = SqlText t
-directToSqlValue (Direct.SQLBlob bs) = SqlBlob bs
-
 ------------------------------------------------------------------------
 -- Query execution with FromRow bridging
 ------------------------------------------------------------------------
@@ -118,35 +89,20 @@ pgQueryRows conn sql params = do
   rawRows <- PG.queryWith pgRawRowParser conn (pgQuery sql) (toPGParams params)
   mapM (either fail pure . fromRow) rawRows
 
-sqliteQueryRows ::
-  forall r. (FromRow r) => SQLite.Connection -> Text -> [SqlValue] -> IO [r]
-sqliteQueryRows conn sql params = do
-  let db = connectionHandle conn
-  rawRows <- sqliteRawQuery db sql (toDirectParams params)
-  mapM (either fail pure . fromRow) rawRows
-
-sqliteRawQuery :: Direct.Database -> Text -> [Direct.SQLData] -> IO [[SqlValue]]
-sqliteRawQuery db sql params =
-  bracket (Direct.prepare db sql) Direct.finalize $ \stmt -> do
-    Direct.bind stmt params
-    collectRows stmt []
- where
-  collectRows stmt !acc = do
-    result <- Direct.step stmt
-    case result of
-      Direct.Done -> pure (reverse acc)
-      Direct.Row -> do
-        cols <- Direct.columns stmt
-        let !vals = map directToSqlValue cols
-        collectRows stmt (vals : acc)
+pgQuery :: Text -> PG.Query
+pgQuery = Query . TE.encodeUtf8
 
 ------------------------------------------------------------------------
--- Backend implementations
+-- PostgreSQL connection
 ------------------------------------------------------------------------
 
-connectPostgres :: ByteString -> IO DBHandle
-connectPostgres connStr = do
-  conn <- PG.connectPostgreSQL connStr
+------------------------------------------------------------------------
+-- Public API
+------------------------------------------------------------------------
+
+connectDB :: DBConfig -> IO DBHandle
+connectDB cfg = do
+  conn <- PG.connectPostgreSQL (pgConnString cfg)
   pure
     DBHandle
       { dbExecute_ = \sql params ->
@@ -161,51 +117,7 @@ connectPostgres connStr = do
             [] -> Nothing
       , dbTransaction = PG.withTransaction conn
       , dbClose = PG.close conn
-      , dbBackend = PostgresConfig connStr
       }
-
-connectSQLite :: FilePath -> IO DBHandle
-connectSQLite path = do
-  conn <- SQLite.open path
-  SQLite.execute_ conn "PRAGMA journal_mode=WAL;"
-  SQLite.execute_ conn "PRAGMA synchronous=NORMAL;"
-  SQLite.execute_ conn "PRAGMA foreign_keys=ON;"
-  SQLite.execute_ conn "PRAGMA busy_timeout=5000;"
-  pure
-    DBHandle
-      { dbExecute_ = \sql params -> do
-          let db = connectionHandle conn
-          bracket (Direct.prepare db sql) Direct.finalize $ \stmt -> do
-            Direct.bind stmt (toDirectParams params)
-            _ <- Direct.step stmt
-            pure ()
-      , dbExecute = \sql params -> do
-          let db = connectionHandle conn
-          bracket (Direct.prepare db sql) Direct.finalize $ \stmt -> do
-            Direct.bind stmt (toDirectParams params)
-            _ <- Direct.step stmt
-            fromIntegral <$> Direct.changes db
-      , dbQuery = sqliteQueryRows conn
-      , dbQueryOne = \sql params -> do
-          rows <- sqliteQueryRows conn sql params
-          pure $ case rows of
-            (r : _) -> Just r
-            [] -> Nothing
-      , dbTransaction = SQLite.withTransaction conn
-      , dbClose = SQLite.close conn
-      , dbBackend = SQLiteConfig path
-      }
-
-pgQuery :: Text -> PG.Query
-pgQuery = Query . TE.encodeUtf8
-
-------------------------------------------------------------------------
--- Public API
-------------------------------------------------------------------------
-
-connectDB :: DBConfig -> IO DBHandle
-connectDB (PostgresConfig connStr) = connectPostgres connStr
-connectDB (SQLiteConfig path) = connectSQLite path
 
 withDB :: DBConfig -> (DBHandle -> IO a) -> IO a
 withDB config = bracket (connectDB config) dbClose

@@ -31,7 +31,6 @@ library
     , containers
     , cryptohash-md5
     , deepseq
-    , direct-sqlite
     , directory
     , filepath
     , hashable
@@ -40,7 +39,6 @@ library
     , org-types
     , postgresql-simple >=0.7
     , resource-pool >=0.4
-    , sqlite-simple >=0.4
     , text
     , time
     , uuid

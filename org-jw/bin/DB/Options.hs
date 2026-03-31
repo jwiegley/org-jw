@@ -25,7 +25,7 @@ data DBQueryOpts = DBQueryOpts
 makeLenses ''DBQueryOpts
 
 data DbOptions = DbOptions
-  { _dbPath :: !FilePath
+  { _dbConnStr :: !String
   , _dbCommand :: !DBCommand
   }
   deriving (Show, Eq, Typeable, Generic)
@@ -36,10 +36,10 @@ dbOptions :: OA.Parser DbOptions
 dbOptions =
   DbOptions
     <$> strOption
-      ( short 'd'
-          <> long "database"
-          <> help "Path to SQLite database file"
-          <> value "org.db"
+      ( short 'u'
+          <> long "db-url"
+          <> help "PostgreSQL connection string"
+          <> value "dbname=org_jw"
           <> showDefault
       )
     <*> hsubparser

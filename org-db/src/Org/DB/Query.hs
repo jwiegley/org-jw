@@ -26,10 +26,12 @@ module Org.DB.Query (
 ) where
 
 import Data.Char (isDigit, isSpace)
+import Data.Int (Int64)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (Day, addDays)
-import Data.Time.Format (defaultTimeLocale, formatTime)
+import Data.Time.Calendar (toModifiedJulianDay)
+import Data.Time.Format (defaultTimeLocale, parseTimeM)
 import Org.DB.Types
 
 ------------------------------------------------------------------------
@@ -182,7 +184,7 @@ data LinkFilter
   deriving (Show, Eq)
 
 ------------------------------------------------------------------------
--- Sexp → OrgQuery translation
+-- Sexp -> OrgQuery translation
 ------------------------------------------------------------------------
 
 parseOrgQuery :: Text -> Either String OrgQuery
@@ -375,7 +377,7 @@ isComparator :: Text -> Bool
 isComparator c = c `elem` ["<", "<=", ">", ">=", "="]
 
 ------------------------------------------------------------------------
--- SQL compilation
+-- SQL compilation (PostgreSQL-native)
 ------------------------------------------------------------------------
 
 type SqlFragment = (Text, [SqlValue])
@@ -388,9 +390,10 @@ data CompileCtx = CompileCtx
 
 entrySelectSQL :: Text
 entrySelectSQL =
-  "SELECT e.entry_id, e.file_id, e.parent_id, e.depth, e.keyword, \
-  \e.keyword_closed, e.priority, e.headline, e.verb, e.title, \
-  \e.context, e.locator, e.file_line, e.path \
+  "SELECT e.id, e.file_id, e.parent_id, e.depth, e.position, \
+  \e.byte_offset, e.keyword_type, e.keyword_value, e.priority, \
+  \e.headline, e.title, e.verb, e.context, e.locator, \
+  \e.hash, e.mod_time, e.created_time, e.path::text \
   \FROM entries e"
 
 compileOrgQuery :: Day -> OrgQuery -> Either String SqlFragment
@@ -418,7 +421,6 @@ compile ctx query
         (sql, ps) <- compile ctx q
         pure ("NOT (" <> sql <> ")", ps)
       QWhen cond qs -> do
-        -- (when C Q...) = (NOT C) OR (C AND Q...)
         (csql, cps) <- compile ctx cond
         frags <- mapM (compile ctx) qs
         let (qsql, qps) = joinFrags " AND " frags
@@ -427,7 +429,6 @@ compile ctx query
           , cps <> cps <> qps
           )
       QUnless cond qs -> do
-        -- (unless C Q...) = C OR (NOT C AND Q...)
         (csql, cps) <- compile ctx cond
         frags <- mapM (compile ctx) qs
         let (qsql, qps) = joinFrags " AND " frags
@@ -436,13 +437,13 @@ compile ctx query
           , cps <> cps <> qps
           )
       QTodo [] ->
-        pure (a <> ".keyword IS NOT NULL", [])
+        pure (a <> ".keyword_value IS NOT NULL", [])
       QTodo [kw] ->
-        pure (a <> ".keyword = ?", [SqlText kw])
+        pure (a <> ".keyword_value = ?", [SqlText kw])
       QTodo kws ->
-        pure (a <> ".keyword IN (" <> placeholders kws <> ")", map SqlText kws)
+        pure (a <> ".keyword_value IN (" <> placeholders kws <> ")", map SqlText kws)
       QDone ->
-        pure (a <> ".keyword_closed = 1", [])
+        pure (a <> ".keyword_type = 'closed'", [])
       QTags [] ->
         pure (existsSubquery "entry_tags" "entry_id" a "1=1" [])
       QTags [tag] ->
@@ -473,10 +474,10 @@ compile ctx query
       QHeading [] ->
         pure ("1=1", [])
       QHeading [pat] ->
-        pure (a <> ".headline LIKE ? ESCAPE '\\'", [SqlText (likePat pat)])
+        pure (a <> ".headline ILIKE ? ESCAPE '\\'", [SqlText (likePat pat)])
       QHeading pats ->
         pure
-          ( "(" <> T.intercalate " OR " (replicate (length pats) (a <> ".headline LIKE ? ESCAPE '\\'")) <> ")"
+          ( "(" <> T.intercalate " OR " (replicate (length pats) (a <> ".headline ILIKE ? ESCAPE '\\'")) <> ")"
           , map (SqlText . likePat) pats
           )
       QRegexp pats -> do
@@ -486,11 +487,11 @@ compile ctx query
         frags <- mapM (compileRifle ctx) pats
         pure (joinFrags " AND " frags)
       QProperty pname Nothing ->
-        pure (existsSubquery "entry_properties" "entry_id" a "name = ? COLLATE NOCASE" [SqlText pname])
+        pure (existsSubquery "entry_properties" "entry_id" a "LOWER(name) = LOWER(?)" [SqlText pname])
       QProperty pname (Just (PropEquals pval)) ->
-        pure (existsSubquery "entry_properties" "entry_id" a "name = ? COLLATE NOCASE AND value = ?" [SqlText pname, SqlText pval])
+        pure (existsSubquery "entry_properties" "entry_id" a "LOWER(name) = LOWER(?) AND value = ?" [SqlText pname, SqlText pval])
       QProperty pname (Just (PropCompare cmp pval)) ->
-        pure (existsSubquery "entry_properties" "entry_id" a ("name = ? COLLATE NOCASE AND value " <> cmpOp cmp <> " ?") [SqlText pname, SqlText pval])
+        pure (existsSubquery "entry_properties" "entry_id" a ("LOWER(name) = LOWER(?) AND value " <> cmpOp cmp <> " ?") [SqlText pname, SqlText pval])
       QPriority Nothing [] ->
         pure (a <> ".priority IS NOT NULL", [])
       QPriority Nothing [pri] ->
@@ -509,16 +510,16 @@ compile ctx query
         pure ("1=1", [])
       QCategory [cat] ->
         pure
-          ( "EXISTS (SELECT 1 FROM categories c__ WHERE c__.file_id = " <> a <> ".file_id AND c__.category = ?)"
+          ( "EXISTS (SELECT 1 FROM entry_categories c__ WHERE c__.entry_id = " <> a <> ".id AND c__.category = ?)"
           , [SqlText cat]
           )
       QCategory cats ->
         pure
-          ( "EXISTS (SELECT 1 FROM categories c__ WHERE c__.file_id = " <> a <> ".file_id AND c__.category IN (" <> placeholders cats <> "))"
+          ( "EXISTS (SELECT 1 FROM entry_categories c__ WHERE c__.entry_id = " <> a <> ".id AND c__.category IN (" <> placeholders cats <> "))"
           , map SqlText cats
           )
       QHabit ->
-        pure (existsSubquery "entry_properties" "entry_id" a "name = ? COLLATE NOCASE AND value = ?" [SqlText "STYLE", SqlText "habit"])
+        pure (existsSubquery "entry_properties" "entry_id" a "LOWER(name) = LOWER(?) AND LOWER(value) = LOWER(?)" [SqlText "STYLE", SqlText "habit"])
       QTs kind df -> compileTimestamp ctx kind df
       QScheduled df -> compileStampFilter ctx "scheduled" df
       QDeadline df -> compileStampFilter ctx "deadline" df
@@ -528,16 +529,23 @@ compile ctx query
       QPath [] ->
         pure ("1=1", [])
       QPath [pat] ->
-        pure (a <> ".path LIKE ? ESCAPE '\\'", [SqlText (likePat pat)])
+        pure
+          ( "EXISTS (SELECT 1 FROM files fp__ WHERE fp__.id = " <> a <> ".file_id AND fp__.path ILIKE ? ESCAPE '\\')"
+          , [SqlText (likePat pat)]
+          )
       QPath pats ->
         pure
-          ( "(" <> T.intercalate " OR " (replicate (length pats) (a <> ".path LIKE ? ESCAPE '\\'")) <> ")"
+          ( "EXISTS (SELECT 1 FROM files fp__ WHERE fp__.id = "
+              <> a
+              <> ".file_id AND ("
+              <> T.intercalate " OR " (replicate (length pats) "fp__.path ILIKE ? ESCAPE '\\'")
+              <> "))"
           , map (SqlText . likePat) pats
           )
       QLink LinkAny ->
-        pure (existsSubquery "links" "entry_id" a "1=1" [])
+        pure (existsSubquery "entry_links" "entry_id" a "1=1" [])
       QLink (LinkTarget target) ->
-        pure (existsSubquery "links" "entry_id" a "target LIKE ? ESCAPE '\\'" [SqlText (likePat target)])
+        pure (existsSubquery "entry_links" "entry_id" a "target ILIKE ? ESCAPE '\\'" [SqlText (likePat target)])
       QParent q -> compileParent ctx q
       QAncestors q -> compileAncestors ctx q
       QChildren mq -> compileChildren ctx mq
@@ -556,7 +564,7 @@ existsTagLocal :: Text -> Text -> SqlFragment
 existsTagLocal a tag =
   ( "EXISTS (SELECT 1 FROM entry_tags et__ WHERE et__.entry_id = "
       <> a
-      <> ".entry_id AND et__.tag = ?)"
+      <> ".id AND et__.tag = ?)"
   , [SqlText tag]
   )
 
@@ -580,7 +588,7 @@ ancestorTagExists ctx mtag =
           <> " UNION ALL "
           <> "SELECT p__.parent_id FROM entries p__ JOIN "
           <> cte
-          <> " ON p__.entry_id = "
+          <> " ON p__.id = "
           <> cte
           <> ".aid WHERE p__.parent_id IS NOT NULL"
           <> ") SELECT 1 FROM entry_tags et__ JOIN "
@@ -602,9 +610,9 @@ compileRegexp ctx pat =
    in Right
         ( "("
             <> a
-            <> ".headline LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM body_blocks bb__ WHERE bb__.entry_id = "
+            <> ".headline ILIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM entry_body_blocks bb__ WHERE bb__.entry_id = "
             <> a
-            <> ".entry_id AND bb__.content LIKE ? ESCAPE '\\'))"
+            <> ".id AND bb__.content ILIKE ? ESCAPE '\\'))"
         , [p, p]
         )
 
@@ -614,13 +622,13 @@ compileRifle = compileRegexp
 compileStampFilter :: CompileCtx -> Text -> DateFilter -> Either String SqlFragment
 compileStampFilter ctx stampType df =
   let a = ccAlias ctx
-      (dateConds, dateParams) = compileDateConds (ccDay ctx) "es__.time_start" df
+      (dateConds, dateParams) = compileDateConds (ccDay ctx) "es__.day" df
       typeCond = "es__.stamp_type = ?"
       allConds = typeCond : dateConds
    in Right
         ( "EXISTS (SELECT 1 FROM entry_stamps es__ WHERE es__.entry_id = "
             <> a
-            <> ".entry_id AND "
+            <> ".id AND "
             <> T.intercalate " AND " allConds
             <> ")"
         , SqlText stampType : dateParams
@@ -629,7 +637,7 @@ compileStampFilter ctx stampType df =
 compileTimestamp :: CompileCtx -> TsKind -> DateFilter -> Either String SqlFragment
 compileTimestamp ctx kind df =
   let a = ccAlias ctx
-      (dateConds, dateParams) = compileDateConds (ccDay ctx) "es__.time_start" df
+      (dateConds, dateParams) = compileDateConds (ccDay ctx) "es__.day" df
       kindCond = case kind of
         TsAny -> []
         TsActive -> ["es__.time_kind = 'active'"]
@@ -640,7 +648,7 @@ compileTimestamp ctx kind df =
    in Right
         ( "EXISTS (SELECT 1 FROM entry_stamps es__ WHERE es__.entry_id = "
             <> a
-            <> ".entry_id AND "
+            <> ".id AND "
             <> T.intercalate " AND " allConds
             <> ")"
         , dateParams
@@ -649,12 +657,12 @@ compileTimestamp ctx kind df =
 compileClockedFilter :: CompileCtx -> DateFilter -> Either String SqlFragment
 compileClockedFilter ctx df =
   let a = ccAlias ctx
-      (dateConds, dateParams) = compileDateConds (ccDay ctx) "le__.log_time" df
+      (dateConds, dateParams) = compileDateConds (ccDay ctx) "le__.time_day" df
       allConds = "le__.log_type = 'clock'" : dateConds
    in Right
-        ( "EXISTS (SELECT 1 FROM log_entries le__ WHERE le__.entry_id = "
+        ( "EXISTS (SELECT 1 FROM entry_log_entries le__ WHERE le__.entry_id = "
             <> a
-            <> ".entry_id AND "
+            <> ".id AND "
             <> T.intercalate " AND " allConds
             <> ")"
         , dateParams
@@ -663,46 +671,51 @@ compileClockedFilter ctx df =
 compilePlanningFilter :: CompileCtx -> DateFilter -> Either String SqlFragment
 compilePlanningFilter ctx df =
   let a = ccAlias ctx
-      (dateConds, dateParams) = compileDateConds (ccDay ctx) "es__.time_start" df
+      (dateConds, dateParams) = compileDateConds (ccDay ctx) "es__.day" df
       typeCond = "es__.stamp_type IN ('scheduled', 'deadline', 'closed')"
       allConds = typeCond : dateConds
    in Right
         ( "EXISTS (SELECT 1 FROM entry_stamps es__ WHERE es__.entry_id = "
             <> a
-            <> ".entry_id AND "
+            <> ".id AND "
             <> T.intercalate " AND " allConds
             <> ")"
         , dateParams
         )
 
+-- | Compile date filter conditions using MJD integer comparisons.
 compileDateConds :: Day -> Text -> DateFilter -> ([Text], [SqlValue])
-compileDateConds today col df =
+compileDateConds today dayCol df =
   let onC = case dfOn df of
         Nothing -> ([], [])
         Just dv ->
-          let d = resolveDate today dv
-           in (["substr(" <> col <> ", 1, 10) = ?"], [SqlText d])
+          let d = resolveMjd today dv
+           in ([dayCol <> " = ?"], [SqlInt d])
       fromC = case dfFrom df of
         Nothing -> ([], [])
         Just dv ->
-          let d = resolveDate today dv
-           in (["substr(" <> col <> ", 1, 10) >= ?"], [SqlText d])
+          let d = resolveMjd today dv
+           in ([dayCol <> " >= ?"], [SqlInt d])
       toC = case dfTo df of
         Nothing -> ([], [])
         Just dv ->
-          let d = resolveDate today dv
-           in (["substr(" <> col <> ", 1, 10) <= ?"], [SqlText d])
+          let d = resolveMjd today dv
+           in ([dayCol <> " <= ?"], [SqlInt d])
       (cs, ps) = unzip [onC, fromC, toC]
    in (concat cs, concat ps)
 
-resolveDate :: Day -> DateVal -> Text
-resolveDate today = \case
-  DateToday -> formatDay today
-  DateOffset n -> formatDay (addDays (fromIntegral n) today)
-  DateAbsolute s -> s
+-- | Resolve a DateVal to an MJD integer.
+resolveMjd :: Day -> DateVal -> Int64
+resolveMjd today = \case
+  DateToday -> dayToMjd today
+  DateOffset n -> dayToMjd (addDays (fromIntegral n) today)
+  DateAbsolute s -> maybe 0 dayToMjd (parseAbsoluteDate s)
 
-formatDay :: Day -> Text
-formatDay = T.pack . formatTime defaultTimeLocale "%Y-%m-%d"
+dayToMjd :: Day -> Int64
+dayToMjd = fromIntegral . toModifiedJulianDay
+
+parseAbsoluteDate :: Text -> Maybe Day
+parseAbsoluteDate t = parseTimeM False defaultTimeLocale "%Y-%m-%d" (T.unpack t)
 
 compileParent :: CompileCtx -> OrgQuery -> Either String SqlFragment
 compileParent ctx q = do
@@ -715,7 +728,7 @@ compileParent ctx q = do
         <> pa
         <> " WHERE "
         <> pa
-        <> ".entry_id = "
+        <> ".id = "
         <> ccAlias ctx
         <> ".parent_id AND "
         <> innerSql
@@ -741,14 +754,14 @@ compileAncestors ctx q = do
         <> " UNION ALL "
         <> "SELECT p__.parent_id FROM entries p__ JOIN "
         <> cte
-        <> " ON p__.entry_id = "
+        <> " ON p__.id = "
         <> cte
         <> ".aid WHERE p__.parent_id IS NOT NULL"
         <> ") SELECT 1 FROM entries "
         <> aa
         <> " WHERE "
         <> aa
-        <> ".entry_id IN (SELECT aid FROM "
+        <> ".id IN (SELECT aid FROM "
         <> cte
         <> " WHERE aid IS NOT NULL) AND "
         <> innerSql
@@ -761,7 +774,7 @@ compileChildren ctx Nothing =
   Right
     ( "EXISTS (SELECT 1 FROM entries c__ WHERE c__.parent_id = "
         <> ccAlias ctx
-        <> ".entry_id)"
+        <> ".id)"
     , []
     )
 compileChildren ctx (Just q) = do
@@ -776,7 +789,7 @@ compileChildren ctx (Just q) = do
         <> ca
         <> ".parent_id = "
         <> ccAlias ctx
-        <> ".entry_id AND "
+        <> ".id AND "
         <> innerSql
         <> ")"
     , innerPs
@@ -794,11 +807,11 @@ compileDescendants ctx q = do
     ( "EXISTS (WITH RECURSIVE "
         <> cte
         <> "(did) AS ("
-        <> "SELECT entry_id FROM entries WHERE parent_id = "
+        <> "SELECT id FROM entries WHERE parent_id = "
         <> a
-        <> ".entry_id"
+        <> ".id"
         <> " UNION ALL "
-        <> "SELECT c__.entry_id FROM entries c__ JOIN "
+        <> "SELECT c__.id FROM entries c__ JOIN "
         <> cte
         <> " ON c__.parent_id = "
         <> cte
@@ -807,7 +820,7 @@ compileDescendants ctx q = do
         <> da
         <> " WHERE "
         <> da
-        <> ".entry_id IN (SELECT did FROM "
+        <> ".id IN (SELECT did FROM "
         <> cte
         <> ") AND "
         <> innerSql
@@ -827,9 +840,7 @@ existsSubquery table joinCol alias cond ps =
       <> joinCol
       <> " = "
       <> alias
-      <> "."
-      <> joinCol
-      <> " AND "
+      <> ".id AND "
       <> cond
       <> ")"
   , ps
@@ -851,7 +862,7 @@ joinFrags sep frags =
       params = concatMap snd frags
    in (T.intercalate sep sqls, params)
 
-{- | Convert a user pattern to a SQL LIKE pattern (substring match).
+{- | Convert a user pattern to a SQL LIKE/ILIKE pattern (substring match).
 Escapes LIKE special characters.
 -}
 likePat :: Text -> Text

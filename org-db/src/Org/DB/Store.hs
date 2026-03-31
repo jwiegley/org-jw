@@ -19,15 +19,18 @@ module Org.DB.Store (
 ) where
 
 import Control.Lens hiding ((<.>))
+import Control.Monad (zipWithM_)
 import Crypto.Hash.MD5 qualified as MD5
-import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
+import Data.Int (Int64)
 import Data.List (isPrefixOf)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Data.UUID (toText)
 import Data.UUID.V4 (nextRandom)
+import Numeric (showHex)
 import Org.DB.Types
 import Org.Data
 import Org.Types
@@ -58,45 +61,62 @@ storeOrgFile db org = do
   existing <- queryFileByPath db pathText
   case existing of
     Just row
-      | frMtime row >= mtime -> pure () -- not newer, skip
+      | Just mt <- frModTime row, mt >= mtime -> pure ()
       | otherwise -> do
-          fileHash <- hashFile path
-          if frHash row == fileHash
-            then -- content unchanged, just update mtime
-              dbExecute_ db "UPDATE files SET mtime = ? WHERE id = ?" [SqlUTCTime mtime, SqlText (frId row)]
-            else -- content changed, full replace (transactional)
+          fileHash <- hashFileText path
+          if frHash row == Just fileHash
+            then
+              dbExecute_ db "UPDATE files SET mod_time = ?, updated_at = now() WHERE id = ?" [SqlUTCTime mtime, SqlText (frId row)]
+            else
               dbTransaction db $ replaceOrgFile db org pathText mtime fileHash
     Nothing -> do
-      -- new file (transactional)
-      fileHash <- hashFile path
+      fileHash <- hashFileText path
       dbTransaction db $ replaceOrgFile db org pathText mtime fileHash
 
 -- | Unconditionally insert an OrgFile, deleting any previous version first.
-replaceOrgFile :: DBHandle -> OrgFile -> Text -> UTCTime -> ByteString -> IO ()
+replaceOrgFile :: DBHandle -> OrgFile -> Text -> UTCTime -> Text -> IO ()
 replaceOrgFile db org pathText mtime fileHash = do
-  let path = org ^. orgFilePath
+  let hdr = org ^. orgFileHeader
   fileId <- toText <$> nextRandom
-  -- Delete old data for this file path
   deleteFile db pathText
-  -- Insert file row
-  dbExecute_ db insertFileSQL [SqlText fileId, SqlText pathText, SqlUTCTime mtime, SqlBlob fileHash]
-  -- Insert file-level properties from header
-  mapM_ (insertFileProperty db fileId) (org ^. orgFileHeader . headerPropertiesDrawer)
-  -- Insert category from file properties
-  let cats =
-        [ prop ^. value
-        | prop <- org ^. orgFileHeader . headerFileProperties
-        , prop ^. name == "CATEGORY"
-        ]
-  case cats of
-    (c : _) -> dbExecute_ db insertCategorySQL [SqlText fileId, SqlText (T.pack c)]
-    [] ->
-      dbExecute_
-        db
-        insertCategorySQL
-        [SqlText fileId, SqlText (T.pack (takeFileName path))]
-  -- Insert entries recursively
-  mapM_ (insertEntry db fileId Nothing pathText) (org ^. orgFileEntries)
+  -- Extract title from #+TITLE: file property
+  let title =
+        listToMaybe
+          [ T.pack (prop ^. value)
+          | prop <- hdr ^. headerFileProperties
+          , prop ^. name == "TITLE"
+          ]
+  -- Preamble from header
+  let preamble = bodyTextMaybe (hdr ^. headerPreamble)
+  dbExecute_
+    db
+    insertFileSQL
+    [ SqlText fileId
+    , SqlText pathText
+    , maybe SqlNull SqlText title
+    , maybe SqlNull SqlText preamble
+    , SqlText fileHash
+    , SqlUTCTime mtime
+    ]
+  -- File-level properties from drawer (source = 'drawer')
+  mapM_ (insertFileProperty db fileId "drawer") (hdr ^. headerPropertiesDrawer)
+  -- File-level properties from #+KEY: lines (source = 'file')
+  mapM_ (insertFileProperty db fileId "file") (hdr ^. headerFileProperties)
+  -- Determine file-level category for entry inheritance
+  let fileCat =
+        fromMaybe
+          (T.pack (takeFileName (org ^. orgFilePath)))
+          ( listToMaybe
+              [ T.pack (prop ^. value)
+              | prop <- hdr ^. headerFileProperties
+              , prop ^. name == "CATEGORY"
+              ]
+          )
+  -- Insert entries with position tracking
+  zipWithM_
+    (insertEntry db fileId Nothing fileCat)
+    [0 ..]
+    (org ^. orgFileEntries)
 
 -- | Delete a file and all its associated data (cascading).
 deleteFile :: DBHandle -> Text -> IO ()
@@ -109,41 +129,41 @@ deleteFile db path =
 
 -- | Query all files in the database.
 queryFiles :: DBHandle -> IO [FileRow]
-queryFiles db = dbQuery db "SELECT id, path, mtime, hash FROM files" []
+queryFiles db =
+  dbQuery
+    db
+    "SELECT id, path, title, preamble, hash, mod_time, \
+    \created_time, created_at, updated_at FROM files"
+    []
+
+-- | Query a single file by path.
+queryFileByPath :: DBHandle -> Text -> IO (Maybe FileRow)
+queryFileByPath db path =
+  dbQueryOne
+    db
+    "SELECT id, path, title, preamble, hash, mod_time, \
+    \created_time, created_at, updated_at FROM files WHERE path = ?"
+    [SqlText path]
 
 -- | Query all entries in the database.
 queryEntries :: DBHandle -> IO [EntryRow]
 queryEntries db =
-  dbQuery
-    db
-    "SELECT entry_id, file_id, parent_id, depth, keyword, keyword_closed, \
-    \priority, headline, verb, title, context, locator, file_line, path \
-    \FROM entries"
-    []
+  dbQuery db entryColumnsSQL []
 
 -- | Query entries by keyword (e.g., "TODO", "DONE").
 queryEntriesByKeyword :: DBHandle -> Text -> IO [EntryRow]
 queryEntriesByKeyword db kw =
   dbQuery
     db
-    "SELECT entry_id, file_id, parent_id, depth, keyword, keyword_closed, \
-    \priority, headline, verb, title, context, locator, file_line, path \
-    \FROM entries WHERE keyword = ?"
+    (entryColumnsSQL <> " WHERE keyword_value = ?")
     [SqlText kw]
-
--- | Query a single file by path.
-queryFileByPath :: DBHandle -> Text -> IO (Maybe FileRow)
-queryFileByPath db path =
-  dbQueryOne db "SELECT id, path, mtime, hash FROM files WHERE path = ?" [SqlText path]
 
 -- | Query entries for a specific file.
 queryEntriesByFile :: DBHandle -> Text -> IO [EntryRow]
 queryEntriesByFile db fileId =
   dbQuery
     db
-    "SELECT entry_id, file_id, parent_id, depth, keyword, keyword_closed, \
-    \priority, headline, verb, title, context, locator, file_line, path \
-    \FROM entries WHERE file_id = ?"
+    (entryColumnsSQL <> " WHERE file_id = ?")
     [SqlText fileId]
 
 -- | Query entries that have a specific tag.
@@ -151,10 +171,11 @@ queryEntriesByTag :: DBHandle -> Text -> IO [EntryRow]
 queryEntriesByTag db tag =
   dbQuery
     db
-    "SELECT e.entry_id, e.file_id, e.parent_id, e.depth, e.keyword, \
-    \e.keyword_closed, e.priority, e.headline, e.verb, e.title, \
-    \e.context, e.locator, e.file_line, e.path \
-    \FROM entries e JOIN entry_tags t ON e.entry_id = t.entry_id \
+    "SELECT e.id, e.file_id, e.parent_id, e.depth, e.position, \
+    \e.byte_offset, e.keyword_type, e.keyword_value, e.priority, \
+    \e.headline, e.title, e.verb, e.context, e.locator, \
+    \e.hash, e.mod_time, e.created_time, e.path::text \
+    \FROM entries e JOIN entry_tags t ON e.id = t.entry_id \
     \WHERE t.tag = ?"
     [SqlText tag]
 
@@ -163,7 +184,7 @@ queryEntryProperties :: DBHandle -> Text -> IO [EntryPropertyRow]
 queryEntryProperties db entryId =
   dbQuery
     db
-    "SELECT entry_id, name, value, inherited, file_line \
+    "SELECT entry_id, name, value, is_inherited, byte_offset \
     \FROM entry_properties WHERE entry_id = ?"
     [SqlText entryId]
 
@@ -172,7 +193,8 @@ queryEntryTags :: DBHandle -> Text -> IO [EntryTagRow]
 queryEntryTags db entryId =
   dbQuery
     db
-    "SELECT entry_id, tag FROM entry_tags WHERE entry_id = ?"
+    "SELECT entry_id, tag, is_inherited, source_id \
+    \FROM entry_tags WHERE entry_id = ?"
     [SqlText entryId]
 
 -- | Query stamps for an entry.
@@ -180,29 +202,39 @@ queryEntryStamps :: DBHandle -> Text -> IO [EntryStampRow]
 queryEntryStamps db entryId =
   dbQuery
     db
-    "SELECT entry_id, stamp_type, time_start, time_end, time_kind, file_line \
+    "SELECT id, entry_id, byte_offset, stamp_type, time_kind, day, \
+    \day_end, time_start, time_end, suffix_kind, suffix_num, \
+    \suffix_span, suffix_larger_num, suffix_larger_span \
     \FROM entry_stamps WHERE entry_id = ?"
     [SqlText entryId]
+
+-- | Common SELECT columns for entries (18 columns matching EntryRow).
+entryColumnsSQL :: Text
+entryColumnsSQL =
+  "SELECT id, file_id, parent_id, depth, position, byte_offset, \
+  \keyword_type, keyword_value, priority, headline, title, verb, \
+  \context, locator, hash, mod_time, created_time, path::text \
+  \FROM entries"
 
 ------------------------------------------------------------------------
 -- Internal: Insert helpers
 ------------------------------------------------------------------------
 
-insertFileProperty :: DBHandle -> Text -> Property -> IO ()
-insertFileProperty db fileId prop =
+insertFileProperty :: DBHandle -> Text -> Text -> Property -> IO ()
+insertFileProperty db fileId source prop =
   dbExecute_
     db
     insertFilePropertySQL
     [ SqlText fileId
     , SqlText (T.pack (prop ^. name))
     , SqlText (T.pack (prop ^. value))
-    , SqlBool (prop ^. inherited)
+    , SqlText source
     ]
 
-insertEntry :: DBHandle -> Text -> Maybe Text -> Text -> Entry -> IO ()
-insertEntry db fileId parentId filePath entry = do
+insertEntry :: DBHandle -> Text -> Maybe Text -> Text -> Int -> Entry -> IO ()
+insertEntry db fileId parentId fileCat position entry = do
   entryId <- toText <$> nextRandom
-  let (kw, kwClosed) = keywordInfo (entry ^. entryKeyword)
+  let (kwType, kwValue) = keywordInfo (entry ^. entryKeyword)
   dbExecute_
     db
     insertEntrySQL
@@ -210,35 +242,56 @@ insertEntry db fileId parentId filePath entry = do
     , SqlText fileId
     , maybe SqlNull SqlText parentId
     , SqlInt (fromIntegral (entry ^. entryDepth))
-    , maybe SqlNull SqlText kw
-    , SqlBool kwClosed
+    , SqlInt (fromIntegral position)
+    , SqlInt (fromIntegral (entry ^. entryLoc . pos))
+    , maybe SqlNull SqlText kwType
+    , maybe SqlNull SqlText kwValue
     , maybe SqlNull (SqlText . T.pack) (entry ^. entryPriority)
     , SqlText (T.pack (entry ^. entryHeadline))
-    , maybe SqlNull (SqlText . T.pack) (entry ^. entryVerb)
     , SqlText (T.pack (entry ^. entryTitle))
+    , maybe SqlNull (SqlText . T.pack) (entry ^. entryVerb)
     , maybe SqlNull (SqlText . T.pack) (entry ^. entryContext)
     , maybe SqlNull (SqlText . T.pack) (entry ^. entryLocator)
-    , SqlInt (fromIntegral (entry ^. entryLoc . pos))
-    , SqlText filePath
     ]
-  -- Tags
+  -- Tags (direct, not inherited)
   mapM_ (insertTag db entryId) (entry ^. entryTags)
   -- Properties
   mapM_ (insertProperty db entryId) (entry ^. entryProperties)
   -- Stamps
   mapM_ (insertStamp db entryId) (entry ^. entryStamps)
-  -- Log entries
-  mapM_ (insertLogEntry db entryId) (entry ^. entryLogEntries)
+  -- Log entries with position tracking
+  zipWithM_
+    (insertLogEntry db entryId Nothing)
+    [0 ..]
+    (entry ^. entryLogEntries)
   -- Body blocks
   insertBody db entryId (entry ^. entryBody)
   -- Links extracted from textual content
   insertExtractedLinks db entryId entry
-  -- Sub-entries
-  mapM_ (insertEntry db fileId (Just entryId) filePath) (entry ^. entryItems)
+  -- Category (per-entry)
+  let entryCat =
+        listToMaybe
+          [ T.pack (prop ^. value)
+          | prop <- entry ^. entryProperties
+          , prop ^. name == "CATEGORY"
+          ]
+  case entryCat of
+    Just cat ->
+      dbExecute_ db insertCategorySQL [SqlText entryId, SqlText cat, SqlBool True, SqlNull]
+    Nothing ->
+      dbExecute_ db insertCategorySQL [SqlText entryId, SqlText fileCat, SqlBool False, SqlNull]
+  -- Sub-entries with position tracking
+  zipWithM_
+    (insertEntry db fileId (Just entryId) fileCat)
+    [0 ..]
+    (entry ^. entryItems)
 
 insertTag :: DBHandle -> Text -> Tag -> IO ()
 insertTag db entryId (PlainTag tag) =
-  dbExecute_ db insertTagSQL [SqlText entryId, SqlText (T.pack tag)]
+  dbExecute_
+    db
+    insertTagSQL
+    [SqlText entryId, SqlText (T.pack tag), SqlBool False, SqlNull]
 
 insertProperty :: DBHandle -> Text -> Property -> IO ()
 insertProperty db entryId prop =
@@ -256,56 +309,75 @@ insertStamp :: DBHandle -> Text -> Stamp -> IO ()
 insertStamp db entryId stamp = do
   let (stampType, time) = stampInfo stamp
       stampLoc = stamp ^. _stampLoc
-  dbExecute_
-    db
-    insertStampSQL
+  dbExecute_ db insertStampSQL $
     [ SqlText entryId
-    , SqlText stampType
-    , SqlUTCTime (timeStartToUTCTime time)
-    , maybe SqlNull SqlUTCTime (timeEndToUTCTime time)
-    , SqlText (timeKindText (time ^. timeKind))
     , SqlInt (fromIntegral (stampLoc ^. pos))
+    , SqlText stampType
+    , SqlText (timeKindText (time ^. timeKind))
+    , SqlInt (fromIntegral (time ^. timeDay))
+    , maybe SqlNull (SqlInt . fromIntegral) (time ^. timeDayEnd)
+    , maybe SqlNull (SqlInt . fromIntegral) (time ^. timeStart)
+    , maybe SqlNull (SqlInt . fromIntegral) (time ^. timeEnd)
     ]
+      ++ timeSuffixParams (time ^. timeSuffix)
 
-insertLogEntry :: DBHandle -> Text -> LogEntry -> IO ()
-insertLogEntry db entryId le = case le of
-  LogClosing loc t _ ->
-    insertLogRow "closing" (loc ^. pos) (timeStartToUTCTime t) Nothing Nothing Nothing Nothing
-  LogState loc _ toKw t _ -> do
-    let (fromSt, toSt) = stateInfo toKw (entry'sKeyword le)
-    insertLogRow "state" (loc ^. pos) (timeStartToUTCTime t) fromSt toSt Nothing Nothing
-  LogNote loc t _ ->
-    insertLogRow "note" (loc ^. pos) (timeStartToUTCTime t) Nothing Nothing Nothing Nothing
-  LogRescheduled loc t oldT _ ->
-    insertLogRow "rescheduled" (loc ^. pos) (timeStartToUTCTime t) Nothing Nothing (Just (timeStartToUTCTime oldT)) Nothing
-  LogNotScheduled loc t oldT _ ->
-    insertLogRow "not-scheduled" (loc ^. pos) (timeStartToUTCTime t) Nothing Nothing (Just (timeStartToUTCTime oldT)) Nothing
-  LogDeadline loc t oldT _ ->
-    insertLogRow "deadline" (loc ^. pos) (timeStartToUTCTime t) Nothing Nothing (Just (timeStartToUTCTime oldT)) Nothing
-  LogNoDeadline loc t oldT _ ->
-    insertLogRow "no-deadline" (loc ^. pos) (timeStartToUTCTime t) Nothing Nothing (Just (timeStartToUTCTime oldT)) Nothing
-  LogRefiling loc t _ ->
-    insertLogRow "refiling" (loc ^. pos) (timeStartToUTCTime t) Nothing Nothing Nothing Nothing
+insertLogEntry :: DBHandle -> Text -> Maybe Int64 -> Int -> LogEntry -> IO ()
+insertLogEntry db entryId mLogbookId position le = case le of
+  LogClosing loc t mb ->
+    execLog "closing" (loc ^. pos) (Just t) Nothing Nothing Nothing Nothing mb
+  LogState loc toKw mFromKw t mb ->
+    -- toKw (pos 2) is the keyword we transitioned TO
+    -- mFromKw (pos 3) is the keyword we transitioned FROM
+    execLog "state" (loc ^. pos) (Just t) mFromKw (Just toKw) Nothing Nothing mb
+  LogNote loc t mb ->
+    execLog "note" (loc ^. pos) (Just t) Nothing Nothing Nothing Nothing mb
+  LogRescheduled loc t oldT mb ->
+    execLog "rescheduled" (loc ^. pos) (Just t) Nothing Nothing (Just oldT) Nothing mb
+  LogNotScheduled loc t oldT mb ->
+    execLog "not_scheduled" (loc ^. pos) (Just t) Nothing Nothing (Just oldT) Nothing mb
+  LogDeadline loc t oldT mb ->
+    execLog "deadline" (loc ^. pos) (Just t) Nothing Nothing (Just oldT) Nothing mb
+  LogNoDeadline loc t oldT mb ->
+    execLog "no_deadline" (loc ^. pos) (Just t) Nothing Nothing (Just oldT) Nothing mb
+  LogRefiling loc t mb ->
+    execLog "refiling" (loc ^. pos) (Just t) Nothing Nothing Nothing Nothing mb
   LogClock loc t mDur ->
-    insertLogRow "clock" (loc ^. pos) (timeStartToUTCTime t) Nothing Nothing Nothing (durationToMins <$> mDur)
-  LogBook _ entries ->
-    mapM_ (insertLogEntry db entryId) entries
+    execLog "clock" (loc ^. pos) (Just t) Nothing Nothing Nothing mDur Nothing
+  LogBook loc entries -> do
+    let params =
+          [ SqlText entryId
+          , SqlInt (fromIntegral position)
+          , SqlInt (fromIntegral (loc ^. pos))
+          , SqlText "logbook"
+          ]
+            ++ replicate 4 SqlNull -- time
+            ++ replicate 4 SqlNull -- keywords
+            ++ replicate 8 SqlNull -- orig time + suffix
+            ++ replicate 2 SqlNull -- duration
+            ++ [SqlNull, maybe SqlNull (SqlInt . fromIntegral) mLogbookId]
+    rows <- dbQuery db insertLogEntryReturningSQL params :: IO [[SqlValue]]
+    case rows of
+      ([SqlInt newId] : _) ->
+        zipWithM_
+          (insertLogEntry db entryId (Just newId))
+          [0 ..]
+          entries
+      _ -> pure ()
  where
-  insertLogRow ::
-    Text -> Int -> UTCTime -> Maybe Text -> Maybe Text -> Maybe UTCTime -> Maybe Int -> IO ()
-  insertLogRow logType fileLine logTime fromState toState oldTime durMins =
-    dbExecute_
-      db
-      insertLogEntrySQL
+  execLog logType byteOff mTime mFromKw mToKw mOrigTime mDur mBody =
+    dbExecute_ db insertLogEntrySQL $
       [ SqlText entryId
+      , SqlInt (fromIntegral position)
+      , SqlInt (fromIntegral byteOff)
       , SqlText logType
-      , SqlUTCTime logTime
-      , maybe SqlNull SqlText fromState
-      , maybe SqlNull SqlText toState
-      , maybe SqlNull SqlUTCTime oldTime
-      , maybe SqlNull (SqlInt . fromIntegral) durMins
-      , SqlInt (fromIntegral fileLine)
       ]
+        ++ timeMjdParams mTime
+        ++ keywordParams mFromKw mToKw
+        ++ origTimeParams mOrigTime
+        ++ durationParams mDur
+        ++ [ maybe SqlNull SqlText (mBody >>= bodyTextMaybe)
+           , maybe SqlNull (SqlInt . fromIntegral) mLogbookId
+           ]
 
 insertExtractedLinks :: DBHandle -> Text -> Entry -> IO ()
 insertExtractedLinks db entryId entry = do
@@ -315,10 +387,10 @@ insertExtractedLinks db entryId entry = do
           ++ bodyStrings (entry ^. entryBody)
           ++ logBodyStrings (entry ^. entryLogEntries)
       links = concatMap extractOrgLinks allText
-  mapM_ (insertLink db entryId) links
+  zipWithM_ (insertLink db entryId) [0 ..] links
 
-insertLink :: DBHandle -> Text -> (Text, Text, Maybe Text) -> IO ()
-insertLink db entryId (linkType, target, desc) =
+insertLink :: DBHandle -> Text -> Int -> (Text, Text, Maybe Text) -> IO ()
+insertLink db entryId pos (linkType, target, desc) =
   dbExecute_
     db
     insertLinkSQL
@@ -326,6 +398,7 @@ insertLink db entryId (linkType, target, desc) =
     , SqlText linkType
     , SqlText target
     , maybe SqlNull SqlText desc
+    , SqlInt (fromIntegral pos)
     ]
 
 bodyStrings :: Body -> [String]
@@ -386,16 +459,18 @@ insertBody :: DBHandle -> Text -> Body -> IO ()
 insertBody db entryId body =
   mapM_ insertBlock (zip [0 :: Int ..] (body ^. blocks))
  where
-  insertBlock (seqNum, block) = do
-    let (blockType, content, fileLine) = blockInfo block
+  insertBlock (pos, block) = do
+    let (blockType, content, byteOff, dType, dName) = blockInfo block
     dbExecute_
       db
       insertBodyBlockSQL
       [ SqlText entryId
+      , SqlInt (fromIntegral pos)
+      , SqlInt (fromIntegral byteOff)
       , SqlText blockType
-      , SqlText content
-      , SqlInt (fromIntegral seqNum)
-      , SqlInt (fromIntegral fileLine)
+      , maybe SqlNull SqlText content
+      , maybe SqlNull SqlText dType
+      , maybe SqlNull SqlText dName
       ]
 
 ------------------------------------------------------------------------
@@ -404,61 +479,82 @@ insertBody db entryId body =
 
 insertFileSQL :: Text
 insertFileSQL =
-  "INSERT INTO files (id, path, mtime, hash) VALUES (?, ?, ?, ?)"
+  "INSERT INTO files (id, path, title, preamble, hash, mod_time) \
+  \VALUES (?, ?, ?, ?, ?, ?)"
 
 insertFilePropertySQL :: Text
 insertFilePropertySQL =
-  "INSERT INTO file_properties (file_id, name, value, inherited) \
+  "INSERT INTO file_properties (file_id, name, value, source) \
   \VALUES (?, ?, ?, ?)"
-
-insertCategorySQL :: Text
-insertCategorySQL =
-  "INSERT INTO categories (file_id, category) VALUES (?, ?)"
 
 insertEntrySQL :: Text
 insertEntrySQL =
-  "INSERT INTO entries (entry_id, file_id, parent_id, depth, keyword, \
-  \keyword_closed, priority, headline, verb, title, context, locator, \
-  \file_line, path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  "INSERT INTO entries (id, file_id, parent_id, depth, position, \
+  \byte_offset, keyword_type, keyword_value, priority, headline, \
+  \title, verb, context, locator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
 insertTagSQL :: Text
 insertTagSQL =
-  "INSERT INTO entry_tags (entry_id, tag) VALUES (?, ?)"
+  "INSERT INTO entry_tags (entry_id, tag, is_inherited, source_id) \
+  \VALUES (?, ?, ?, ?)"
 
 insertPropertySQL :: Text
 insertPropertySQL =
-  "INSERT INTO entry_properties (entry_id, name, value, inherited, file_line) \
-  \VALUES (?, ?, ?, ?, ?)"
+  "INSERT INTO entry_properties (entry_id, name, value, is_inherited, \
+  \byte_offset) VALUES (?, ?, ?, ?, ?)"
 
 insertStampSQL :: Text
 insertStampSQL =
-  "INSERT INTO entry_stamps (entry_id, stamp_type, time_start, time_end, \
-  \time_kind, file_line) VALUES (?, ?, ?, ?, ?, ?)"
+  "INSERT INTO entry_stamps (entry_id, byte_offset, stamp_type, \
+  \time_kind, day, day_end, time_start, time_end, suffix_kind, \
+  \suffix_num, suffix_span, suffix_larger_num, suffix_larger_span) \
+  \VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
 insertLogEntrySQL :: Text
 insertLogEntrySQL =
-  "INSERT INTO log_entries (entry_id, log_type, log_time, from_state, \
-  \to_state, old_time, duration_mins, file_line) \
-  \VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  "INSERT INTO entry_log_entries (entry_id, position, byte_offset, \
+  \log_type, time_day, time_start, time_end, time_kind, from_keyword, \
+  \from_keyword_type, to_keyword, to_keyword_type, orig_time_day, \
+  \orig_time_day_end, orig_time_start, orig_time_end, orig_time_kind, \
+  \orig_suffix_kind, orig_suffix_num, orig_suffix_span, \
+  \duration_hours, duration_mins, body_text, logbook_id) \
+  \VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+
+insertLogEntryReturningSQL :: Text
+insertLogEntryReturningSQL = insertLogEntrySQL <> " RETURNING id"
 
 insertBodyBlockSQL :: Text
 insertBodyBlockSQL =
-  "INSERT INTO body_blocks (entry_id, block_type, content, seq_num, \
-  \file_line) VALUES (?, ?, ?, ?, ?)"
+  "INSERT INTO entry_body_blocks (entry_id, position, byte_offset, \
+  \block_type, content, drawer_type, drawer_name) \
+  \VALUES (?, ?, ?, ?, ?, ?, ?)"
+
+insertCategorySQL :: Text
+insertCategorySQL =
+  "INSERT INTO entry_categories (entry_id, category, is_explicit, \
+  \source_id) VALUES (?, ?, ?, ?)"
 
 insertLinkSQL :: Text
 insertLinkSQL =
-  "INSERT INTO links (entry_id, link_type, target, description) \
-  \VALUES (?, ?, ?, ?)"
+  "INSERT INTO entry_links (entry_id, link_type, target, description, \
+  \position) VALUES (?, ?, ?, ?, ?)"
 
 ------------------------------------------------------------------------
 -- Helpers
 ------------------------------------------------------------------------
 
-keywordInfo :: Maybe Keyword -> (Maybe Text, Bool)
-keywordInfo Nothing = (Nothing, False)
-keywordInfo (Just (OpenKeyword _ s)) = (Just (T.pack s), False)
-keywordInfo (Just (ClosedKeyword _ s)) = (Just (T.pack s), True)
+keywordInfo :: Maybe Keyword -> (Maybe Text, Maybe Text)
+keywordInfo Nothing = (Nothing, Nothing)
+keywordInfo (Just (OpenKeyword _ s)) = (Just "open", Just (T.pack s))
+keywordInfo (Just (ClosedKeyword _ s)) = (Just "closed", Just (T.pack s))
+
+kwText :: Keyword -> Text
+kwText (OpenKeyword _ s) = T.pack s
+kwText (ClosedKeyword _ s) = T.pack s
+
+kwTypeText :: Keyword -> Text
+kwTypeText (OpenKeyword _ _) = "open"
+kwTypeText (ClosedKeyword _ _) = "closed"
 
 stampInfo :: Stamp -> (Text, Time)
 stampInfo (ClosedStamp _ t) = ("closed", t)
@@ -476,34 +572,117 @@ timeKindText :: TimeKind -> Text
 timeKindText ActiveTime = "active"
 timeKindText InactiveTime = "inactive"
 
-stateInfo :: Maybe Keyword -> Maybe Keyword -> (Maybe Text, Maybe Text)
-stateInfo toKw fromKw =
-  ( kwText <$> fromKw
-  , kwText <$> toKw
-  )
- where
-  kwText (OpenKeyword _ s) = T.pack s
-  kwText (ClosedKeyword _ s) = T.pack s
+suffixKindText :: TimeSuffixKind -> Text
+suffixKindText TimeRepeat = "repeat"
+suffixKindText TimeRepeatPlus = "repeat_plus"
+suffixKindText TimeDottedRepeat = "dotted_repeat"
+suffixKindText TimeWithin = "within"
 
--- The LogState constructor stores (fromKeyword, toKeyword).
--- stateInfo swaps them so the result is (fromText, toText).
-entry'sKeyword :: LogEntry -> Maybe Keyword
-entry'sKeyword (LogState _ kw _ _ _) = Just kw
-entry'sKeyword _ = Nothing
+timeSpanText :: TimeSpan -> Text
+timeSpanText DaySpan = "day"
+timeSpanText WeekSpan = "week"
+timeSpanText MonthSpan = "month"
+timeSpanText YearSpan = "year"
 
-blockInfo :: Block -> (Text, Text, Int)
-blockInfo (Whitespace loc s) = ("whitespace", T.pack s, loc ^. pos)
-blockInfo (Paragraph loc ls) = ("paragraph", T.pack (unlines ls), loc ^. pos)
-blockInfo (Drawer loc dt ls) =
-  ("drawer", T.pack (drawerName dt <> "\n" <> unlines ls), loc ^. pos)
-blockInfo (InlineTask loc _) = ("inline-task", "", loc ^. pos)
+drawerTypeText :: DrawerType -> Text
+drawerTypeText (PlainDrawer _) = "plain"
+drawerTypeText (BeginDrawer _) = "begin"
 
 drawerName :: DrawerType -> String
 drawerName (PlainDrawer s) = s
 drawerName (BeginDrawer s) = s
 
-durationToMins :: Duration -> Int
-durationToMins d = fromIntegral (d ^. hours * 60 + d ^. mins)
+blockInfo :: Block -> (Text, Maybe Text, Int, Maybe Text, Maybe Text)
+blockInfo (Whitespace loc s) = ("whitespace", Just (T.pack s), loc ^. pos, Nothing, Nothing)
+blockInfo (Paragraph loc ls) = ("paragraph", Just (T.pack (unlines ls)), loc ^. pos, Nothing, Nothing)
+blockInfo (Drawer loc dt ls) =
+  ( "drawer"
+  , Just (T.pack (unlines ls))
+  , loc ^. pos
+  , Just (drawerTypeText dt)
+  , Just (T.pack (drawerName dt))
+  )
+blockInfo (InlineTask loc _) = ("inline_task", Nothing, loc ^. pos, Nothing, Nothing)
 
-hashFile :: FilePath -> IO ByteString
-hashFile path = MD5.hash <$> BS.readFile path
+-- | Convert a Body to Maybe Text, Nothing if empty.
+bodyTextMaybe :: Body -> Maybe Text
+bodyTextMaybe body = case body ^. blocks of
+  [] -> Nothing
+  bs ->
+    let t = T.pack (concatMap blockToString bs)
+     in if T.null t then Nothing else Just t
+ where
+  blockToString (Whitespace _ s) = s
+  blockToString (Paragraph _ ls) = unlines ls
+  blockToString (Drawer _ _ ls) = unlines ls
+  blockToString (InlineTask _ _) = ""
+
+-- | MJD time parameters: time_day, time_start, time_end, time_kind (4 values).
+timeMjdParams :: Maybe Time -> [SqlValue]
+timeMjdParams Nothing = [SqlNull, SqlNull, SqlNull, SqlNull]
+timeMjdParams (Just t) =
+  [ SqlInt (fromIntegral (t ^. timeDay))
+  , maybe SqlNull (SqlInt . fromIntegral) (t ^. timeStart)
+  , maybe SqlNull (SqlInt . fromIntegral) (t ^. timeEnd)
+  , SqlText (timeKindText (t ^. timeKind))
+  ]
+
+-- | Keyword parameters: from_keyword, from_keyword_type, to_keyword, to_keyword_type (4 values).
+keywordParams :: Maybe Keyword -> Maybe Keyword -> [SqlValue]
+keywordParams mFrom mTo =
+  [ maybe SqlNull (SqlText . kwText) mFrom
+  , maybe SqlNull (SqlText . kwTypeText) mFrom
+  , maybe SqlNull (SqlText . kwText) mTo
+  , maybe SqlNull (SqlText . kwTypeText) mTo
+  ]
+
+-- | Original time parameters for rescheduled/deadline changes (8 values).
+origTimeParams :: Maybe Time -> [SqlValue]
+origTimeParams Nothing = replicate 8 SqlNull
+origTimeParams (Just t) =
+  [ SqlInt (fromIntegral (t ^. timeDay))
+  , maybe SqlNull (SqlInt . fromIntegral) (t ^. timeDayEnd)
+  , maybe SqlNull (SqlInt . fromIntegral) (t ^. timeStart)
+  , maybe SqlNull (SqlInt . fromIntegral) (t ^. timeEnd)
+  , SqlText (timeKindText (t ^. timeKind))
+  ]
+    ++ case t ^. timeSuffix of
+      Nothing -> [SqlNull, SqlNull, SqlNull]
+      Just s ->
+        [ SqlText (suffixKindText (s ^. suffixKind))
+        , SqlInt (fromIntegral (s ^. suffixNum))
+        , SqlText (timeSpanText (s ^. suffixSpan))
+        ]
+
+-- | Duration parameters: duration_hours, duration_mins (2 values).
+durationParams :: Maybe Duration -> [SqlValue]
+durationParams Nothing = [SqlNull, SqlNull]
+durationParams (Just d) =
+  [ SqlInt (fromIntegral (d ^. hours))
+  , SqlInt (fromIntegral (d ^. mins))
+  ]
+
+{- | TimeSuffix parameters: suffix_kind, suffix_num, suffix_span,
+suffix_larger_num, suffix_larger_span (5 values).
+-}
+timeSuffixParams :: Maybe TimeSuffix -> [SqlValue]
+timeSuffixParams Nothing = [SqlNull, SqlNull, SqlNull, SqlNull, SqlNull]
+timeSuffixParams (Just s) =
+  [ SqlText (suffixKindText (s ^. suffixKind))
+  , SqlInt (fromIntegral (s ^. suffixNum))
+  , SqlText (timeSpanText (s ^. suffixSpan))
+  ]
+    ++ case s ^. suffixLargerSpan of
+      Nothing -> [SqlNull, SqlNull]
+      Just (n, sp) -> [SqlInt (fromIntegral n), SqlText (timeSpanText sp)]
+
+-- | Hash a file and return hex-encoded MD5.
+hashFileText :: FilePath -> IO Text
+hashFileText path = bytesToHex . MD5.hash <$> BS.readFile path
+
+bytesToHex :: BS.ByteString -> Text
+bytesToHex = T.pack . concatMap byte . BS.unpack
+ where
+  byte w = case showHex w "" of
+    [c] -> ['0', c]
+    cs -> cs

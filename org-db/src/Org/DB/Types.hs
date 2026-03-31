@@ -57,10 +57,8 @@ import Data.Time.Format (defaultTimeLocale, parseTimeM)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
--- | Database backend configuration.
-data DBConfig
-  = PostgresConfig ByteString
-  | SQLiteConfig FilePath
+-- | PostgreSQL connection configuration.
+newtype DBConfig = DBConfig {pgConnString :: ByteString}
   deriving (Show, Eq, Generic, Data, Typeable)
 
 -- | Abstract SQL value type, backend-agnostic.
@@ -83,7 +81,7 @@ class FromRow a where
 instance FromRow [SqlValue] where
   fromRow = Right
 
--- | Backend-agnostic database handle using the record-of-functions pattern.
+-- | Database handle using the record-of-functions pattern.
 data DBHandle = DBHandle
   { dbExecute_ :: Text -> [SqlValue] -> IO ()
   , dbExecute :: Text -> [SqlValue] -> IO Int64
@@ -91,18 +89,22 @@ data DBHandle = DBHandle
   , dbQueryOne :: forall r. (FromRow r) => Text -> [SqlValue] -> IO (Maybe r)
   , dbTransaction :: forall a. IO a -> IO a
   , dbClose :: IO ()
-  , dbBackend :: DBConfig
   }
 
 ------------------------------------------------------------------------
--- Row Types
+-- Row Types (aligned with PRD 02 PostgreSQL schema)
 ------------------------------------------------------------------------
 
 data FileRow = FileRow
   { frId :: Text
   , frPath :: Text
-  , frMtime :: UTCTime
-  , frHash :: ByteString
+  , frTitle :: Maybe Text
+  , frPreamble :: Maybe Text
+  , frHash :: Maybe Text
+  , frModTime :: Maybe UTCTime
+  , frCreatedTime :: Maybe UTCTime
+  , frCreatedAt :: UTCTime
+  , frUpdatedAt :: UTCTime
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData)
 
@@ -110,31 +112,37 @@ data FilePropertyRow = FilePropertyRow
   { fprFileId :: Text
   , fprName :: Text
   , fprValue :: Text
-  , fprInherited :: Bool
+  , fprSource :: Text
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData, Hashable)
 
 data EntryRow = EntryRow
-  { erEntryId :: Text
+  { erId :: Text
   , erFileId :: Text
   , erParentId :: Maybe Text
   , erDepth :: Int
-  , erKeyword :: Maybe Text
-  , erKeywordClosed :: Bool
+  , erPosition :: Int
+  , erByteOffset :: Int
+  , erKeywordType :: Maybe Text
+  , erKeywordValue :: Maybe Text
   , erPriority :: Maybe Text
   , erHeadline :: Text
-  , erVerb :: Maybe Text
   , erTitle :: Text
+  , erVerb :: Maybe Text
   , erContext :: Maybe Text
   , erLocator :: Maybe Text
-  , erFileLine :: Int
-  , erPath :: Text
+  , erHash :: Maybe Text
+  , erModTime :: Maybe UTCTime
+  , erCreatedTime :: Maybe UTCTime
+  , erPath :: Maybe Text
   }
-  deriving (Show, Eq, Generic, Data, Typeable, NFData, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, NFData)
 
 data EntryTagRow = EntryTagRow
   { etrEntryId :: Text
   , etrTag :: Text
+  , etrIsInherited :: Bool
+  , etrSourceId :: Maybe Text
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData, Hashable)
 
@@ -142,60 +150,94 @@ data EntryPropertyRow = EntryPropertyRow
   { eprEntryId :: Text
   , eprName :: Text
   , eprValue :: Text
-  , eprInherited :: Bool
-  , eprFileLine :: Int
+  , eprIsInherited :: Bool
+  , eprByteOffset :: Maybe Int
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData, Hashable)
 
 data EntryStampRow = EntryStampRow
-  { esrEntryId :: Text
+  { esrId :: Int64
+  , esrEntryId :: Text
+  , esrByteOffset :: Maybe Int
   , esrStampType :: Text
-  , esrTimeStart :: UTCTime
-  , esrTimeEnd :: Maybe UTCTime
   , esrTimeKind :: Text
-  , esrFileLine :: Int
+  , esrDay :: Int
+  , esrDayEnd :: Maybe Int
+  , esrTimeStart :: Maybe Int
+  , esrTimeEnd :: Maybe Int
+  , esrSuffixKind :: Maybe Text
+  , esrSuffixNum :: Maybe Int
+  , esrSuffixSpan :: Maybe Text
+  , esrSuffixLargerNum :: Maybe Int
+  , esrSuffixLargerSpan :: Maybe Text
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData)
 
 data LogEntryRow = LogEntryRow
-  { lerEntryId :: Text
+  { lerId :: Int64
+  , lerEntryId :: Text
+  , lerPosition :: Int
+  , lerByteOffset :: Maybe Int
   , lerLogType :: Text
-  , lerLogTime :: UTCTime
-  , lerFromState :: Maybe Text
-  , lerToState :: Maybe Text
-  , lerOldTime :: Maybe UTCTime
+  , lerTimeDay :: Maybe Int
+  , lerTimeStart :: Maybe Int
+  , lerTimeEnd :: Maybe Int
+  , lerTimeKind :: Maybe Text
+  , lerFromKeyword :: Maybe Text
+  , lerFromKeywordType :: Maybe Text
+  , lerToKeyword :: Maybe Text
+  , lerToKeywordType :: Maybe Text
+  , lerOrigTimeDay :: Maybe Int
+  , lerOrigTimeDayEnd :: Maybe Int
+  , lerOrigTimeStart :: Maybe Int
+  , lerOrigTimeEnd :: Maybe Int
+  , lerOrigTimeKind :: Maybe Text
+  , lerOrigSuffixKind :: Maybe Text
+  , lerOrigSuffixNum :: Maybe Int
+  , lerOrigSuffixSpan :: Maybe Text
+  , lerDurationHours :: Maybe Int
   , lerDurationMins :: Maybe Int
-  , lerFileLine :: Int
+  , lerBodyText :: Maybe Text
+  , lerLogbookId :: Maybe Int64
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData)
 
 data BodyBlockRow = BodyBlockRow
-  { bbrEntryId :: Text
+  { bbrId :: Int64
+  , bbrEntryId :: Text
+  , bbrPosition :: Int
+  , bbrByteOffset :: Maybe Int
   , bbrBlockType :: Text
-  , bbrContent :: Text
-  , bbrSeqNum :: Int
-  , bbrFileLine :: Int
+  , bbrContent :: Maybe Text
+  , bbrDrawerType :: Maybe Text
+  , bbrDrawerName :: Maybe Text
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData, Hashable)
 
 data RelationshipRow = RelationshipRow
-  { rrSourceId :: Text
-  , rrTargetId :: Text
-  , rrRelType :: Text
+  { rrSourceEntryId :: Text
+  , rrTargetEntryId :: Text
+  , rrRelationshipType :: Text
+  , rrContext :: Maybe Text
+  , rrCreatedAt :: UTCTime
   }
-  deriving (Show, Eq, Generic, Data, Typeable, NFData, Hashable)
+  deriving (Show, Eq, Generic, Data, Typeable, NFData)
 
 data CategoryRow = CategoryRow
-  { crFileId :: Text
+  { crEntryId :: Text
   , crCategory :: Text
+  , crIsExplicit :: Bool
+  , crSourceId :: Maybe Text
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData, Hashable)
 
 data LinkRow = LinkRow
-  { lrEntryId :: Text
+  { lrId :: Int64
+  , lrEntryId :: Text
   , lrLinkType :: Text
   , lrTarget :: Text
   , lrDescription :: Maybe Text
+  , lrPosition :: Int
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData, Hashable)
 
@@ -271,113 +313,158 @@ extractMaybe f v = Just <$> f v
 ------------------------------------------------------------------------
 
 instance FromRow FileRow where
-  fromRow [id_, path, mtime, hash_] = do
+  fromRow [id_, path, title, preamble, hash_, modTime, createdTime, createdAt, updatedAt] = do
     frId <- extractText id_
     frPath <- extractText path
-    frMtime <- extractUTCTime mtime
-    frHash <- extractByteString hash_
+    frTitle <- extractMaybe extractText title
+    frPreamble <- extractMaybe extractText preamble
+    frHash <- extractMaybe extractText hash_
+    frModTime <- extractMaybe extractUTCTime modTime
+    frCreatedTime <- extractMaybe extractUTCTime createdTime
+    frCreatedAt <- extractUTCTime createdAt
+    frUpdatedAt <- extractUTCTime updatedAt
     pure FileRow{..}
-  fromRow vs = Left $ "FileRow: expected 4 columns, got " ++ show (length vs)
+  fromRow vs = Left $ "FileRow: expected 9 columns, got " ++ show (length vs)
 
 instance FromRow FilePropertyRow where
-  fromRow [fileId, name_, value_, inh] = do
+  fromRow [fileId, name_, value_, source] = do
     fprFileId <- extractText fileId
     fprName <- extractText name_
     fprValue <- extractText value_
-    fprInherited <- extractBool inh
+    fprSource <- extractText source
     pure FilePropertyRow{..}
   fromRow vs = Left $ "FilePropertyRow: expected 4 columns, got " ++ show (length vs)
 
 instance FromRow EntryRow where
-  fromRow [eid, fid, pid, dep, kw, kwc, pri, hl, vrb, ttl, ctx, loc_, fl, pth] = do
-    erEntryId <- extractText eid
+  fromRow [eid, fid, pid, dep, pos_, bo, kwt, kwv, pri, hl, ttl, vrb, ctx, loc_, hash_, mt, ct, pth] = do
+    erId <- extractText eid
     erFileId <- extractText fid
     erParentId <- extractMaybe extractText pid
     erDepth <- extractInt dep
-    erKeyword <- extractMaybe extractText kw
-    erKeywordClosed <- extractBool kwc
+    erPosition <- extractInt pos_
+    erByteOffset <- extractInt bo
+    erKeywordType <- extractMaybe extractText kwt
+    erKeywordValue <- extractMaybe extractText kwv
     erPriority <- extractMaybe extractText pri
     erHeadline <- extractText hl
-    erVerb <- extractMaybe extractText vrb
     erTitle <- extractText ttl
+    erVerb <- extractMaybe extractText vrb
     erContext <- extractMaybe extractText ctx
     erLocator <- extractMaybe extractText loc_
-    erFileLine <- extractInt fl
-    erPath <- extractText pth
+    erHash <- extractMaybe extractText hash_
+    erModTime <- extractMaybe extractUTCTime mt
+    erCreatedTime <- extractMaybe extractUTCTime ct
+    erPath <- extractMaybe extractText pth
     pure EntryRow{..}
-  fromRow vs = Left $ "EntryRow: expected 14 columns, got " ++ show (length vs)
+  fromRow vs = Left $ "EntryRow: expected 18 columns, got " ++ show (length vs)
 
 instance FromRow EntryTagRow where
-  fromRow [eid, tag] = do
+  fromRow [eid, tag, inh, sid] = do
     etrEntryId <- extractText eid
     etrTag <- extractText tag
+    etrIsInherited <- extractBool inh
+    etrSourceId <- extractMaybe extractText sid
     pure EntryTagRow{..}
-  fromRow vs = Left $ "EntryTagRow: expected 2 columns, got " ++ show (length vs)
+  fromRow vs = Left $ "EntryTagRow: expected 4 columns, got " ++ show (length vs)
 
 instance FromRow EntryPropertyRow where
-  fromRow [eid, name_, value_, inh, fl] = do
+  fromRow [eid, name_, value_, inh, bo] = do
     eprEntryId <- extractText eid
     eprName <- extractText name_
     eprValue <- extractText value_
-    eprInherited <- extractBool inh
-    eprFileLine <- extractInt fl
+    eprIsInherited <- extractBool inh
+    eprByteOffset <- extractMaybe extractInt bo
     pure EntryPropertyRow{..}
   fromRow vs = Left $ "EntryPropertyRow: expected 5 columns, got " ++ show (length vs)
 
 instance FromRow EntryStampRow where
-  fromRow [eid, stype, tstart, tend, tkind, fl] = do
+  fromRow [id_, eid, bo, stype, tkind, day_, dayEnd, tstart, tend, sk, sn, ss, sln, sls] = do
+    esrId <- extractInt64 id_
     esrEntryId <- extractText eid
+    esrByteOffset <- extractMaybe extractInt bo
     esrStampType <- extractText stype
-    esrTimeStart <- extractUTCTime tstart
-    esrTimeEnd <- extractMaybe extractUTCTime tend
     esrTimeKind <- extractText tkind
-    esrFileLine <- extractInt fl
+    esrDay <- extractInt day_
+    esrDayEnd <- extractMaybe extractInt dayEnd
+    esrTimeStart <- extractMaybe extractInt tstart
+    esrTimeEnd <- extractMaybe extractInt tend
+    esrSuffixKind <- extractMaybe extractText sk
+    esrSuffixNum <- extractMaybe extractInt sn
+    esrSuffixSpan <- extractMaybe extractText ss
+    esrSuffixLargerNum <- extractMaybe extractInt sln
+    esrSuffixLargerSpan <- extractMaybe extractText sls
     pure EntryStampRow{..}
-  fromRow vs = Left $ "EntryStampRow: expected 6 columns, got " ++ show (length vs)
+  fromRow vs = Left $ "EntryStampRow: expected 14 columns, got " ++ show (length vs)
 
 instance FromRow LogEntryRow where
-  fromRow [eid, ltype, ltime, fstate, tstate, otime, dur, fl] = do
+  fromRow [id_, eid, pos_, bo, lt, td, ts, te, tk, fk, fkt, tok, tokt, otd, otde, ots, ote, otk, osk, osn, oss, dh, dm, bt, lbi] = do
+    lerId <- extractInt64 id_
     lerEntryId <- extractText eid
-    lerLogType <- extractText ltype
-    lerLogTime <- extractUTCTime ltime
-    lerFromState <- extractMaybe extractText fstate
-    lerToState <- extractMaybe extractText tstate
-    lerOldTime <- extractMaybe extractUTCTime otime
-    lerDurationMins <- extractMaybe extractInt dur
-    lerFileLine <- extractInt fl
+    lerPosition <- extractInt pos_
+    lerByteOffset <- extractMaybe extractInt bo
+    lerLogType <- extractText lt
+    lerTimeDay <- extractMaybe extractInt td
+    lerTimeStart <- extractMaybe extractInt ts
+    lerTimeEnd <- extractMaybe extractInt te
+    lerTimeKind <- extractMaybe extractText tk
+    lerFromKeyword <- extractMaybe extractText fk
+    lerFromKeywordType <- extractMaybe extractText fkt
+    lerToKeyword <- extractMaybe extractText tok
+    lerToKeywordType <- extractMaybe extractText tokt
+    lerOrigTimeDay <- extractMaybe extractInt otd
+    lerOrigTimeDayEnd <- extractMaybe extractInt otde
+    lerOrigTimeStart <- extractMaybe extractInt ots
+    lerOrigTimeEnd <- extractMaybe extractInt ote
+    lerOrigTimeKind <- extractMaybe extractText otk
+    lerOrigSuffixKind <- extractMaybe extractText osk
+    lerOrigSuffixNum <- extractMaybe extractInt osn
+    lerOrigSuffixSpan <- extractMaybe extractText oss
+    lerDurationHours <- extractMaybe extractInt dh
+    lerDurationMins <- extractMaybe extractInt dm
+    lerBodyText <- extractMaybe extractText bt
+    lerLogbookId <- extractMaybe extractInt64 lbi
     pure LogEntryRow{..}
-  fromRow vs = Left $ "LogEntryRow: expected 8 columns, got " ++ show (length vs)
+  fromRow vs = Left $ "LogEntryRow: expected 25 columns, got " ++ show (length vs)
 
 instance FromRow BodyBlockRow where
-  fromRow [eid, btype, content, seqn, fl] = do
+  fromRow [id_, eid, pos_, bo, btype, content, dtype, dname] = do
+    bbrId <- extractInt64 id_
     bbrEntryId <- extractText eid
+    bbrPosition <- extractInt pos_
+    bbrByteOffset <- extractMaybe extractInt bo
     bbrBlockType <- extractText btype
-    bbrContent <- extractText content
-    bbrSeqNum <- extractInt seqn
-    bbrFileLine <- extractInt fl
+    bbrContent <- extractMaybe extractText content
+    bbrDrawerType <- extractMaybe extractText dtype
+    bbrDrawerName <- extractMaybe extractText dname
     pure BodyBlockRow{..}
-  fromRow vs = Left $ "BodyBlockRow: expected 5 columns, got " ++ show (length vs)
+  fromRow vs = Left $ "BodyBlockRow: expected 8 columns, got " ++ show (length vs)
 
 instance FromRow RelationshipRow where
-  fromRow [sid, tid, rtype] = do
-    rrSourceId <- extractText sid
-    rrTargetId <- extractText tid
-    rrRelType <- extractText rtype
+  fromRow [sid, tid, rtype, ctx, cat] = do
+    rrSourceEntryId <- extractText sid
+    rrTargetEntryId <- extractText tid
+    rrRelationshipType <- extractText rtype
+    rrContext <- extractMaybe extractText ctx
+    rrCreatedAt <- extractUTCTime cat
     pure RelationshipRow{..}
-  fromRow vs = Left $ "RelationshipRow: expected 3 columns, got " ++ show (length vs)
+  fromRow vs = Left $ "RelationshipRow: expected 5 columns, got " ++ show (length vs)
 
 instance FromRow CategoryRow where
-  fromRow [fid, cat] = do
-    crFileId <- extractText fid
+  fromRow [eid, cat, expl, sid] = do
+    crEntryId <- extractText eid
     crCategory <- extractText cat
+    crIsExplicit <- extractBool expl
+    crSourceId <- extractMaybe extractText sid
     pure CategoryRow{..}
-  fromRow vs = Left $ "CategoryRow: expected 2 columns, got " ++ show (length vs)
+  fromRow vs = Left $ "CategoryRow: expected 4 columns, got " ++ show (length vs)
 
 instance FromRow LinkRow where
-  fromRow [eid, ltype, target, desc] = do
+  fromRow [id_, eid, ltype, target, desc, pos_] = do
+    lrId <- extractInt64 id_
     lrEntryId <- extractText eid
     lrLinkType <- extractText ltype
     lrTarget <- extractText target
     lrDescription <- extractMaybe extractText desc
+    lrPosition <- extractInt pos_
     pure LinkRow{..}
-  fromRow vs = Left $ "LinkRow: expected 4 columns, got " ++ show (length vs)
+  fromRow vs = Left $ "LinkRow: expected 6 columns, got " ++ show (length vs)

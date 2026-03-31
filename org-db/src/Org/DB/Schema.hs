@@ -10,24 +10,40 @@ import Org.DB.Types
 
 -- | Current schema version. Bump when changing table definitions.
 schemaVersion :: Int
-schemaVersion = 1
+schemaVersion = 2
 
 -- | Initialize the database schema, creating all tables if they don't exist.
 initDB :: DBHandle -> IO ()
 initDB db = dbTransaction db $ do
-  mapM_ (\ddl -> dbExecute_ db ddl []) schemaDDL
-  -- Ensure schema_version has a row
-  existing <- dbQuery db "SELECT version FROM schema_version" [] :: IO [[SqlValue]]
+  mapM_ (\ddl -> dbExecute_ db ddl []) extensionsDDL
+  mapM_ (\ddl -> dbExecute_ db ddl []) tableDDL
+  mapM_ (\ddl -> dbExecute_ db ddl []) indexDDL
+  mapM_ (\ddl -> dbExecute_ db ddl []) triggerDDL
+  existing <- dbQuery db "SELECT version FROM schema_version WHERE version = ?" [SqlInt (fromIntegral schemaVersion)] :: IO [[SqlValue]]
   case existing of
-    [] -> dbExecute_ db "INSERT INTO schema_version (version) VALUES (?)" [SqlInt (fromIntegral schemaVersion)]
-    _ -> dbExecute_ db "UPDATE schema_version SET version = ?" [SqlInt (fromIntegral schemaVersion)]
+    [] ->
+      dbExecute_
+        db
+        "INSERT INTO schema_version (version, description) VALUES (?, ?)"
+        [SqlInt (fromIntegral schemaVersion), SqlText "PRD 02 PostgreSQL-only schema"]
+    _ -> pure ()
 
 ------------------------------------------------------------------------
--- Schema DDL
+-- Extensions
 ------------------------------------------------------------------------
 
-schemaDDL :: [Text]
-schemaDDL =
+extensionsDDL :: [Text]
+extensionsDDL =
+  [ "CREATE EXTENSION IF NOT EXISTS ltree"
+  , "CREATE EXTENSION IF NOT EXISTS vector"
+  ]
+
+------------------------------------------------------------------------
+-- Table DDL
+------------------------------------------------------------------------
+
+tableDDL :: [Text]
+tableDDL =
   [ createSchemaVersion
   , createFiles
   , createFileProperties
@@ -35,38 +51,19 @@ schemaDDL =
   , createEntryTags
   , createEntryProperties
   , createEntryStamps
-  , createLogEntries
-  , createBodyBlocks
-  , createRelationships
-  , createCategories
-  , createLinks
-  , -- Indexes
-    createIdxEntriesFileId
-  , createIdxEntriesParentId
-  , createIdxEntriesKeyword
-  , createIdxEntryTagsEntryId
-  , createIdxEntryTagsTag
-  , createIdxEntryPropertiesEntryId
-  , createIdxEntryStampsEntryId
-  , createIdxLogEntriesEntryId
-  , createIdxBodyBlocksEntryId
-  , createIdxRelationshipsSourceId
-  , createIdxRelationshipsTargetId
-  , createIdxCategoriesFileId
-  , createIdxLinksEntryId
-  , createIdxLinksTarget
-  , createIdxEntryStampsStampType
-  , createIdxFilePropertiesFileId
+  , createEntryLogEntries
+  , createEntryBodyBlocks
+  , createEntryRelationships
+  , createEntryCategories
+  , createEntryLinks
   ]
-
-------------------------------------------------------------------------
--- Table definitions
-------------------------------------------------------------------------
 
 createSchemaVersion :: Text
 createSchemaVersion =
   "CREATE TABLE IF NOT EXISTS schema_version (\
-  \  version INTEGER NOT NULL\
+  \  version INTEGER PRIMARY KEY,\
+  \  applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),\
+  \  description TEXT\
   \)"
 
 createFiles :: Text
@@ -74,8 +71,13 @@ createFiles =
   "CREATE TABLE IF NOT EXISTS files (\
   \  id TEXT PRIMARY KEY,\
   \  path TEXT NOT NULL UNIQUE,\
-  \  mtime TEXT NOT NULL,\
-  \  hash BLOB NOT NULL\
+  \  title TEXT,\
+  \  preamble TEXT,\
+  \  hash TEXT,\
+  \  mod_time TIMESTAMPTZ,\
+  \  created_time TIMESTAMPTZ,\
+  \  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\
+  \  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\
   \)"
 
 createFileProperties :: Text
@@ -84,172 +86,263 @@ createFileProperties =
   \  file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,\
   \  name TEXT NOT NULL,\
   \  value TEXT NOT NULL,\
-  \  inherited INTEGER NOT NULL DEFAULT 0,\
-  \  PRIMARY KEY (file_id, name)\
+  \  source TEXT NOT NULL CHECK (source IN ('drawer', 'file')),\
+  \  PRIMARY KEY (file_id, name, source)\
   \)"
 
 createEntries :: Text
 createEntries =
   "CREATE TABLE IF NOT EXISTS entries (\
-  \  entry_id TEXT PRIMARY KEY,\
+  \  id TEXT PRIMARY KEY,\
   \  file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,\
-  \  parent_id TEXT REFERENCES entries(entry_id) ON DELETE CASCADE,\
-  \  depth INTEGER NOT NULL,\
-  \  keyword TEXT,\
-  \  keyword_closed INTEGER NOT NULL DEFAULT 0,\
+  \  parent_id TEXT REFERENCES entries(id) ON DELETE CASCADE,\
+  \  depth SMALLINT NOT NULL,\
+  \  position INTEGER NOT NULL,\
+  \  byte_offset INTEGER NOT NULL,\
+  \  keyword_type TEXT CHECK (keyword_type IN ('open', 'closed')),\
+  \  keyword_value TEXT,\
   \  priority TEXT,\
   \  headline TEXT NOT NULL,\
-  \  verb TEXT,\
   \  title TEXT NOT NULL,\
+  \  verb TEXT,\
   \  context TEXT,\
   \  locator TEXT,\
-  \  file_line INTEGER NOT NULL,\
-  \  path TEXT NOT NULL\
+  \  hash TEXT,\
+  \  mod_time TIMESTAMPTZ,\
+  \  created_time TIMESTAMPTZ,\
+  \  path ltree,\
+  \  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\
+  \  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\
   \)"
 
 createEntryTags :: Text
 createEntryTags =
   "CREATE TABLE IF NOT EXISTS entry_tags (\
-  \  entry_id TEXT NOT NULL REFERENCES entries(entry_id) ON DELETE CASCADE,\
+  \  entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
   \  tag TEXT NOT NULL,\
+  \  is_inherited BOOLEAN NOT NULL DEFAULT false,\
+  \  source_id TEXT REFERENCES entries(id),\
   \  PRIMARY KEY (entry_id, tag)\
   \)"
 
 createEntryProperties :: Text
 createEntryProperties =
   "CREATE TABLE IF NOT EXISTS entry_properties (\
-  \  entry_id TEXT NOT NULL REFERENCES entries(entry_id) ON DELETE CASCADE,\
+  \  entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
   \  name TEXT NOT NULL,\
   \  value TEXT NOT NULL,\
-  \  inherited INTEGER NOT NULL DEFAULT 0,\
-  \  file_line INTEGER NOT NULL,\
+  \  is_inherited BOOLEAN NOT NULL DEFAULT false,\
+  \  byte_offset INTEGER,\
   \  PRIMARY KEY (entry_id, name)\
   \)"
 
 createEntryStamps :: Text
 createEntryStamps =
   "CREATE TABLE IF NOT EXISTS entry_stamps (\
-  \  entry_id TEXT NOT NULL REFERENCES entries(entry_id) ON DELETE CASCADE,\
-  \  stamp_type TEXT NOT NULL,\
-  \  time_start TEXT NOT NULL,\
-  \  time_end TEXT,\
-  \  time_kind TEXT NOT NULL,\
-  \  file_line INTEGER NOT NULL\
+  \  id BIGSERIAL PRIMARY KEY,\
+  \  entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
+  \  byte_offset INTEGER,\
+  \  stamp_type TEXT NOT NULL CHECK (stamp_type IN\
+  \    ('closed', 'scheduled', 'deadline', 'active')),\
+  \  time_kind TEXT NOT NULL CHECK (time_kind IN ('active', 'inactive')),\
+  \  day INTEGER NOT NULL,\
+  \  day_end INTEGER,\
+  \  time_start INTEGER,\
+  \  time_end INTEGER,\
+  \  suffix_kind TEXT CHECK (suffix_kind IN\
+  \    ('repeat', 'repeat_plus', 'dotted_repeat', 'within')),\
+  \  suffix_num INTEGER,\
+  \  suffix_span TEXT CHECK (suffix_span IN ('day', 'week', 'month', 'year')),\
+  \  suffix_larger_num INTEGER,\
+  \  suffix_larger_span TEXT CHECK (suffix_larger_span IN\
+  \    ('day', 'week', 'month', 'year'))\
   \)"
 
-createLogEntries :: Text
-createLogEntries =
-  "CREATE TABLE IF NOT EXISTS log_entries (\
-  \  entry_id TEXT NOT NULL REFERENCES entries(entry_id) ON DELETE CASCADE,\
-  \  log_type TEXT NOT NULL,\
-  \  log_time TEXT NOT NULL,\
-  \  from_state TEXT,\
-  \  to_state TEXT,\
-  \  old_time TEXT,\
+createEntryLogEntries :: Text
+createEntryLogEntries =
+  "CREATE TABLE IF NOT EXISTS entry_log_entries (\
+  \  id BIGSERIAL PRIMARY KEY,\
+  \  entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
+  \  position INTEGER NOT NULL,\
+  \  byte_offset INTEGER,\
+  \  log_type TEXT NOT NULL CHECK (log_type IN (\
+  \    'closing', 'state', 'note', 'rescheduled', 'not_scheduled',\
+  \    'deadline', 'no_deadline', 'refiling', 'clock', 'logbook')),\
+  \  time_day INTEGER,\
+  \  time_start INTEGER,\
+  \  time_end INTEGER,\
+  \  time_kind TEXT,\
+  \  from_keyword TEXT,\
+  \  from_keyword_type TEXT CHECK (from_keyword_type IN ('open', 'closed')),\
+  \  to_keyword TEXT,\
+  \  to_keyword_type TEXT CHECK (to_keyword_type IN ('open', 'closed')),\
+  \  orig_time_day INTEGER,\
+  \  orig_time_day_end INTEGER,\
+  \  orig_time_start INTEGER,\
+  \  orig_time_end INTEGER,\
+  \  orig_time_kind TEXT,\
+  \  orig_suffix_kind TEXT CHECK (orig_suffix_kind IN\
+  \    ('repeat', 'repeat_plus', 'dotted_repeat', 'within')),\
+  \  orig_suffix_num INTEGER,\
+  \  orig_suffix_span TEXT CHECK (orig_suffix_span IN\
+  \    ('day', 'week', 'month', 'year')),\
+  \  duration_hours INTEGER,\
   \  duration_mins INTEGER,\
-  \  file_line INTEGER NOT NULL\
+  \  body_text TEXT,\
+  \  logbook_id BIGINT REFERENCES entry_log_entries(id)\
   \)"
 
-createBodyBlocks :: Text
-createBodyBlocks =
-  "CREATE TABLE IF NOT EXISTS body_blocks (\
-  \  entry_id TEXT NOT NULL REFERENCES entries(entry_id) ON DELETE CASCADE,\
-  \  block_type TEXT NOT NULL,\
-  \  content TEXT NOT NULL,\
-  \  seq_num INTEGER NOT NULL,\
-  \  file_line INTEGER NOT NULL\
+createEntryBodyBlocks :: Text
+createEntryBodyBlocks =
+  "CREATE TABLE IF NOT EXISTS entry_body_blocks (\
+  \  id BIGSERIAL PRIMARY KEY,\
+  \  entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
+  \  position INTEGER NOT NULL,\
+  \  byte_offset INTEGER,\
+  \  block_type TEXT NOT NULL CHECK (block_type IN\
+  \    ('whitespace', 'paragraph', 'drawer', 'inline_task')),\
+  \  content TEXT,\
+  \  drawer_type TEXT CHECK (drawer_type IN ('plain', 'begin')),\
+  \  drawer_name TEXT,\
+  \  UNIQUE (entry_id, position)\
   \)"
 
-createRelationships :: Text
-createRelationships =
-  "CREATE TABLE IF NOT EXISTS relationships (\
-  \  source_id TEXT NOT NULL REFERENCES entries(entry_id) ON DELETE CASCADE,\
-  \  target_id TEXT NOT NULL,\
-  \  rel_type TEXT NOT NULL,\
-  \  PRIMARY KEY (source_id, target_id, rel_type)\
+createEntryRelationships :: Text
+createEntryRelationships =
+  "CREATE TABLE IF NOT EXISTS entry_relationships (\
+  \  source_entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
+  \  target_entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
+  \  relationship_type TEXT NOT NULL CHECK (relationship_type IN (\
+  \    'link', 'blocks', 'blocked_by', 'related', 'parent_child')),\
+  \  context TEXT,\
+  \  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\
+  \  PRIMARY KEY (source_entry_id, target_entry_id, relationship_type),\
+  \  CHECK (source_entry_id != target_entry_id)\
   \)"
 
-createCategories :: Text
-createCategories =
-  "CREATE TABLE IF NOT EXISTS categories (\
-  \  file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,\
+createEntryCategories :: Text
+createEntryCategories =
+  "CREATE TABLE IF NOT EXISTS entry_categories (\
+  \  entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
   \  category TEXT NOT NULL,\
-  \  PRIMARY KEY (file_id)\
+  \  is_explicit BOOLEAN NOT NULL DEFAULT false,\
+  \  source_id TEXT,\
+  \  PRIMARY KEY (entry_id, category)\
   \)"
 
-createLinks :: Text
-createLinks =
-  "CREATE TABLE IF NOT EXISTS links (\
-  \  entry_id TEXT NOT NULL REFERENCES entries(entry_id) ON DELETE CASCADE,\
+createEntryLinks :: Text
+createEntryLinks =
+  "CREATE TABLE IF NOT EXISTS entry_links (\
+  \  id BIGSERIAL PRIMARY KEY,\
+  \  entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
   \  link_type TEXT NOT NULL,\
   \  target TEXT NOT NULL,\
-  \  description TEXT\
+  \  description TEXT,\
+  \  position INTEGER NOT NULL\
   \)"
 
 ------------------------------------------------------------------------
--- Index definitions
+-- Index DDL
 ------------------------------------------------------------------------
 
-createIdxEntriesFileId :: Text
-createIdxEntriesFileId =
-  "CREATE INDEX IF NOT EXISTS idx_entries_file_id ON entries(file_id)"
+indexDDL :: [Text]
+indexDDL =
+  [ -- entries
+    "CREATE INDEX IF NOT EXISTS idx_entries_file ON entries(file_id)"
+  , "CREATE INDEX IF NOT EXISTS idx_entries_parent ON entries(parent_id)"
+  , "CREATE INDEX IF NOT EXISTS idx_entries_keyword ON entries(keyword_value) WHERE keyword_value IS NOT NULL"
+  , "CREATE INDEX IF NOT EXISTS idx_entries_path ON entries USING GIST (path)"
+  , -- entry_tags
+    "CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag)"
+  , -- entry_properties
+    "CREATE INDEX IF NOT EXISTS idx_entry_properties_name ON entry_properties(name)"
+  , -- entry_stamps
+    "CREATE INDEX IF NOT EXISTS idx_entry_stamps_entry ON entry_stamps(entry_id)"
+  , "CREATE INDEX IF NOT EXISTS idx_entry_stamps_type ON entry_stamps(stamp_type)"
+  , "CREATE INDEX IF NOT EXISTS idx_entry_stamps_day ON entry_stamps(day)"
+  , -- entry_log_entries
+    "CREATE INDEX IF NOT EXISTS idx_log_entries_entry ON entry_log_entries(entry_id)"
+  , "CREATE INDEX IF NOT EXISTS idx_log_entries_type ON entry_log_entries(log_type)"
+  , -- entry_body_blocks
+    "CREATE INDEX IF NOT EXISTS idx_body_blocks_entry ON entry_body_blocks(entry_id)"
+  , -- entry_relationships
+    "CREATE INDEX IF NOT EXISTS idx_rel_target ON entry_relationships(target_entry_id)"
+  , "CREATE INDEX IF NOT EXISTS idx_rel_type ON entry_relationships(relationship_type)"
+  , -- entry_categories
+    "CREATE INDEX IF NOT EXISTS idx_categories_cat ON entry_categories(category)"
+  , -- entry_links
+    "CREATE INDEX IF NOT EXISTS idx_links_entry ON entry_links(entry_id)"
+  , "CREATE INDEX IF NOT EXISTS idx_links_target ON entry_links(target)"
+  ]
 
-createIdxEntriesParentId :: Text
-createIdxEntriesParentId =
-  "CREATE INDEX IF NOT EXISTS idx_entries_parent_id ON entries(parent_id)"
+------------------------------------------------------------------------
+-- Trigger DDL (ltree path maintenance)
+------------------------------------------------------------------------
 
-createIdxEntriesKeyword :: Text
-createIdxEntriesKeyword =
-  "CREATE INDEX IF NOT EXISTS idx_entries_keyword ON entries(keyword)"
+triggerDDL :: [Text]
+triggerDDL =
+  [ computeEntryPathFn
+  , updateEntryPathFn
+  , triggerEntryPathInsert
+  , cascadeEntryPathFn
+  , triggerEntryPathUpdate
+  ]
 
-createIdxEntryTagsEntryId :: Text
-createIdxEntryTagsEntryId =
-  "CREATE INDEX IF NOT EXISTS idx_entry_tags_entry_id ON entry_tags(entry_id)"
+computeEntryPathFn :: Text
+computeEntryPathFn =
+  "CREATE OR REPLACE FUNCTION compute_entry_path(\
+  \  entry_id TEXT, entry_parent_id TEXT\
+  \) RETURNS ltree AS $$\
+  \DECLARE parent_path ltree;\
+  \BEGIN\
+  \  IF entry_parent_id IS NULL THEN\
+  \    RETURN replace(entry_id, '-', '_')::ltree;\
+  \  ELSE\
+  \    SELECT path INTO parent_path FROM entries WHERE id = entry_parent_id;\
+  \    RETURN parent_path || replace(entry_id, '-', '_');\
+  \  END IF;\
+  \END;\
+  \$$ LANGUAGE plpgsql"
 
-createIdxEntryTagsTag :: Text
-createIdxEntryTagsTag =
-  "CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag)"
+updateEntryPathFn :: Text
+updateEntryPathFn =
+  "CREATE OR REPLACE FUNCTION update_entry_path() RETURNS trigger AS $$\
+  \BEGIN\
+  \  NEW.path = compute_entry_path(NEW.id, NEW.parent_id);\
+  \  RETURN NEW;\
+  \END;\
+  \$$ LANGUAGE plpgsql"
 
-createIdxEntryPropertiesEntryId :: Text
-createIdxEntryPropertiesEntryId =
-  "CREATE INDEX IF NOT EXISTS idx_entry_properties_entry_id ON entry_properties(entry_id)"
+triggerEntryPathInsert :: Text
+triggerEntryPathInsert =
+  "DROP TRIGGER IF EXISTS trg_entry_path_insert ON entries;\
+  \CREATE TRIGGER trg_entry_path_insert\
+  \  BEFORE INSERT ON entries\
+  \  FOR EACH ROW EXECUTE FUNCTION update_entry_path()"
 
-createIdxEntryStampsEntryId :: Text
-createIdxEntryStampsEntryId =
-  "CREATE INDEX IF NOT EXISTS idx_entry_stamps_entry_id ON entry_stamps(entry_id)"
+cascadeEntryPathFn :: Text
+cascadeEntryPathFn =
+  "CREATE OR REPLACE FUNCTION cascade_entry_path() RETURNS trigger AS $$\
+  \BEGIN\
+  \  IF OLD.parent_id IS DISTINCT FROM NEW.parent_id THEN\
+  \    NEW.path = compute_entry_path(NEW.id, NEW.parent_id);\
+  \    WITH RECURSIVE descendants AS (\
+  \      SELECT id, parent_id FROM entries WHERE parent_id = NEW.id\
+  \      UNION ALL\
+  \      SELECT e.id, e.parent_id FROM entries e\
+  \        JOIN descendants d ON e.parent_id = d.id\
+  \    )\
+  \    UPDATE entries e\
+  \      SET path = compute_entry_path(e.id, e.parent_id)\
+  \      FROM descendants d WHERE e.id = d.id;\
+  \  END IF;\
+  \  RETURN NEW;\
+  \END;\
+  \$$ LANGUAGE plpgsql"
 
-createIdxLogEntriesEntryId :: Text
-createIdxLogEntriesEntryId =
-  "CREATE INDEX IF NOT EXISTS idx_log_entries_entry_id ON log_entries(entry_id)"
-
-createIdxBodyBlocksEntryId :: Text
-createIdxBodyBlocksEntryId =
-  "CREATE INDEX IF NOT EXISTS idx_body_blocks_entry_id ON body_blocks(entry_id)"
-
-createIdxRelationshipsSourceId :: Text
-createIdxRelationshipsSourceId =
-  "CREATE INDEX IF NOT EXISTS idx_relationships_source_id ON relationships(source_id)"
-
-createIdxRelationshipsTargetId :: Text
-createIdxRelationshipsTargetId =
-  "CREATE INDEX IF NOT EXISTS idx_relationships_target_id ON relationships(target_id)"
-
-createIdxCategoriesFileId :: Text
-createIdxCategoriesFileId =
-  "CREATE INDEX IF NOT EXISTS idx_categories_file_id ON categories(file_id)"
-
-createIdxLinksEntryId :: Text
-createIdxLinksEntryId =
-  "CREATE INDEX IF NOT EXISTS idx_links_entry_id ON links(entry_id)"
-
-createIdxLinksTarget :: Text
-createIdxLinksTarget =
-  "CREATE INDEX IF NOT EXISTS idx_links_target ON links(target)"
-
-createIdxEntryStampsStampType :: Text
-createIdxEntryStampsStampType =
-  "CREATE INDEX IF NOT EXISTS idx_entry_stamps_stamp_type ON entry_stamps(entry_id, stamp_type)"
-
-createIdxFilePropertiesFileId :: Text
-createIdxFilePropertiesFileId =
-  "CREATE INDEX IF NOT EXISTS idx_file_properties_file_id ON file_properties(file_id)"
+triggerEntryPathUpdate :: Text
+triggerEntryPathUpdate =
+  "DROP TRIGGER IF EXISTS trg_entry_path_update ON entries;\
+  \CREATE TRIGGER trg_entry_path_update\
+  \  BEFORE UPDATE OF parent_id ON entries\
+  \  FOR EACH ROW EXECUTE FUNCTION cascade_entry_path()"
