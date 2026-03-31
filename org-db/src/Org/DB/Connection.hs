@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -131,17 +132,16 @@ sqliteRawQuery :: Direct.Database -> Text -> [Direct.SQLData] -> IO [[SqlValue]]
 sqliteRawQuery db sql params =
   bracket (Direct.prepare db sql) Direct.finalize $ \stmt -> do
     Direct.bind stmt params
-    collectRows stmt
+    collectRows stmt []
  where
-  collectRows stmt = do
+  collectRows stmt !acc = do
     result <- Direct.step stmt
     case result of
-      Direct.Done -> pure []
+      Direct.Done -> pure (reverse acc)
       Direct.Row -> do
         cols <- Direct.columns stmt
-        let vals = map directToSqlValue cols
-        rest <- collectRows stmt
-        pure (vals : rest)
+        let !vals = map directToSqlValue cols
+        collectRows stmt (vals : acc)
 
 ------------------------------------------------------------------------
 -- Backend implementations
@@ -171,6 +171,7 @@ connectSQLite :: FilePath -> IO DBHandle
 connectSQLite path = do
   conn <- SQLite.open path
   SQLite.execute_ conn "PRAGMA journal_mode=WAL;"
+  SQLite.execute_ conn "PRAGMA synchronous=NORMAL;"
   SQLite.execute_ conn "PRAGMA foreign_keys=ON;"
   SQLite.execute_ conn "PRAGMA busy_timeout=5000;"
   pure

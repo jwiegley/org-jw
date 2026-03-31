@@ -362,7 +362,7 @@ extractOrgLinks ('[' : '[' : rest) = case parseLink rest of
 extractOrgLinks (_ : rest) = extractOrgLinks rest
 
 parseLink :: String -> Maybe (String, Maybe String, String)
-parseLink s = case break (\c -> c == ']' || c == '[') s of
+parseLink s = case break (== ']') s of
   (_, []) -> Nothing
   (url, ']' : ']' : remaining) -> Just (url, Nothing, remaining)
   (url, ']' : '[' : rest2) -> case break (== ']') rest2 of
@@ -483,8 +483,8 @@ stateInfo toKw fromKw =
   kwText (OpenKeyword _ s) = T.pack s
   kwText (ClosedKeyword _ s) = T.pack s
 
--- The LogState constructor stores (toKeyword, fromKeyword) but we want
--- the other way around for the database row.
+-- The LogState constructor stores (fromKeyword, toKeyword).
+-- stateInfo swaps them so the result is (fromText, toText).
 entry'sKeyword :: LogEntry -> Maybe Keyword
 entry'sKeyword (LogState _ kw _ _ _) = Just kw
 entry'sKeyword _ = Nothing

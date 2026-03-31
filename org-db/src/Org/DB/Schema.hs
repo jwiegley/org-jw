@@ -54,6 +54,8 @@ schemaDDL =
   , createIdxRelationshipsTargetId
   , createIdxCategoriesFileId
   , createIdxLinksEntryId
+  , createIdxLinksTarget
+  , createIdxEntryStampsStampType
   , createIdxFilePropertiesFileId
   ]
 
@@ -239,6 +241,14 @@ createIdxCategoriesFileId =
 createIdxLinksEntryId :: Text
 createIdxLinksEntryId =
   "CREATE INDEX IF NOT EXISTS idx_links_entry_id ON links(entry_id)"
+
+createIdxLinksTarget :: Text
+createIdxLinksTarget =
+  "CREATE INDEX IF NOT EXISTS idx_links_target ON links(target)"
+
+createIdxEntryStampsStampType :: Text
+createIdxEntryStampsStampType =
+  "CREATE INDEX IF NOT EXISTS idx_entry_stamps_stamp_type ON entry_stamps(entry_id, stamp_type)"
 
 createIdxFilePropertiesFileId :: Text
 createIdxFilePropertiesFileId =

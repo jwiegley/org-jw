@@ -203,11 +203,11 @@ sexpToQuery (SList (SAtom name : args)) = case name of
     [q] -> QNot <$> sexpToQuery q
     _ -> Left "not: expected exactly one argument"
   "when" -> case args of
-    (c : qs) -> QWhen <$> sexpToQuery c <*> mapM sexpToQuery qs
-    _ -> Left "when: expected condition and body"
+    (c : q : qs) -> QWhen <$> sexpToQuery c <*> mapM sexpToQuery (q : qs)
+    _ -> Left "when: expected condition and at least one body query"
   "unless" -> case args of
-    (c : qs) -> QUnless <$> sexpToQuery c <*> mapM sexpToQuery qs
-    _ -> Left "unless: expected condition and body"
+    (c : q : qs) -> QUnless <$> sexpToQuery c <*> mapM sexpToQuery (q : qs)
+    _ -> Left "unless: expected condition and at least one body query"
   -- TODO state
   "todo" -> QTodo <$> mapM expectString args
   "done" -> expectNoArgs "done" args >> pure QDone
@@ -458,6 +458,8 @@ compile ctx query
       QTagsLocal tags ->
         let frags = map (existsTagLocal a) tags
          in pure (joinFrags " OR " frags)
+      QTagsAll [] ->
+        pure ("1=1", [])
       QTagsAll tags -> do
         frags <- mapM (compileTagMatch ctx) tags
         pure (joinFrags " AND " frags)
@@ -516,7 +518,7 @@ compile ctx query
           , map SqlText cats
           )
       QHabit ->
-        pure (existsSubquery "entry_properties" "entry_id" a "name = 'STYLE' AND value = 'habit'" [])
+        pure (existsSubquery "entry_properties" "entry_id" a "name = ? COLLATE NOCASE AND value = ?" [SqlText "STYLE", SqlText "habit"])
       QTs kind df -> compileTimestamp ctx kind df
       QScheduled df -> compileStampFilter ctx "scheduled" df
       QDeadline df -> compileStampFilter ctx "deadline" df
