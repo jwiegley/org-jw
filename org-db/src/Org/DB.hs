@@ -3,10 +3,12 @@ module Org.DB (
   module Org.DB.Connection,
   module Org.DB.Schema,
   module Org.DB.Store,
+  module Org.DB.Query,
 )
 where
 
 import Org.DB.Connection
+import Org.DB.Query
 import Org.DB.Schema
 import Org.DB.Store
 import Org.DB.Types

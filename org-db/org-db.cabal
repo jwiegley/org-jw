@@ -19,6 +19,7 @@ library
       Org.DB.Connection
       Org.DB.Schema
       Org.DB.Store
+      Org.DB.Query
   other-modules:
       Paths_org_db
   hs-source-dirs:

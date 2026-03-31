@@ -18,6 +18,7 @@ data DBCommand
 data DBQueryOpts = DBQueryOpts
   { _queryKeyword :: !(Maybe String)
   , _queryTag :: !(Maybe String)
+  , _queryOrgQl :: !(Maybe String)
   }
   deriving (Show, Eq, Typeable, Generic)
 
@@ -69,5 +70,12 @@ queryOpts =
           ( short 't'
               <> long "tag"
               <> help "Filter entries by tag"
+          )
+      )
+    <*> optional
+      ( strOption
+          ( short 'q'
+              <> long "ql"
+              <> help "org-ql S-expression query, e.g. '(and (todo \"TODO\") (tags \"work\"))'"
           )
       )

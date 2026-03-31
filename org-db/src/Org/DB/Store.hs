@@ -22,6 +22,7 @@ import Control.Lens hiding ((<.>))
 import Crypto.Hash.MD5 qualified as MD5
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
+import Data.List (isPrefixOf)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime)
@@ -43,17 +44,40 @@ storeCollection db coll =
   dbTransaction db $
     mapM_ (storeOrgFile db) (coll ^.. items . traverse . _OrgItem)
 
--- | Store a single OrgFile, replacing any previous version.
+{- | Store a single OrgFile, skipping if unchanged since last store.
+A file is skipped when its filesystem mtime is not newer than the
+recorded mtime, or when the mtime is newer but the content hash
+has not changed (in which case only the mtime is updated).
+-}
 storeOrgFile :: DBHandle -> OrgFile -> IO ()
 storeOrgFile db org = do
   let path = org ^. orgFilePath
-  fileId <- toText <$> nextRandom
+      pathText = T.pack path
   mtime <- getModificationTime path
-  fileHash <- hashFile path
+  existing <- queryFileByPath db pathText
+  case existing of
+    Just row
+      | frMtime row >= mtime -> pure () -- not newer, skip
+      | otherwise -> do
+          fileHash <- hashFile path
+          if frHash row == fileHash
+            then -- content unchanged, just update mtime
+              dbExecute_ db "UPDATE files SET mtime = ? WHERE id = ?" [SqlUTCTime mtime, SqlText (frId row)]
+            else -- content changed, full replace
+              replaceOrgFile db org pathText mtime fileHash
+    Nothing ->
+      -- new file
+      replaceOrgFile db org pathText mtime =<< hashFile path
+
+-- | Unconditionally insert an OrgFile, deleting any previous version first.
+replaceOrgFile :: DBHandle -> OrgFile -> Text -> UTCTime -> ByteString -> IO ()
+replaceOrgFile db org pathText mtime fileHash = do
+  let path = org ^. orgFilePath
+  fileId <- toText <$> nextRandom
   -- Delete old data for this file path
-  deleteFile db (T.pack path)
+  deleteFile db pathText
   -- Insert file row
-  dbExecute_ db insertFileSQL [SqlText fileId, SqlText (T.pack path), SqlUTCTime mtime, SqlBlob fileHash]
+  dbExecute_ db insertFileSQL [SqlText fileId, SqlText pathText, SqlUTCTime mtime, SqlBlob fileHash]
   -- Insert file-level properties from header
   mapM_ (insertFileProperty db fileId) (org ^. orgFileHeader . headerPropertiesDrawer)
   -- Insert category from file properties
@@ -70,7 +94,7 @@ storeOrgFile db org = do
         insertCategorySQL
         [SqlText fileId, SqlText (T.pack (takeFileName path))]
   -- Insert entries recursively
-  mapM_ (insertEntry db fileId Nothing (T.pack path)) (org ^. orgFileEntries)
+  mapM_ (insertEntry db fileId Nothing pathText) (org ^. orgFileEntries)
 
 -- | Delete a file and all its associated data (cascading).
 deleteFile :: DBHandle -> Text -> IO ()
@@ -205,6 +229,8 @@ insertEntry db fileId parentId filePath entry = do
   mapM_ (insertLogEntry db entryId) (entry ^. entryLogEntries)
   -- Body blocks
   insertBody db entryId (entry ^. entryBody)
+  -- Links extracted from textual content
+  insertExtractedLinks db entryId entry
   -- Sub-entries
   mapM_ (insertEntry db fileId (Just entryId) filePath) (entry ^. entryItems)
 
@@ -279,6 +305,81 @@ insertLogEntry db entryId le = case le of
       , SqlInt (fromIntegral fileLine)
       ]
 
+insertExtractedLinks :: DBHandle -> Text -> Entry -> IO ()
+insertExtractedLinks db entryId entry = do
+  let allText =
+        [entry ^. entryHeadline, entry ^. entryTitle]
+          ++ map (^. value) (entry ^. entryProperties)
+          ++ bodyStrings (entry ^. entryBody)
+          ++ logBodyStrings (entry ^. entryLogEntries)
+      links = concatMap extractOrgLinks allText
+  mapM_ (insertLink db entryId) links
+
+insertLink :: DBHandle -> Text -> (Text, Text, Maybe Text) -> IO ()
+insertLink db entryId (linkType, target, desc) =
+  dbExecute_
+    db
+    insertLinkSQL
+    [ SqlText entryId
+    , SqlText linkType
+    , SqlText target
+    , maybe SqlNull SqlText desc
+    ]
+
+bodyStrings :: Body -> [String]
+bodyStrings body = concatMap blockStrings (body ^. blocks)
+ where
+  blockStrings (Whitespace _ _) = []
+  blockStrings (Paragraph _ ls) = ls
+  blockStrings (Drawer _ _ ls) = ls
+  blockStrings (InlineTask _ _) = []
+
+logBodyStrings :: [LogEntry] -> [String]
+logBodyStrings = concatMap go
+ where
+  go (LogClosing _ _ mb) = maybe [] bodyStrings mb
+  go (LogState _ _ _ _ mb) = maybe [] bodyStrings mb
+  go (LogNote _ _ mb) = maybe [] bodyStrings mb
+  go (LogRescheduled _ _ _ mb) = maybe [] bodyStrings mb
+  go (LogNotScheduled _ _ _ mb) = maybe [] bodyStrings mb
+  go (LogDeadline _ _ _ mb) = maybe [] bodyStrings mb
+  go (LogNoDeadline _ _ _ mb) = maybe [] bodyStrings mb
+  go (LogRefiling _ _ mb) = maybe [] bodyStrings mb
+  go (LogClock _ _ _) = []
+  go (LogBook _ entries) = logBodyStrings entries
+
+{- | Extract org-mode links from a string. Returns (linkType, target, description).
+Recognizes [[URL]] and [[URL][DESC]] patterns.
+For id:UUID links, linkType is "id" and target is the UUID.
+For other links, linkType is the scheme (e.g. "file", "http") or "unknown".
+-}
+extractOrgLinks :: String -> [(Text, Text, Maybe Text)]
+extractOrgLinks [] = []
+extractOrgLinks ('[' : '[' : rest) = case parseLink rest of
+  Just (url, desc, remaining) ->
+    classifyLink url desc : extractOrgLinks remaining
+  Nothing -> extractOrgLinks rest
+extractOrgLinks (_ : rest) = extractOrgLinks rest
+
+parseLink :: String -> Maybe (String, Maybe String, String)
+parseLink s = case break (\c -> c == ']' || c == '[') s of
+  (_, []) -> Nothing
+  (url, ']' : ']' : remaining) -> Just (url, Nothing, remaining)
+  (url, ']' : '[' : rest2) -> case break (== ']') rest2 of
+    (desc, ']' : ']' : remaining) -> Just (url, Just desc, remaining)
+    _ -> Nothing
+  _ -> Nothing
+
+classifyLink :: String -> Maybe String -> (Text, Text, Maybe Text)
+classifyLink url desc
+  | "id:" `isPrefixOf` url =
+      ("id", T.pack (drop 3 url), T.pack <$> desc)
+  | otherwise =
+      let (scheme, rest) = break (== ':') url
+       in if null rest
+            then ("unknown", T.pack url, T.pack <$> desc)
+            else (T.pack scheme, T.pack url, T.pack <$> desc)
+
 insertBody :: DBHandle -> Text -> Body -> IO ()
 insertBody db entryId body =
   mapM_ insertBlock (zip [0 :: Int ..] (body ^. blocks))
@@ -342,6 +443,11 @@ insertBodyBlockSQL :: Text
 insertBodyBlockSQL =
   "INSERT INTO body_blocks (entry_id, block_type, content, seq_num, \
   \file_line) VALUES (?, ?, ?, ?, ?)"
+
+insertLinkSQL :: Text
+insertLinkSQL =
+  "INSERT INTO links (entry_id, link_type, target, description) \
+  \VALUES (?, ?, ?, ?)"
 
 ------------------------------------------------------------------------
 -- Helpers

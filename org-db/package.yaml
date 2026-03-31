@@ -36,6 +36,7 @@ library:
     - Org.DB.Connection
     - Org.DB.Schema
     - Org.DB.Store
+    - Org.DB.Query
   dependencies:
     - org-types
     - org-data

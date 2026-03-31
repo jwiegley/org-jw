@@ -16,6 +16,11 @@ schemaVersion = 1
 initDB :: DBHandle -> IO ()
 initDB db = dbTransaction db $ do
   mapM_ (\ddl -> dbExecute_ db ddl []) schemaDDL
+  -- Ensure schema_version has a row
+  existing <- dbQuery db "SELECT version FROM schema_version" [] :: IO [[SqlValue]]
+  case existing of
+    [] -> dbExecute_ db "INSERT INTO schema_version (version) VALUES (?)" [SqlInt (fromIntegral schemaVersion)]
+    _ -> dbExecute_ db "UPDATE schema_version SET version = ?" [SqlInt (fromIntegral schemaVersion)]
 
 ------------------------------------------------------------------------
 -- Schema DDL
