@@ -4,9 +4,9 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           org-db
+name:           org-dot
 version:        0.0.1
-description:    Database storage backend for Org-mode data
+description:    Graphviz DOT generation from Org-mode relationship data
 author:         John Wiegley
 maintainer:     johnw@newartisans.com
 license:        BSD3
@@ -14,35 +14,17 @@ build-type:     Simple
 
 library
   exposed-modules:
-      Org.DB
-      Org.DB.Types
-      Org.DB.Connection
-      Org.DB.Schema
-      Org.DB.Store
-      Org.DB.Query
-      Org.DB.Deserialize
-      Org.DB.Sync
-      Org.DB.Migrate
+      Org.Dot
   other-modules:
-      Paths_org_db
+      Paths_org_dot
   hs-source-dirs:
       src
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
       base >=4.5
-    , bytestring
     , containers
-    , cryptohash-md5
-    , deepseq
-    , directory
-    , filepath
-    , hashable
-    , lens
-    , org-data
+    , graphviz
+    , org-db
     , org-types
-    , postgresql-simple >=0.7
-    , resource-pool >=0.4
     , text
-    , time
-    , uuid
   default-language: Haskell2010

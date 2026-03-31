@@ -35,6 +35,9 @@ library:
     - Org.DB.Schema
     - Org.DB.Store
     - Org.DB.Query
+    - Org.DB.Deserialize
+    - Org.DB.Sync
+    - Org.DB.Migrate
   dependencies:
     - org-types
     - org-data

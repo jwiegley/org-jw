@@ -52,6 +52,7 @@ executable org
     , org-cbor
     , org-data
     , org-db
+    , org-dot
     , org-filetags
     , org-json
     , org-lint

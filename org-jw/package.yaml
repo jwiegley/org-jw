@@ -60,6 +60,7 @@ executables:
       - org-print
       - org-data
       - org-db
+      - org-dot
       - org-lint
       - org-cbor
       - org-json

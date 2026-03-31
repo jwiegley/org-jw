@@ -9,6 +9,7 @@ packages: org-types/
           org-print/
           org-filetags/
           org-site/
+          org-dot/
           org-jw/
 
 source-repository-package
