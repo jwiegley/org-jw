@@ -48,10 +48,12 @@ where
 import Control.DeepSeq (NFData)
 import Data.ByteString (ByteString)
 import Data.Data (Data)
+import Data.Foldable (asum)
 import Data.Hashable (Hashable)
 import Data.Int (Int64)
-import Data.Text (Text)
+import Data.Text (Text, unpack)
 import Data.Time (Day, UTCTime)
+import Data.Time.Format (defaultTimeLocale, parseTimeM)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
@@ -230,13 +232,30 @@ extractBool v = Left $ "expected Bool, got " ++ show v
 
 extractDay :: SqlValue -> Either String Day
 extractDay (SqlDay d) = Right d
+extractDay (SqlText t) = maybe (Left $ "expected Day, could not parse: " ++ show t) Right (parseDay t)
 extractDay SqlNull = Left "expected Day, got NULL"
 extractDay v = Left $ "expected Day, got " ++ show v
 
 extractUTCTime :: SqlValue -> Either String UTCTime
 extractUTCTime (SqlUTCTime t) = Right t
+extractUTCTime (SqlText t) = maybe (Left $ "expected UTCTime, could not parse: " ++ show t) Right (parseUTCTime t)
 extractUTCTime SqlNull = Left "expected UTCTime, got NULL"
 extractUTCTime v = Left $ "expected UTCTime, got " ++ show v
+
+-- | Parse a 'UTCTime' from text, trying common database formats.
+parseUTCTime :: Text -> Maybe UTCTime
+parseUTCTime t =
+  let s = unpack t
+      try fmt = parseTimeM False defaultTimeLocale fmt s
+   in asum
+        [ try "%Y-%m-%d %H:%M:%S%Q"
+        , try "%Y-%m-%d %H:%M:%S%Q UTC"
+        , try "%Y-%m-%dT%H:%M:%S%QZ"
+        ]
+
+-- | Parse a 'Day' from text in @YYYY-MM-DD@ format.
+parseDay :: Text -> Maybe Day
+parseDay t = parseTimeM False defaultTimeLocale "%Y-%m-%d" (unpack t)
 
 extractByteString :: SqlValue -> Either String ByteString
 extractByteString (SqlBlob b) = Right b

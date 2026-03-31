@@ -38,11 +38,12 @@ import System.FilePath (takeFileName)
 -- Public API
 ------------------------------------------------------------------------
 
--- | Store an entire collection into the database.
+{- | Store an entire collection into the database.
+Each file is stored in its own transaction for atomicity.
+-}
 storeCollection :: DBHandle -> Collection -> IO ()
 storeCollection db coll =
-  dbTransaction db $
-    mapM_ (storeOrgFile db) (coll ^.. items . traverse . _OrgItem)
+  mapM_ (storeOrgFile db) (coll ^.. items . traverse . _OrgItem)
 
 {- | Store a single OrgFile, skipping if unchanged since last store.
 A file is skipped when its filesystem mtime is not newer than the
@@ -63,11 +64,12 @@ storeOrgFile db org = do
           if frHash row == fileHash
             then -- content unchanged, just update mtime
               dbExecute_ db "UPDATE files SET mtime = ? WHERE id = ?" [SqlUTCTime mtime, SqlText (frId row)]
-            else -- content changed, full replace
-              replaceOrgFile db org pathText mtime fileHash
-    Nothing ->
-      -- new file
-      replaceOrgFile db org pathText mtime =<< hashFile path
+            else -- content changed, full replace (transactional)
+              dbTransaction db $ replaceOrgFile db org pathText mtime fileHash
+    Nothing -> do
+      -- new file (transactional)
+      fileHash <- hashFile path
+      dbTransaction db $ replaceOrgFile db org pathText mtime fileHash
 
 -- | Unconditionally insert an OrgFile, deleting any previous version first.
 replaceOrgFile :: DBHandle -> OrgFile -> Text -> UTCTime -> ByteString -> IO ()

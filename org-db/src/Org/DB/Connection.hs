@@ -21,7 +21,7 @@ import Data.Pool (Pool)
 import Data.Pool qualified as Pool
 import Data.Text (Text, pack)
 import Data.Text.Encoding qualified as TE
-import Data.Time ()
+import Data.Time.Format (defaultTimeLocale, formatTime)
 import Database.PostgreSQL.Simple qualified as PG
 import Database.PostgreSQL.Simple.FromField (typeOid)
 import Database.PostgreSQL.Simple.FromField qualified as PGF
@@ -60,12 +60,9 @@ toDirectData (SqlInt i) = Direct.SQLInteger (fromIntegral i)
 toDirectData (SqlDouble d) = Direct.SQLFloat d
 toDirectData (SqlBool b) = Direct.SQLInteger (if b then 1 else 0)
 toDirectData (SqlBlob bs) = Direct.SQLBlob bs
-toDirectData (SqlUTCTime t) = Direct.SQLText (showText t)
-toDirectData (SqlDay d) = Direct.SQLText (showText d)
+toDirectData (SqlUTCTime t) = Direct.SQLText (pack (formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S%Q" t))
+toDirectData (SqlDay d) = Direct.SQLText (pack (formatTime defaultTimeLocale "%Y-%m-%d" d))
 toDirectData SqlNull = Direct.SQLNull
-
-showText :: (Show a) => a -> Text
-showText = pack . show
 
 ------------------------------------------------------------------------
 -- SQL results → [SqlValue] (database → Haskell)
