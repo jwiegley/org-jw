@@ -51,10 +51,17 @@ parseSexp input =
       | T.null (T.stripStart rest) -> Right sexp
       | otherwise -> Left $ "unexpected trailing input: " ++ T.unpack rest
 
+maxSexpDepth :: Int
+maxSexpDepth = 50
+
 pSexp :: Text -> Either String (Sexp, Text)
-pSexp t
+pSexp = pSexpD 0
+
+pSexpD :: Int -> Text -> Either String (Sexp, Text)
+pSexpD depth t
+  | depth > maxSexpDepth = Left "S-expression nesting limit exceeded"
   | T.null t = Left "unexpected end of input"
-  | T.head t == '(' = pList t
+  | T.head t == '(' = pListD depth t
   | T.head t == '"' = pString t
   | isNegInt t = pInt t
   | isDigit (T.head t) = pInt t
@@ -65,20 +72,20 @@ pSexp t
       && T.head s == '-'
       && isDigit (T.index s 1)
 
-pList :: Text -> Either String (Sexp, Text)
-pList t = do
+pListD :: Int -> Text -> Either String (Sexp, Text)
+pListD depth t = do
   let t' = T.stripStart (T.tail t) -- skip '('
-  (elems, rest) <- pListElems t'
+  (elems, rest) <- pListElemsD (depth + 1) t'
   pure (SList elems, rest)
 
-pListElems :: Text -> Either String ([Sexp], Text)
-pListElems t
+pListElemsD :: Int -> Text -> Either String ([Sexp], Text)
+pListElemsD _ t
   | T.null t = Left "unexpected end of input in list"
   | T.head t == ')' = Right ([], T.stripStart (T.tail t))
-  | otherwise = do
-      (sexp, rest) <- pSexp t
-      (more, rest') <- pListElems (T.stripStart rest)
-      pure (sexp : more, rest')
+pListElemsD depth t = do
+  (sexp, rest) <- pSexpD depth t
+  (more, rest') <- pListElemsD depth (T.stripStart rest)
+  pure (sexp : more, rest')
 
 pString :: Text -> Either String (Sexp, Text)
 pString t = go (T.tail t) "" -- skip opening '"'
@@ -338,8 +345,17 @@ parseDateFilter args = go args emptyDateFilter
 parseDateVal :: Sexp -> Either String DateVal
 parseDateVal (SAtom "today") = Right DateToday
 parseDateVal (SInt n) = Right (DateOffset n)
-parseDateVal (SString s) = Right (DateAbsolute s)
+parseDateVal (SString s)
+  | isValidDate s = Right (DateAbsolute s)
+  | otherwise = Left $ "invalid date string (expected YYYY-MM-DD): " ++ T.unpack s
 parseDateVal other = Left $ "invalid date value: " ++ show other
+
+isValidDate :: Text -> Bool
+isValidDate t =
+  T.length t == 10
+    && T.index t 4 == '-'
+    && T.index t 7 == '-'
+    && T.all (\c -> isDigit c || c == '-') t
 
 parseLink :: [Sexp] -> Either String OrgQuery
 parseLink [] = Right (QLink LinkAny)
@@ -380,172 +396,157 @@ entrySelectSQL =
 compileOrgQuery :: Day -> OrgQuery -> Either String SqlFragment
 compileOrgQuery day = compile (CompileCtx "e" day 0)
 
+maxQueryDepth :: Int
+maxQueryDepth = 20
+
 compile :: CompileCtx -> OrgQuery -> Either String SqlFragment
-compile ctx = \case
-  QAnd [] -> Right ("1=1", [])
-  QAnd [q] -> compile ctx q
-  QAnd qs -> do
-    frags <- mapM (compile ctx) qs
-    pure (joinFrags " AND " frags)
-  QOr [] -> Right ("1=0", [])
-  QOr [q] -> compile ctx q
-  QOr qs -> do
-    frags <- mapM (compile ctx) qs
-    pure (joinFrags " OR " frags)
-  QNot q -> do
-    (sql, ps) <- compile ctx q
-    pure ("NOT (" <> sql <> ")", ps)
-  QWhen cond qs -> do
-    -- (when C Q...) = (NOT C) OR (C AND Q...)
-    (csql, cps) <- compile ctx cond
-    frags <- mapM (compile ctx) qs
-    let (qsql, qps) = joinFrags " AND " frags
-    pure
-      ( "(NOT (" <> csql <> ") OR (" <> csql <> " AND " <> qsql <> "))"
-      , cps <> cps <> qps
-      )
-  QUnless cond qs -> do
-    -- (unless C Q...) = C OR (NOT C AND Q...)
-    (csql, cps) <- compile ctx cond
-    frags <- mapM (compile ctx) qs
-    let (qsql, qps) = joinFrags " AND " frags
-    pure
-      ( "((" <> csql <> ") OR (NOT (" <> csql <> ") AND " <> qsql <> "))"
-      , cps <> cps <> qps
-      )
-  QTodo [] ->
-    pure (a <> ".keyword IS NOT NULL", [])
-  QTodo [kw] ->
-    pure (a <> ".keyword = ?", [SqlText kw])
-  QTodo kws ->
-    pure (a <> ".keyword IN (" <> placeholders kws <> ")", map SqlText kws)
-  QDone ->
-    pure (a <> ".keyword_closed = 1", [])
-  QTags [] ->
-    pure (existsSubquery "entry_tags" "entry_id" a "1=1" [], [])
-  QTags [tag] ->
-    compileTagMatch ctx tag
-  QTags tags ->
-    do
-      frags <- mapM (compileTagMatch ctx) tags
-      pure (joinFrags " OR " frags)
-  QTagsLocal [] ->
-    pure (existsSubquery "entry_tags" "entry_id" a "1=1" [], [])
-  QTagsLocal [tag] ->
-    pure (existsTagLocal a tag)
-  QTagsLocal tags ->
-    pure
-      ( "(" <> T.intercalate " OR " (map (fst . existsTagLocal a) tags) <> ")"
-      , concatMap (snd . existsTagLocal a) tags
-      )
-  QTagsAll tags -> do
-    frags <- mapM (compileTagMatch ctx) tags
-    pure (joinFrags " AND " frags)
-  QTagsInherited [] ->
-    pure (ancestorTagExists ctx Nothing)
-  QTagsInherited [tag] ->
-    pure (ancestorTagExists ctx (Just tag))
-  QTagsInherited tags ->
-    pure
-      ( "(" <> T.intercalate " OR " (map (fst . ancestorTagExists ctx . Just) tags) <> ")"
-      , concatMap (snd . ancestorTagExists ctx . Just) tags
-      )
-  QHeading [] ->
-    pure ("1=1", [])
-  QHeading [pat] ->
-    pure (a <> ".headline LIKE ? ESCAPE '\\'", [SqlText (likePat pat)])
-  QHeading pats ->
-    pure
-      ( "(" <> T.intercalate " OR " (replicate (length pats) (a <> ".headline LIKE ? ESCAPE '\\'")) <> ")"
-      , map (SqlText . likePat) pats
-      )
-  QRegexp pats -> do
-    frags <- mapM (compileRegexp ctx) pats
-    pure (joinFrags " AND " frags)
-  QRifle pats -> do
-    frags <- mapM (compileRifle ctx) pats
-    pure (joinFrags " AND " frags)
-  QProperty pname Nothing ->
-    pure
-      ( existsSubquery "entry_properties" "entry_id" a "name = ? COLLATE NOCASE" [SqlText pname]
-      , [SqlText pname]
-      )
-  QProperty pname (Just (PropEquals pval)) ->
-    pure
-      ( existsSubquery "entry_properties" "entry_id" a "name = ? COLLATE NOCASE AND value = ?" [SqlText pname, SqlText pval]
-      , [SqlText pname, SqlText pval]
-      )
-  QProperty pname (Just (PropCompare cmp pval)) ->
-    pure
-      ( existsSubquery "entry_properties" "entry_id" a ("name = ? COLLATE NOCASE AND value " <> cmpOp cmp <> " ?") [SqlText pname, SqlText pval]
-      , [SqlText pname, SqlText pval]
-      )
-  QPriority Nothing [] ->
-    pure (a <> ".priority IS NOT NULL", [])
-  QPriority Nothing [pri] ->
-    pure (a <> ".priority = ?", [SqlText pri])
-  QPriority Nothing pris ->
-    pure (a <> ".priority IN (" <> placeholders pris <> ")", map SqlText pris)
-  QPriority (Just cmp) [pri] ->
-    pure (a <> ".priority IS NOT NULL AND " <> a <> ".priority " <> cmpOp cmp <> " ?", [SqlText pri])
-  QPriority (Just _) _ ->
-    Left "priority: comparator requires exactly one value"
-  QLevel Nothing n ->
-    pure (a <> ".depth = ?", [SqlInt (fromIntegral n)])
-  QLevel (Just cmp) n ->
-    pure (a <> ".depth " <> cmpOp cmp <> " ?", [SqlInt (fromIntegral n)])
-  QCategory [] ->
-    pure ("1=1", [])
-  QCategory [cat] ->
-    pure
-      ( "EXISTS (SELECT 1 FROM categories c__ WHERE c__.file_id = " <> a <> ".file_id AND c__.category = ?)"
-      , [SqlText cat]
-      )
-  QCategory cats ->
-    pure
-      ( "EXISTS (SELECT 1 FROM categories c__ WHERE c__.file_id = " <> a <> ".file_id AND c__.category IN (" <> placeholders cats <> "))"
-      , map SqlText cats
-      )
-  QHabit ->
-    pure
-      ( existsSubquery "entry_properties" "entry_id" a "name = 'STYLE' AND value = 'habit'" []
-      , []
-      )
-  QTs kind df -> compileTimestamp ctx kind df
-  QScheduled df -> compileStampFilter ctx "scheduled" df
-  QDeadline df -> compileStampFilter ctx "deadline" df
-  QClosed df -> compileStampFilter ctx "closed" df
-  QClocked df -> compileClockedFilter ctx df
-  QPlanning df -> compilePlanningFilter ctx df
-  QPath [] ->
-    pure ("1=1", [])
-  QPath [pat] ->
-    pure (a <> ".path LIKE ? ESCAPE '\\'", [SqlText (likePat pat)])
-  QPath pats ->
-    pure
-      ( "(" <> T.intercalate " OR " (replicate (length pats) (a <> ".path LIKE ? ESCAPE '\\'")) <> ")"
-      , map (SqlText . likePat) pats
-      )
-  QLink LinkAny ->
-    pure (existsSubquery "links" "entry_id" a "1=1" [], [])
-  QLink (LinkTarget target) ->
-    pure
-      ( existsSubquery "links" "entry_id" a "target LIKE ? ESCAPE '\\'" [SqlText (likePat target)]
-      , [SqlText (likePat target)]
-      )
-  QParent q -> compileParent ctx q
-  QAncestors q -> compileAncestors ctx q
-  QChildren mq -> compileChildren ctx mq
-  QDescendants q -> compileDescendants ctx q
+compile ctx query
+  | ccDepth ctx > maxQueryDepth =
+      Left $ "query nesting limit exceeded (max " ++ show maxQueryDepth ++ ")"
+  | otherwise = case query of
+      QAnd [] -> Right ("1=1", [])
+      QAnd [q] -> compile ctx q
+      QAnd qs -> do
+        frags <- mapM (compile ctx) qs
+        pure (joinFrags " AND " frags)
+      QOr [] -> Right ("1=0", [])
+      QOr [q] -> compile ctx q
+      QOr qs -> do
+        frags <- mapM (compile ctx) qs
+        pure (joinFrags " OR " frags)
+      QNot q -> do
+        (sql, ps) <- compile ctx q
+        pure ("NOT (" <> sql <> ")", ps)
+      QWhen cond qs -> do
+        -- (when C Q...) = (NOT C) OR (C AND Q...)
+        (csql, cps) <- compile ctx cond
+        frags <- mapM (compile ctx) qs
+        let (qsql, qps) = joinFrags " AND " frags
+        pure
+          ( "(NOT (" <> csql <> ") OR (" <> csql <> " AND " <> qsql <> "))"
+          , cps <> cps <> qps
+          )
+      QUnless cond qs -> do
+        -- (unless C Q...) = C OR (NOT C AND Q...)
+        (csql, cps) <- compile ctx cond
+        frags <- mapM (compile ctx) qs
+        let (qsql, qps) = joinFrags " AND " frags
+        pure
+          ( "((" <> csql <> ") OR (NOT (" <> csql <> ") AND " <> qsql <> "))"
+          , cps <> cps <> qps
+          )
+      QTodo [] ->
+        pure (a <> ".keyword IS NOT NULL", [])
+      QTodo [kw] ->
+        pure (a <> ".keyword = ?", [SqlText kw])
+      QTodo kws ->
+        pure (a <> ".keyword IN (" <> placeholders kws <> ")", map SqlText kws)
+      QDone ->
+        pure (a <> ".keyword_closed = 1", [])
+      QTags [] ->
+        pure (existsSubquery "entry_tags" "entry_id" a "1=1" [])
+      QTags [tag] ->
+        compileTagMatch ctx tag
+      QTags tags ->
+        do
+          frags <- mapM (compileTagMatch ctx) tags
+          pure (joinFrags " OR " frags)
+      QTagsLocal [] ->
+        pure (existsSubquery "entry_tags" "entry_id" a "1=1" [])
+      QTagsLocal [tag] ->
+        pure (existsTagLocal a tag)
+      QTagsLocal tags ->
+        let frags = map (existsTagLocal a) tags
+         in pure (joinFrags " OR " frags)
+      QTagsAll tags -> do
+        frags <- mapM (compileTagMatch ctx) tags
+        pure (joinFrags " AND " frags)
+      QTagsInherited [] ->
+        pure (ancestorTagExists ctx Nothing)
+      QTagsInherited [tag] ->
+        pure (ancestorTagExists ctx (Just tag))
+      QTagsInherited tags ->
+        let frags = map (ancestorTagExists ctx . Just) tags
+         in pure (joinFrags " OR " frags)
+      QHeading [] ->
+        pure ("1=1", [])
+      QHeading [pat] ->
+        pure (a <> ".headline LIKE ? ESCAPE '\\'", [SqlText (likePat pat)])
+      QHeading pats ->
+        pure
+          ( "(" <> T.intercalate " OR " (replicate (length pats) (a <> ".headline LIKE ? ESCAPE '\\'")) <> ")"
+          , map (SqlText . likePat) pats
+          )
+      QRegexp pats -> do
+        frags <- mapM (compileRegexp ctx) pats
+        pure (joinFrags " AND " frags)
+      QRifle pats -> do
+        frags <- mapM (compileRifle ctx) pats
+        pure (joinFrags " AND " frags)
+      QProperty pname Nothing ->
+        pure (existsSubquery "entry_properties" "entry_id" a "name = ? COLLATE NOCASE" [SqlText pname])
+      QProperty pname (Just (PropEquals pval)) ->
+        pure (existsSubquery "entry_properties" "entry_id" a "name = ? COLLATE NOCASE AND value = ?" [SqlText pname, SqlText pval])
+      QProperty pname (Just (PropCompare cmp pval)) ->
+        pure (existsSubquery "entry_properties" "entry_id" a ("name = ? COLLATE NOCASE AND value " <> cmpOp cmp <> " ?") [SqlText pname, SqlText pval])
+      QPriority Nothing [] ->
+        pure (a <> ".priority IS NOT NULL", [])
+      QPriority Nothing [pri] ->
+        pure (a <> ".priority = ?", [SqlText pri])
+      QPriority Nothing pris ->
+        pure (a <> ".priority IN (" <> placeholders pris <> ")", map SqlText pris)
+      QPriority (Just cmp) [pri] ->
+        pure (a <> ".priority IS NOT NULL AND " <> a <> ".priority " <> cmpOp cmp <> " ?", [SqlText pri])
+      QPriority (Just _) _ ->
+        Left "priority: comparator requires exactly one value"
+      QLevel Nothing n ->
+        pure (a <> ".depth = ?", [SqlInt (fromIntegral n)])
+      QLevel (Just cmp) n ->
+        pure (a <> ".depth " <> cmpOp cmp <> " ?", [SqlInt (fromIntegral n)])
+      QCategory [] ->
+        pure ("1=1", [])
+      QCategory [cat] ->
+        pure
+          ( "EXISTS (SELECT 1 FROM categories c__ WHERE c__.file_id = " <> a <> ".file_id AND c__.category = ?)"
+          , [SqlText cat]
+          )
+      QCategory cats ->
+        pure
+          ( "EXISTS (SELECT 1 FROM categories c__ WHERE c__.file_id = " <> a <> ".file_id AND c__.category IN (" <> placeholders cats <> "))"
+          , map SqlText cats
+          )
+      QHabit ->
+        pure (existsSubquery "entry_properties" "entry_id" a "name = 'STYLE' AND value = 'habit'" [])
+      QTs kind df -> compileTimestamp ctx kind df
+      QScheduled df -> compileStampFilter ctx "scheduled" df
+      QDeadline df -> compileStampFilter ctx "deadline" df
+      QClosed df -> compileStampFilter ctx "closed" df
+      QClocked df -> compileClockedFilter ctx df
+      QPlanning df -> compilePlanningFilter ctx df
+      QPath [] ->
+        pure ("1=1", [])
+      QPath [pat] ->
+        pure (a <> ".path LIKE ? ESCAPE '\\'", [SqlText (likePat pat)])
+      QPath pats ->
+        pure
+          ( "(" <> T.intercalate " OR " (replicate (length pats) (a <> ".path LIKE ? ESCAPE '\\'")) <> ")"
+          , map (SqlText . likePat) pats
+          )
+      QLink LinkAny ->
+        pure (existsSubquery "links" "entry_id" a "1=1" [])
+      QLink (LinkTarget target) ->
+        pure (existsSubquery "links" "entry_id" a "target LIKE ? ESCAPE '\\'" [SqlText (likePat target)])
+      QParent q -> compileParent ctx q
+      QAncestors q -> compileAncestors ctx q
+      QChildren mq -> compileChildren ctx mq
+      QDescendants q -> compileDescendants ctx q
  where
   a = ccAlias ctx
 
 -- Tags: (tags "x") matches local OR inherited
 compileTagMatch :: CompileCtx -> Text -> Either String SqlFragment
 compileTagMatch ctx tag =
-  let a = ccAlias ctx
-      localSql = fst (existsTagLocal a tag)
-      localPs = snd (existsTagLocal a tag)
+  let (localSql, localPs) = existsTagLocal (ccAlias ctx) tag
       (inhSql, inhPs) = ancestorTagExists ctx (Just tag)
    in Right ("(" <> localSql <> " OR " <> inhSql <> ")", localPs <> inhPs)
 
@@ -816,19 +817,21 @@ compileDescendants ctx q = do
 -- SQL helpers
 ------------------------------------------------------------------------
 
-existsSubquery :: Text -> Text -> Text -> Text -> [SqlValue] -> Text
-existsSubquery table joinCol alias cond _ =
-  "EXISTS (SELECT 1 FROM "
-    <> table
-    <> " t__ WHERE t__."
-    <> joinCol
-    <> " = "
-    <> alias
-    <> "."
-    <> joinCol
-    <> " AND "
-    <> cond
-    <> ")"
+existsSubquery :: Text -> Text -> Text -> Text -> [SqlValue] -> SqlFragment
+existsSubquery table joinCol alias cond ps =
+  ( "EXISTS (SELECT 1 FROM "
+      <> table
+      <> " t__ WHERE t__."
+      <> joinCol
+      <> " = "
+      <> alias
+      <> "."
+      <> joinCol
+      <> " AND "
+      <> cond
+      <> ")"
+  , ps
+  )
 
 placeholders :: [a] -> Text
 placeholders xs = T.intercalate ", " (replicate (length xs) "?")

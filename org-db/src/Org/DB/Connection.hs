@@ -171,6 +171,8 @@ connectSQLite :: FilePath -> IO DBHandle
 connectSQLite path = do
   conn <- SQLite.open path
   SQLite.execute_ conn "PRAGMA journal_mode=WAL;"
+  SQLite.execute_ conn "PRAGMA foreign_keys=ON;"
+  SQLite.execute_ conn "PRAGMA busy_timeout=5000;"
   pure
     DBHandle
       { dbExecute_ = \sql params -> do
