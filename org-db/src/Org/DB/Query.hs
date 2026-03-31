@@ -571,33 +571,19 @@ existsTagLocal a tag =
 ancestorTagExists :: CompileCtx -> Maybe Text -> SqlFragment
 ancestorTagExists ctx mtag =
   let a = ccAlias ctx
-      d = T.pack (show (ccDepth ctx))
-      cte = "anc" <> d
       tagCond = case mtag of
         Just _ -> " AND et__.tag = ?"
         Nothing -> ""
       params = case mtag of
         Just t -> [SqlText t]
         Nothing -> []
-   in ( "EXISTS (WITH RECURSIVE "
-          <> cte
-          <> "(aid) AS ("
-          <> "SELECT "
+   in -- Use ltree: find ancestor entries whose path is a prefix of ours
+      ( "EXISTS (SELECT 1 FROM entry_tags et__ JOIN entries anc__ ON et__.entry_id = anc__.id"
+          <> " WHERE anc__.path @> "
           <> a
-          <> ".parent_id"
-          <> " UNION ALL "
-          <> "SELECT p__.parent_id FROM entries p__ JOIN "
-          <> cte
-          <> " ON p__.id = "
-          <> cte
-          <> ".aid WHERE p__.parent_id IS NOT NULL"
-          <> ") SELECT 1 FROM entry_tags et__ JOIN "
-          <> cte
-          <> " ON et__.entry_id = "
-          <> cte
-          <> ".aid WHERE "
-          <> cte
-          <> ".aid IS NOT NULL"
+          <> ".path AND anc__.id != "
+          <> a
+          <> ".id"
           <> tagCond
           <> ")"
       , params
@@ -616,8 +602,22 @@ compileRegexp ctx pat =
         , [p, p]
         )
 
+{- | Rifle uses tsvector full-text search (GIN-indexed) for headline/title,
+falling back to ILIKE on body blocks which have no tsvector column.
+-}
 compileRifle :: CompileCtx -> Text -> Either String SqlFragment
-compileRifle = compileRegexp
+compileRifle ctx pat =
+  let a = ccAlias ctx
+      tsQuery = SqlText (toTsQueryText pat)
+      p = SqlText (likePat pat)
+   in Right
+        ( "("
+            <> a
+            <> ".tsv @@ to_tsquery('english', ?) OR EXISTS (SELECT 1 FROM entry_body_blocks bb__ WHERE bb__.entry_id = "
+            <> a
+            <> ".id AND bb__.content ILIKE ? ESCAPE '\\'))"
+        , [tsQuery, p]
+        )
 
 compileStampFilter :: CompileCtx -> Text -> DateFilter -> Either String SqlFragment
 compileStampFilter ctx stampType df =
@@ -736,34 +736,29 @@ compileParent ctx q = do
     , innerPs
     )
 
+{- | ltree-based ancestor query: uses @> operator on the path column
+instead of a recursive CTE. The ltree GiST index makes this efficient.
+-}
 compileAncestors :: CompileCtx -> OrgQuery -> Either String SqlFragment
 compileAncestors ctx q = do
   let a = ccAlias ctx
       d = ccDepth ctx
-      cte = "ancestors" <> T.pack (show d)
       aa = "ae" <> T.pack (show d)
       innerCtx = CompileCtx aa (ccDay ctx) (d + 1)
   (innerSql, innerPs) <- compile innerCtx q
+  -- Use ltree: ancestor's path @> current entry's path, and ancestor != self
   pure
-    ( "EXISTS (WITH RECURSIVE "
-        <> cte
-        <> "(aid) AS ("
-        <> "SELECT "
-        <> a
-        <> ".parent_id"
-        <> " UNION ALL "
-        <> "SELECT p__.parent_id FROM entries p__ JOIN "
-        <> cte
-        <> " ON p__.id = "
-        <> cte
-        <> ".aid WHERE p__.parent_id IS NOT NULL"
-        <> ") SELECT 1 FROM entries "
+    ( "EXISTS (SELECT 1 FROM entries "
         <> aa
         <> " WHERE "
         <> aa
-        <> ".id IN (SELECT aid FROM "
-        <> cte
-        <> " WHERE aid IS NOT NULL) AND "
+        <> ".path @> "
+        <> a
+        <> ".path AND "
+        <> aa
+        <> ".id != "
+        <> a
+        <> ".id AND "
         <> innerSql
         <> ")"
     , innerPs
@@ -799,30 +794,22 @@ compileDescendants :: CompileCtx -> OrgQuery -> Either String SqlFragment
 compileDescendants ctx q = do
   let a = ccAlias ctx
       d = ccDepth ctx
-      cte = "desc" <> T.pack (show d)
       da = "de" <> T.pack (show d)
       innerCtx = CompileCtx da (ccDay ctx) (d + 1)
   (innerSql, innerPs) <- compile innerCtx q
+  -- Use ltree: current entry's path @> descendant's path, and descendant != self
   pure
-    ( "EXISTS (WITH RECURSIVE "
-        <> cte
-        <> "(did) AS ("
-        <> "SELECT id FROM entries WHERE parent_id = "
-        <> a
-        <> ".id"
-        <> " UNION ALL "
-        <> "SELECT c__.id FROM entries c__ JOIN "
-        <> cte
-        <> " ON c__.parent_id = "
-        <> cte
-        <> ".did"
-        <> ") SELECT 1 FROM entries "
+    ( "EXISTS (SELECT 1 FROM entries "
         <> da
         <> " WHERE "
+        <> a
+        <> ".path @> "
         <> da
-        <> ".id IN (SELECT did FROM "
-        <> cte
-        <> ") AND "
+        <> ".path AND "
+        <> da
+        <> ".id != "
+        <> a
+        <> ".id AND "
         <> innerSql
         <> ")"
     , innerPs
@@ -874,6 +861,20 @@ escapeLike = T.concatMap $ \case
   '_' -> "\\_"
   '\\' -> "\\\\"
   c -> T.singleton c
+
+{- | Convert a search pattern to a tsquery string for full-text search.
+Splits on whitespace and joins with &, wrapping each word with :*.
+-}
+toTsQueryText :: Text -> Text
+toTsQueryText pat =
+  let ws = filter (not . T.null) (T.words (escapeTsQuery pat))
+   in case ws of
+        [] -> ""
+        _ -> T.intercalate " & " (map (<> ":*") ws)
+
+-- | Escape characters that have special meaning in tsquery.
+escapeTsQuery :: Text -> Text
+escapeTsQuery = T.filter (\c -> c /= '!' && c /= '&' && c /= '|' && c /= '(' && c /= ')' && c /= '\'' && c /= ':')
 
 ------------------------------------------------------------------------
 -- Public API

@@ -253,10 +253,10 @@ insertEntry db fileId parentId fileCat position entry = do
     , maybe SqlNull (SqlText . T.pack) (entry ^. entryContext)
     , maybe SqlNull (SqlText . T.pack) (entry ^. entryLocator)
     ]
-  -- Tags (direct, not inherited)
-  mapM_ (insertTag db entryId) (entry ^. entryTags)
-  -- Properties
-  mapM_ (insertProperty db entryId) (entry ^. entryProperties)
+  -- Tags (batch insert)
+  insertTagsBatch db entryId (entry ^. entryTags)
+  -- Properties (batch insert)
+  insertPropertiesBatch db entryId (entry ^. entryProperties)
   -- Stamps
   mapM_ (insertStamp db entryId) (entry ^. entryStamps)
   -- Log entries with position tracking
@@ -304,6 +304,32 @@ insertProperty db entryId prop =
     , SqlBool (prop ^. inherited)
     , SqlInt (fromIntegral (prop ^. propertyLoc . pos))
     ]
+
+-- | Batch insert tags using multi-row VALUES for fewer round-trips.
+insertTagsBatch :: DBHandle -> Text -> [Tag] -> IO ()
+insertTagsBatch _ _ [] = pure ()
+insertTagsBatch db entryId tags =
+  let rows = map tagParams tags
+      tagParams (PlainTag tag) = [SqlText entryId, SqlText (T.pack tag), SqlBool False, SqlNull]
+      vals = T.intercalate ", " (replicate (length rows) "(?, ?, ?, ?)")
+      sql = "INSERT INTO entry_tags (entry_id, tag, is_inherited, source_id) VALUES " <> vals
+   in dbExecute_ db sql (concat rows)
+
+-- | Batch insert properties using multi-row VALUES for fewer round-trips.
+insertPropertiesBatch :: DBHandle -> Text -> [Property] -> IO ()
+insertPropertiesBatch _ _ [] = pure ()
+insertPropertiesBatch db entryId props =
+  let rows = map propParams props
+      propParams prop =
+        [ SqlText entryId
+        , SqlText (T.pack (prop ^. name))
+        , SqlText (T.pack (prop ^. value))
+        , SqlBool (prop ^. inherited)
+        , SqlInt (fromIntegral (prop ^. propertyLoc . pos))
+        ]
+      vals = T.intercalate ", " (replicate (length rows) "(?, ?, ?, ?, ?)")
+      sql = "INSERT INTO entry_properties (entry_id, name, value, is_inherited, byte_offset) VALUES " <> vals
+   in dbExecute_ db sql (concat rows)
 
 insertStamp :: DBHandle -> Text -> Stamp -> IO ()
 insertStamp db entryId stamp = do
