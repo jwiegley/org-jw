@@ -25,9 +25,11 @@ module Org.DB.Types (
   EntryStampRow (..),
   LogEntryRow (..),
   BodyBlockRow (..),
+  LogBodyBlockRow (..),
   RelationshipRow (..),
   CategoryRow (..),
   LinkRow (..),
+  EmbeddingChunkRow (..),
 
   -- * FromRow class
   FromRow (..),
@@ -197,7 +199,6 @@ data LogEntryRow = LogEntryRow
   , lerOrigSuffixSpan :: Maybe Text
   , lerDurationHours :: Maybe Int
   , lerDurationMins :: Maybe Int
-  , lerBodyText :: Maybe Text
   , lerLogbookId :: Maybe Int64
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData)
@@ -211,6 +212,18 @@ data BodyBlockRow = BodyBlockRow
   , bbrContent :: Maybe Text
   , bbrDrawerType :: Maybe Text
   , bbrDrawerName :: Maybe Text
+  }
+  deriving (Show, Eq, Generic, Data, Typeable, NFData, Hashable)
+
+data LogBodyBlockRow = LogBodyBlockRow
+  { lbbrId :: Int64
+  , lbbrLogEntryId :: Int64
+  , lbbrPosition :: Int
+  , lbbrByteOffset :: Maybe Int
+  , lbbrBlockType :: Text
+  , lbbrContent :: Maybe Text
+  , lbbrDrawerType :: Maybe Text
+  , lbbrDrawerName :: Maybe Text
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData, Hashable)
 
@@ -230,6 +243,15 @@ data CategoryRow = CategoryRow
   , crSourceId :: Maybe Text
   }
   deriving (Show, Eq, Generic, Data, Typeable, NFData, Hashable)
+
+data EmbeddingChunkRow = EmbeddingChunkRow
+  { ecrId :: Int64
+  , ecrEntryId :: Text
+  , ecrChunkPosition :: Int
+  , ecrChunkSource :: Text
+  , ecrChunkText :: Text
+  }
+  deriving (Show, Eq, Generic, Data, Typeable, NFData)
 
 data LinkRow = LinkRow
   { lrId :: Int64
@@ -397,7 +419,7 @@ instance FromRow EntryStampRow where
   fromRow vs = Left $ "EntryStampRow: expected 14 columns, got " ++ show (length vs)
 
 instance FromRow LogEntryRow where
-  fromRow [id_, eid, pos_, bo, lt, td, ts, te, tk, fk, fkt, tok, tokt, otd, otde, ots, ote, otk, osk, osn, oss, dh, dm, bt, lbi] = do
+  fromRow [id_, eid, pos_, bo, lt, td, ts, te, tk, fk, fkt, tok, tokt, otd, otde, ots, ote, otk, osk, osn, oss, dh, dm, lbi] = do
     lerId <- extractInt64 id_
     lerEntryId <- extractText eid
     lerPosition <- extractInt pos_
@@ -421,10 +443,9 @@ instance FromRow LogEntryRow where
     lerOrigSuffixSpan <- extractMaybe extractText oss
     lerDurationHours <- extractMaybe extractInt dh
     lerDurationMins <- extractMaybe extractInt dm
-    lerBodyText <- extractMaybe extractText bt
     lerLogbookId <- extractMaybe extractInt64 lbi
     pure LogEntryRow{..}
-  fromRow vs = Left $ "LogEntryRow: expected 25 columns, got " ++ show (length vs)
+  fromRow vs = Left $ "LogEntryRow: expected 24 columns, got " ++ show (length vs)
 
 instance FromRow BodyBlockRow where
   fromRow [id_, eid, pos_, bo, btype, content, dtype, dname] = do
@@ -438,6 +459,19 @@ instance FromRow BodyBlockRow where
     bbrDrawerName <- extractMaybe extractText dname
     pure BodyBlockRow{..}
   fromRow vs = Left $ "BodyBlockRow: expected 8 columns, got " ++ show (length vs)
+
+instance FromRow LogBodyBlockRow where
+  fromRow [id_, lei, pos_, bo, btype, content, dtype, dname] = do
+    lbbrId <- extractInt64 id_
+    lbbrLogEntryId <- extractInt64 lei
+    lbbrPosition <- extractInt pos_
+    lbbrByteOffset <- extractMaybe extractInt bo
+    lbbrBlockType <- extractText btype
+    lbbrContent <- extractMaybe extractText content
+    lbbrDrawerType <- extractMaybe extractText dtype
+    lbbrDrawerName <- extractMaybe extractText dname
+    pure LogBodyBlockRow{..}
+  fromRow vs = Left $ "LogBodyBlockRow: expected 8 columns, got " ++ show (length vs)
 
 instance FromRow RelationshipRow where
   fromRow [sid, tid, rtype, ctx, cat] = do
@@ -457,6 +491,16 @@ instance FromRow CategoryRow where
     crSourceId <- extractMaybe extractText sid
     pure CategoryRow{..}
   fromRow vs = Left $ "CategoryRow: expected 4 columns, got " ++ show (length vs)
+
+instance FromRow EmbeddingChunkRow where
+  fromRow [id_, eid, pos_, src, txt] = do
+    ecrId <- extractInt64 id_
+    ecrEntryId <- extractText eid
+    ecrChunkPosition <- extractInt pos_
+    ecrChunkSource <- extractText src
+    ecrChunkText <- extractText txt
+    pure EmbeddingChunkRow{..}
+  fromRow vs = Left $ "EmbeddingChunkRow: expected 5 columns, got " ++ show (length vs)
 
 instance FromRow LinkRow where
   fromRow [id_, eid, ltype, target, desc, pos_] = do

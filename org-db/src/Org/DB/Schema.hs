@@ -1,10 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Org.DB.Schema (
   initDB,
   schemaVersion,
 ) where
 
+import Control.Exception (SomeException, try)
 import Data.Text (Text)
 import Org.DB.Types
 
@@ -12,21 +14,34 @@ import Org.DB.Types
 schemaVersion :: Int
 schemaVersion = 2
 
--- | Initialize the database schema, creating all tables if they don't exist.
+{- | Initialize the database schema, creating all tables if they don't exist.
+Extension creation is best-effort since it requires superuser.
+If extensions are missing, create them manually:
+  psql -U postgres -d <dbname> -c 'CREATE EXTENSION IF NOT EXISTS ltree; CREATE EXTENSION IF NOT EXISTS vector'
+-}
 initDB :: DBHandle -> IO ()
-initDB db = dbTransaction db $ do
-  mapM_ (\ddl -> dbExecute_ db ddl []) extensionsDDL
-  mapM_ (\ddl -> dbExecute_ db ddl []) tableDDL
-  mapM_ (\ddl -> dbExecute_ db ddl []) indexDDL
-  mapM_ (\ddl -> dbExecute_ db ddl []) triggerDDL
-  existing <- dbQuery db "SELECT version FROM schema_version WHERE version = ?" [SqlInt (fromIntegral schemaVersion)] :: IO [[SqlValue]]
-  case existing of
-    [] ->
-      dbExecute_
-        db
-        "INSERT INTO schema_version (version, description) VALUES (?, ?)"
-        [SqlInt (fromIntegral schemaVersion), SqlText "PRD 02 PostgreSQL-only schema"]
-    _ -> pure ()
+initDB db = do
+  -- Extensions run outside the transaction since failure (permission denied)
+  -- would abort the entire transaction in PostgreSQL.
+  mapM_ tryExt extensionsDDL
+  dbTransaction db $ do
+    mapM_ (\ddl -> dbExecute_ db ddl []) tableDDL
+    mapM_ (\ddl -> dbExecute_ db ddl []) indexDDL
+    mapM_ (\ddl -> dbExecute_ db ddl []) triggerDDL
+    existing <- dbQuery db "SELECT version FROM schema_version WHERE version = ?" [SqlInt (fromIntegral schemaVersion)] :: IO [[SqlValue]]
+    case existing of
+      [] ->
+        dbExecute_
+          db
+          "INSERT INTO schema_version (version, description) VALUES (?, ?)"
+          [SqlInt (fromIntegral schemaVersion), SqlText "PRD 02 PostgreSQL-only schema"]
+      _ -> pure ()
+ where
+  tryExt ddl = do
+    result <- try (dbExecute_ db ddl []) :: IO (Either SomeException ())
+    case result of
+      Right () -> pure ()
+      Left _ -> pure () -- Skip — requires superuser
 
 ------------------------------------------------------------------------
 -- Extensions
@@ -52,10 +67,12 @@ tableDDL =
   , createEntryProperties
   , createEntryStamps
   , createEntryLogEntries
+  , createLogEntryBodyBlocks
   , createEntryBodyBlocks
   , createEntryRelationships
   , createEntryCategories
   , createEntryLinks
+  , createEntryEmbeddings
   ]
 
 createSchemaVersion :: Text
@@ -84,10 +101,11 @@ createFileProperties :: Text
 createFileProperties =
   "CREATE TABLE IF NOT EXISTS file_properties (\
   \  file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,\
+  \  position INTEGER NOT NULL,\
   \  name TEXT NOT NULL,\
   \  value TEXT NOT NULL,\
   \  source TEXT NOT NULL CHECK (source IN ('drawer', 'file')),\
-  \  PRIMARY KEY (file_id, name, source)\
+  \  PRIMARY KEY (file_id, name, source, position)\
   \)"
 
 createEntries :: Text
@@ -188,8 +206,22 @@ createEntryLogEntries =
   \    ('day', 'week', 'month', 'year')),\
   \  duration_hours INTEGER,\
   \  duration_mins INTEGER,\
-  \  body_text TEXT,\
   \  logbook_id BIGINT REFERENCES entry_log_entries(id)\
+  \)"
+
+createLogEntryBodyBlocks :: Text
+createLogEntryBodyBlocks =
+  "CREATE TABLE IF NOT EXISTS log_entry_body_blocks (\
+  \  id BIGSERIAL PRIMARY KEY,\
+  \  log_entry_id BIGINT NOT NULL REFERENCES entry_log_entries(id) ON DELETE CASCADE,\
+  \  position INTEGER NOT NULL,\
+  \  byte_offset INTEGER,\
+  \  block_type TEXT NOT NULL CHECK (block_type IN\
+  \    ('whitespace', 'paragraph', 'drawer', 'inline_task')),\
+  \  content TEXT,\
+  \  drawer_type TEXT CHECK (drawer_type IN ('plain', 'begin')),\
+  \  drawer_name TEXT,\
+  \  UNIQUE (log_entry_id, position)\
   \)"
 
 createEntryBodyBlocks :: Text
@@ -241,6 +273,18 @@ createEntryLinks =
   \  position INTEGER NOT NULL\
   \)"
 
+createEntryEmbeddings :: Text
+createEntryEmbeddings =
+  "CREATE TABLE IF NOT EXISTS entry_embeddings (\
+  \  id BIGSERIAL PRIMARY KEY,\
+  \  entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
+  \  chunk_position INTEGER NOT NULL,\
+  \  chunk_source TEXT NOT NULL,\
+  \  chunk_text TEXT NOT NULL,\
+  \  embedding vector,\
+  \  UNIQUE (entry_id, chunk_position)\
+  \)"
+
 ------------------------------------------------------------------------
 -- Index DDL
 ------------------------------------------------------------------------
@@ -263,6 +307,8 @@ indexDDL =
   , -- entry_log_entries
     "CREATE INDEX IF NOT EXISTS idx_log_entries_entry ON entry_log_entries(entry_id)"
   , "CREATE INDEX IF NOT EXISTS idx_log_entries_type ON entry_log_entries(log_type)"
+  , -- log_entry_body_blocks
+    "CREATE INDEX IF NOT EXISTS idx_log_body_blocks_log_entry ON log_entry_body_blocks(log_entry_id)"
   , -- entry_body_blocks
     "CREATE INDEX IF NOT EXISTS idx_body_blocks_entry ON entry_body_blocks(entry_id)"
   , -- entry_relationships
@@ -273,6 +319,8 @@ indexDDL =
   , -- entry_links
     "CREATE INDEX IF NOT EXISTS idx_links_entry ON entry_links(entry_id)"
   , "CREATE INDEX IF NOT EXISTS idx_links_target ON entry_links(target)"
+  , -- entry_embeddings
+    "CREATE INDEX IF NOT EXISTS idx_entry_embeddings_entry ON entry_embeddings(entry_id)"
   ]
 
 ------------------------------------------------------------------------

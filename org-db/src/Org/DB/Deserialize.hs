@@ -20,6 +20,7 @@ module Org.DB.Deserialize (
   loadCollection,
 ) where
 
+import Data.Int (Int64)
 import Data.Map.Strict qualified as M
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Text (Text)
@@ -157,11 +158,13 @@ rowToBlock r =
 
 {- | Reconstruct a LogEntry from a LogEntryRow and its nested children.
 Children are LogEntryRows whose lerLogbookId matches this row's lerId.
+Body blocks are looked up from the map keyed by log entry id.
 -}
-rowToLogEntry :: LogEntryRow -> [LogEntryRow] -> LogEntry
-rowToLogEntry r children =
+rowToLogEntry :: LogEntryRow -> [LogEntryRow] -> M.Map Int64 [LogBodyBlockRow] -> LogEntry
+rowToLogEntry r children bodyBlockMap =
   let loc = Loc "" (fromMaybe 0 (lerByteOffset r))
-      mBody = bodyFromText <$> lerBodyText r
+      myBlocks = M.findWithDefault [] (lerId r) bodyBlockMap
+      mBody = if null myBlocks then Nothing else Just (Body (map rowToLogBodyBlock myBlocks))
       mTime = mkLogTime r
       mOrigTime = mkOrigTime r
       mDur = mkDuration r
@@ -188,7 +191,7 @@ rowToLogEntry r children =
         "refiling" -> LogRefiling loc (fromMaybe defaultTime mTime) mBody
         "clock" -> LogClock loc (fromMaybe defaultTime mTime) mDur
         "logbook" ->
-          LogBook loc (map (`rowToLogEntry` []) children)
+          LogBook loc (map (\c -> rowToLogEntry c [] bodyBlockMap) children)
         _ -> LogNote loc (fromMaybe defaultTime mTime) mBody
 
 mkLogTime :: LogEntryRow -> Maybe Time
@@ -233,6 +236,22 @@ mkKeyword :: Maybe Text -> Maybe Text -> Maybe Keyword
 mkKeyword (Just val) (Just typ) = Just (rowToKeyword typ val)
 mkKeyword _ _ = Nothing
 
+-- | Reconstruct a Block from a LogBodyBlockRow.
+rowToLogBodyBlock :: LogBodyBlockRow -> Block
+rowToLogBodyBlock r =
+  let loc = Loc "" (fromMaybe 0 (lbbrByteOffset r))
+      content = maybe "" T.unpack (lbbrContent r)
+   in case lbbrBlockType r of
+        "whitespace" -> Whitespace loc content
+        "paragraph" -> Paragraph loc (lines content)
+        "drawer" ->
+          let dName = maybe "" T.unpack (lbbrDrawerName r)
+              dt = case lbbrDrawerType r of
+                Just "begin" -> BeginDrawer dName
+                _ -> PlainDrawer dName
+           in Drawer loc dt (lines content)
+        _ -> Paragraph loc []
+
 bodyFromText :: Text -> Body
 bodyFromText t
   | T.null t = Body []
@@ -252,10 +271,11 @@ rowToEntry ::
   [EntryPropertyRow] ->
   [EntryStampRow] ->
   [LogEntryRow] ->
+  M.Map Int64 [LogBodyBlockRow] ->
   [BodyBlockRow] ->
   [Entry] ->
   Entry
-rowToEntry er tags props stamps logs bodyBlocks children =
+rowToEntry er tags props stamps logs logBodyBlockMap bodyBlocks children =
   Entry
     { _entryLoc = Loc "" (erByteOffset er)
     , _entryDepth = erDepth er
@@ -272,14 +292,14 @@ rowToEntry er tags props stamps logs bodyBlocks children =
     , _entryTags = map rowToTag tags
     , _entryStamps = map rowToStamp stamps
     , _entryProperties = map rowToProperty props
-    , _entryLogEntries = buildLogEntries logs
+    , _entryLogEntries = buildLogEntries logs logBodyBlockMap
     , _entryBody = Body (map rowToBlock bodyBlocks)
     , _entryItems = children
     }
 
 -- | Build log entries from flat rows, reconstructing LogBook nesting.
-buildLogEntries :: [LogEntryRow] -> [LogEntry]
-buildLogEntries rows =
+buildLogEntries :: [LogEntryRow] -> M.Map Int64 [LogBodyBlockRow] -> [LogEntry]
+buildLogEntries rows logBodyBlockMap =
   let
     -- Separate top-level entries from logbook children
     topLevel = filter (isNothing . lerLogbookId) rows
@@ -291,7 +311,7 @@ buildLogEntries rows =
         , Just pid <- [lerLogbookId r]
         ]
    in
-    map (\r -> rowToLogEntry r (M.findWithDefault [] (lerId r) childMap)) topLevel
+    map (\r -> rowToLogEntry r (M.findWithDefault [] (lerId r) childMap) logBodyBlockMap) topLevel
 
 ------------------------------------------------------------------------
 -- OrgFile reconstruction
@@ -382,14 +402,25 @@ loadFileEntries db fileId = do
   allStamps <- loadBatch db "entry_stamps" "entry_id" fileId
   allLogs <- loadBatch db "entry_log_entries" "entry_id" fileId
   allBlocks <- loadBatch db "entry_body_blocks" "entry_id" fileId
-  -- Group by entry_id
+  -- Load log body blocks via join through entry_log_entries
+  allLogBodyBlocks <-
+    dbQuery
+      db
+      "SELECT lb.* FROM log_entry_body_blocks lb \
+      \JOIN entry_log_entries le ON lb.log_entry_id = le.id \
+      \JOIN entries e ON le.entry_id = e.id \
+      \WHERE e.file_id = ? ORDER BY lb.log_entry_id, lb.position"
+      [SqlText fileId] ::
+      IO [LogBodyBlockRow]
+  -- Group by entry_id / log_entry_id
   let tagMap = groupByKey etrEntryId allTags
       propMap = groupByKey eprEntryId allProps
       stampMap = groupByKey esrEntryId allStamps
       logMap = groupByKey lerEntryId allLogs
+      logBodyBlockMap = groupByKey lbbrLogEntryId allLogBodyBlocks
       blockMap = groupByKey bbrEntryId allBlocks
   -- Build the tree from flat entries
-  pure (buildEntryTree allEntries tagMap propMap stampMap logMap blockMap)
+  pure (buildEntryTree allEntries tagMap propMap stampMap logMap logBodyBlockMap blockMap)
 
 -- | Batch-load rows for all entries in a file using a subquery.
 loadBatch ::
@@ -422,9 +453,10 @@ buildEntryTree ::
   M.Map Text [EntryPropertyRow] ->
   M.Map Text [EntryStampRow] ->
   M.Map Text [LogEntryRow] ->
+  M.Map Int64 [LogBodyBlockRow] ->
   M.Map Text [BodyBlockRow] ->
   [Entry]
-buildEntryTree allEntries tagMap propMap stampMap logMap blockMap =
+buildEntryTree allEntries tagMap propMap stampMap logMap logBodyBlockMap blockMap =
   let
     -- Build a map of entry_id -> child EntryRows
     childMap =
@@ -446,6 +478,7 @@ buildEntryTree allEntries tagMap propMap stampMap logMap blockMap =
             (M.findWithDefault [] eid propMap)
             (M.findWithDefault [] eid stampMap)
             (M.findWithDefault [] eid logMap)
+            logBodyBlockMap
             (M.findWithDefault [] eid blockMap)
             children
     -- Top-level entries have no parent
@@ -461,6 +494,15 @@ loadEntryTree db er = do
   stamps <- dbQuery db "SELECT * FROM entry_stamps WHERE entry_id = ?" [SqlText eid]
   logs <- dbQuery db "SELECT * FROM entry_log_entries WHERE entry_id = ? ORDER BY position" [SqlText eid]
   bodyBlocks <- dbQuery db "SELECT * FROM entry_body_blocks WHERE entry_id = ? ORDER BY position" [SqlText eid]
+  logBodyBlocks <-
+    dbQuery
+      db
+      "SELECT lb.* FROM log_entry_body_blocks lb \
+      \JOIN entry_log_entries le ON lb.log_entry_id = le.id \
+      \WHERE le.entry_id = ? ORDER BY lb.log_entry_id, lb.position"
+      [SqlText eid] ::
+      IO [LogBodyBlockRow]
+  let logBodyBlockMap = groupByKey lbbrLogEntryId logBodyBlocks
   children <-
     dbQuery
       db
@@ -472,4 +514,4 @@ loadEntryTree db er = do
       [SqlText eid] ::
       IO [EntryRow]
   childEntries <- mapM (loadEntryTree db) children
-  pure (rowToEntry er tags props stamps logs bodyBlocks childEntries)
+  pure (rowToEntry er tags props stamps logs logBodyBlockMap bodyBlocks childEntries)

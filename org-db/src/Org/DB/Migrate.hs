@@ -57,6 +57,78 @@ migrations =
             \WHERE embedding IS NOT NULL"
           ]
       }
+  , Migration
+      { migVersion = 5
+      , migDescription = "Add position column to file_properties for repeated keys"
+      , migUp =
+          [ "ALTER TABLE file_properties DROP CONSTRAINT IF EXISTS file_properties_pkey"
+          , "ALTER TABLE file_properties ADD COLUMN IF NOT EXISTS position INTEGER NOT NULL DEFAULT 0"
+          , "ALTER TABLE file_properties ADD PRIMARY KEY (file_id, name, source, position)"
+          ]
+      }
+  , Migration
+      { migVersion = 6
+      , migDescription = "Add embedding_hash for change detection"
+      , migUp =
+          ["ALTER TABLE entries ADD COLUMN IF NOT EXISTS embedding_hash TEXT"]
+      }
+  , Migration
+      { migVersion = 7
+      , migDescription = "Normalize log entry bodies into log_entry_body_blocks table"
+      , migUp =
+          [ "CREATE TABLE IF NOT EXISTS log_entry_body_blocks (\
+            \  id BIGSERIAL PRIMARY KEY,\
+            \  log_entry_id BIGINT NOT NULL REFERENCES entry_log_entries(id) ON DELETE CASCADE,\
+            \  position INTEGER NOT NULL,\
+            \  byte_offset INTEGER,\
+            \  block_type TEXT NOT NULL CHECK (block_type IN\
+            \    ('whitespace', 'paragraph', 'drawer', 'inline_task')),\
+            \  content TEXT,\
+            \  drawer_type TEXT CHECK (drawer_type IN ('plain', 'begin')),\
+            \  drawer_name TEXT,\
+            \  UNIQUE (log_entry_id, position)\
+            \)"
+          , "CREATE INDEX IF NOT EXISTS idx_log_body_blocks_log_entry \
+            \ON log_entry_body_blocks(log_entry_id)"
+          , "ALTER TABLE entry_log_entries DROP COLUMN IF EXISTS body_text"
+          , "UPDATE files SET hash = NULL, mod_time = NULL"
+          ]
+      }
+  , Migration
+      { migVersion = 8
+      , migDescription = "Remove fixed dimension from embedding column to support any model"
+      , migUp =
+          [ "DROP INDEX IF EXISTS idx_entries_embedding"
+          , "ALTER TABLE entries ALTER COLUMN embedding TYPE vector USING embedding::vector"
+          ]
+      }
+  , Migration
+      { migVersion = 9
+      , migDescription = "Move embeddings to entry_embeddings table with chunked text"
+      , migUp =
+          [ "CREATE TABLE IF NOT EXISTS entry_embeddings (\
+            \  id BIGSERIAL PRIMARY KEY,\
+            \  entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
+            \  chunk_position INTEGER NOT NULL,\
+            \  chunk_text TEXT NOT NULL,\
+            \  embedding vector,\
+            \  UNIQUE (entry_id, chunk_position)\
+            \)"
+          , "CREATE INDEX IF NOT EXISTS idx_entry_embeddings_entry \
+            \ON entry_embeddings(entry_id)"
+          , "ALTER TABLE entries DROP COLUMN IF EXISTS embedding"
+          , "UPDATE entries SET embedding_hash = NULL"
+          ]
+      }
+  , Migration
+      { migVersion = 10
+      , migDescription = "Add chunk_source column to entry_embeddings for source tracking"
+      , migUp =
+          [ "ALTER TABLE entry_embeddings ADD COLUMN IF NOT EXISTS \
+            \chunk_source TEXT NOT NULL DEFAULT ''"
+          , "UPDATE entries SET embedding_hash = NULL"
+          ]
+      }
   ]
 
 {- | Run all pending migrations.
