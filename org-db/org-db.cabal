@@ -23,13 +23,15 @@ library
       Org.DB.Deserialize
       Org.DB.Sync
       Org.DB.Migrate
+      Org.DB.Embed
   other-modules:
       Paths_org_db
   hs-source-dirs:
       src
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
-      base >=4.5
+      aeson
+    , base >=4.5
     , bytestring
     , containers
     , cryptohash-md5
@@ -37,6 +39,9 @@ library
     , directory
     , filepath
     , hashable
+    , http-client
+    , http-client-tls
+    , http-types
     , lens
     , org-data
     , org-types

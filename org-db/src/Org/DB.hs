@@ -7,11 +7,13 @@ module Org.DB (
   module Org.DB.Deserialize,
   module Org.DB.Sync,
   module Org.DB.Migrate,
+  module Org.DB.Embed,
 )
 where
 
 import Org.DB.Connection
 import Org.DB.Deserialize
+import Org.DB.Embed
 import Org.DB.Migrate
 import Org.DB.Query
 import Org.DB.Schema
