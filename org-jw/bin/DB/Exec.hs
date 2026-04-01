@@ -30,10 +30,37 @@ execDb _cfg opts coll = do
           putStrLn "Database initialized (schema up to date)."
         MigrationFailed v msg ->
           putStrLn $ "Database initialized, but migration " ++ show v ++ " failed: " ++ T.unpack msg
-    DBStore -> withDB dbCfg $ \db -> do
+    DBStore sopts -> withDB dbCfg $ \db -> do
       initDB db
+      _ <- runMigrations db
       storeCollection db coll
       putStrLn "Collection stored."
+      if sopts ^. storeNoEmbed
+        then pure ()
+        else do
+          let eopts = sopts ^. storeEmbedOpts
+              ecfg =
+                EmbedConfig
+                  { embedBaseUrl = T.pack (eopts ^. embedBaseUrlOpt)
+                  , embedModel = T.pack (eopts ^. embedModelOpt)
+                  , embedApiKey = T.pack (eopts ^. embedApiKeyOpt)
+                  , embedBatchSize = eopts ^. embedBatchSizeOpt
+                  , embedDimensions = eopts ^. embedDimensionsOpt
+                  , embedChunkSize = eopts ^. embedChunkSizeOpt
+                  }
+              progress done total =
+                putStrLn $
+                  "Embedded " ++ show done ++ " / " ++ show total ++ " chunks"
+          result <- embedEntries db ecfg progress
+          case embedProcessed result of
+            0 -> pure ()
+            n -> do
+              putStrLn $
+                "Embedding done. Processed: "
+                  ++ show n
+                  ++ ", Failed: "
+                  ++ show (embedFailed result)
+              mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (embedErrors result)
     DBQuery qopts -> withDB dbCfg $ \db -> do
       rows <- case qopts ^. queryOrgQl of
         Just ql -> do
@@ -72,6 +99,28 @@ execDb _cfg opts coll = do
             Nothing -> ""
       rows <- dbQuery db ("SELECT * FROM " <> table <> " ORDER BY 1" <> limitClause) [] :: IO [[SqlValue]]
       mapM_ (putStrLn . showSqlRow) rows
+    DBEmbed eopts -> withDB dbCfg $ \db -> do
+      initDB db
+      _ <- runMigrations db
+      let ecfg =
+            EmbedConfig
+              { embedBaseUrl = T.pack (eopts ^. embedBaseUrlOpt)
+              , embedModel = T.pack (eopts ^. embedModelOpt)
+              , embedApiKey = T.pack (eopts ^. embedApiKeyOpt)
+              , embedBatchSize = eopts ^. embedBatchSizeOpt
+              , embedDimensions = eopts ^. embedDimensionsOpt
+              , embedChunkSize = eopts ^. embedChunkSizeOpt
+              }
+          progress done total =
+            putStrLn $
+              "Embedded " ++ show done ++ " / " ++ show total ++ " chunks"
+      result <- embedEntries db ecfg progress
+      putStrLn $
+        "Done. Processed: "
+          ++ show (embedProcessed result)
+          ++ ", Failed: "
+          ++ show (embedFailed result)
+      mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (embedErrors result)
     DBDot dopts -> withDB dbCfg $ \db -> do
       rels <- dbQuery db "SELECT * FROM entry_relationships" [] :: IO [RelationshipRow]
       entryRows <- queryEntries db
@@ -95,6 +144,24 @@ execDb _cfg opts coll = do
       case dopts ^. dotOutput of
         Just path -> TLIO.writeFile path dotText
         Nothing -> TLIO.putStr dotText
+    DBSearch sopts -> withDB dbCfg $ \db -> do
+      let ecfg =
+            EmbedConfig
+              { embedBaseUrl = T.pack (sopts ^. searchBaseUrlOpt)
+              , embedModel = T.pack (sopts ^. searchModelOpt)
+              , embedApiKey = T.pack (sopts ^. searchApiKeyOpt)
+              , embedBatchSize = 1
+              , embedDimensions = sopts ^. searchDimensionsOpt
+              , embedChunkSize = 8000
+              }
+      vec <- embedQuery ecfg (T.pack (sopts ^. searchQuery))
+      results <- querySimilar db vec (sopts ^. searchLimit)
+      case sopts ^. searchFormat of
+        TextFormat -> mapM_ (\(row, src, _, _) -> printSearchRow db row src) results
+        CsvFormat -> do
+          putStrLn "id,file_id,depth,keyword,title"
+          mapM_ (\(row, _, _, _) -> printEntryRowCsv row) results
+        JsonFormat -> mapM_ (\(row, src, chunk, dist) -> printSearchRowJson db row src chunk dist) results
 
 printEntryRow :: EntryRow -> IO ()
 printEntryRow row =
@@ -132,6 +199,67 @@ printEntryRowJson row =
       <> T.pack (show (erDepth row))
       <> "}"
 
+printSearchRow :: DBHandle -> EntryRow -> T.Text -> IO ()
+printSearchRow db row src = do
+  fpath <- fromMaybe (erFileId row) <$> queryFilePath db (erFileId row)
+  ancestors <- queryAncestorTitles db row
+  let hierarchy = case ancestors of
+        [] -> ""
+        ts -> T.intercalate " > " ts <> " > "
+      srcSuffix = if T.null src then "" else " [" ++ T.unpack src ++ "]"
+  putStrLn $
+    T.unpack fpath
+      ++ ":"
+      ++ show (erByteOffset row)
+      ++ " "
+      ++ maybe "" (\kw -> T.unpack kw ++ " ") (erKeywordValue row)
+      ++ T.unpack hierarchy
+      ++ T.unpack (erTitle row)
+      ++ srcSuffix
+
+printSearchRowJson :: DBHandle -> EntryRow -> T.Text -> T.Text -> Double -> IO ()
+printSearchRowJson db row src chunk dist = do
+  fpath <- fromMaybe (erFileId row) <$> queryFilePath db (erFileId row)
+  TIO.putStrLn $
+    "{\"id\":\""
+      <> erId row
+      <> "\",\"file\":\""
+      <> jsonEscape fpath
+      <> "\",\"title\":\""
+      <> jsonEscape (erTitle row)
+      <> "\",\"keyword\":"
+      <> maybe "null" (\k -> "\"" <> k <> "\"") (erKeywordValue row)
+      <> ",\"depth\":"
+      <> T.pack (show (erDepth row))
+      <> ",\"byte_offset\":"
+      <> T.pack (show (erByteOffset row))
+      <> ",\"distance\":"
+      <> T.pack (show dist)
+      <> ",\"matched_source\":\""
+      <> jsonEscape src
+      <> "\",\"matched_text\":\""
+      <> jsonEscape chunk
+      <> "\"}"
+
+-- | Walk up parent_id chain to collect ancestor titles (root first).
+queryAncestorTitles :: DBHandle -> EntryRow -> IO [T.Text]
+queryAncestorTitles db row = go [] (erParentId row)
+ where
+  go acc Nothing = pure acc
+  go acc (Just pid) = do
+    mParent <-
+      dbQueryOne
+        db
+        "SELECT id, file_id, parent_id, depth, position, byte_offset, \
+        \keyword_type, keyword_value, priority, headline, title, verb, \
+        \context, locator, hash, mod_time, created_time, path::text \
+        \FROM entries WHERE id = ?"
+        [SqlText pid] ::
+        IO (Maybe EntryRow)
+    case mParent of
+      Nothing -> pure acc
+      Just p -> go (erTitle p : acc) (erParentId p)
+
 csvEscape :: T.Text -> T.Text
 csvEscape t
   | T.any (\c -> c == ',' || c == '"' || c == '\n') t =
@@ -139,7 +267,12 @@ csvEscape t
   | otherwise = t
 
 jsonEscape :: T.Text -> T.Text
-jsonEscape = T.replace "\\" "\\\\" . T.replace "\"" "\\\"" . T.replace "\n" "\\n"
+jsonEscape =
+  T.replace "\n" "\\n"
+    . T.replace "\r" "\\r"
+    . T.replace "\t" "\\t"
+    . T.replace "\"" "\\\""
+    . T.replace "\\" "\\\\"
 
 showSqlRow :: [SqlValue] -> String
 showSqlRow = unwords . map showSqlValue

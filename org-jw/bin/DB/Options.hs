@@ -47,13 +47,42 @@ data DBDotOpts = DBDotOpts
   }
   deriving (Show, Eq, Typeable, Generic)
 
+data DBStoreOpts = DBStoreOpts
+  { _storeNoEmbed :: !Bool
+  , _storeEmbedOpts :: !DBEmbedOpts
+  }
+  deriving (Show, Eq, Typeable, Generic)
+
+data DBEmbedOpts = DBEmbedOpts
+  { _embedBaseUrlOpt :: !String
+  , _embedModelOpt :: !String
+  , _embedApiKeyOpt :: !String
+  , _embedBatchSizeOpt :: !Int
+  , _embedDimensionsOpt :: !(Maybe Int)
+  , _embedChunkSizeOpt :: !Int
+  }
+  deriving (Show, Eq, Typeable, Generic)
+
+data DBSearchOpts = DBSearchOpts
+  { _searchQuery :: !String
+  , _searchLimit :: !Int
+  , _searchFormat :: !OutputFormat
+  , _searchBaseUrlOpt :: !String
+  , _searchModelOpt :: !String
+  , _searchApiKeyOpt :: !String
+  , _searchDimensionsOpt :: !(Maybe Int)
+  }
+  deriving (Show, Eq, Typeable, Generic)
+
 data DBCommand
   = DBInit
-  | DBStore
+  | DBStore DBStoreOpts
   | DBQuery DBQueryOpts
   | DBSync DBSyncOpts
   | DBDump DBDumpOpts
   | DBDot DBDotOpts
+  | DBEmbed DBEmbedOpts
+  | DBSearch DBSearchOpts
   deriving (Show, Eq, Typeable, Generic)
 
 data DbOptions = DbOptions
@@ -68,8 +97,11 @@ data DbOptions = DbOptions
 
 makeLenses ''DBQueryOpts
 makeLenses ''DBSyncOpts
+makeLenses ''DBStoreOpts
 makeLenses ''DBDumpOpts
 makeLenses ''DBDotOpts
+makeLenses ''DBEmbedOpts
+makeLenses ''DBSearchOpts
 makeLenses ''DbOptions
 
 ------------------------------------------------------------------------
@@ -82,9 +114,8 @@ dbOptions =
     <$> strOption
       ( short 'u'
           <> long "db-url"
-          <> help "PostgreSQL connection string"
-          <> value "dbname=org_jw"
-          <> showDefault
+          <> help "PostgreSQL connection string (default: use PGDATABASE/PGHOST/... env vars)"
+          <> value ""
       )
     <*> hsubparser
       ( initCommand
@@ -93,12 +124,14 @@ dbOptions =
           <> syncCommand
           <> dumpCommand
           <> dotCommand
+          <> embedCommand
+          <> searchCommand
       )
  where
   initCommand =
     OA.command "init" (info (pure DBInit) (progDesc "Initialize database schema"))
   storeCommand =
-    OA.command "store" (info (pure DBStore) (progDesc "Store org files into database"))
+    OA.command "store" (info (DBStore <$> storeOpts) (progDesc "Store org files into database (embeds by default)"))
   queryCommand =
     OA.command "query" (info (DBQuery <$> queryOpts) (progDesc "Query the database"))
   syncCommand =
@@ -107,6 +140,19 @@ dbOptions =
     OA.command "dump" (info (DBDump <$> dumpOpts) (progDesc "Dump database table contents"))
   dotCommand =
     OA.command "dot" (info (DBDot <$> dotOpts) (progDesc "Generate Graphviz DOT from relationships"))
+  embedCommand =
+    OA.command "embed" (info (DBEmbed <$> embedOpts) (progDesc "Generate vector embeddings for entries"))
+  searchCommand =
+    OA.command "search" (info (DBSearch <$> searchOpts) (progDesc "Semantic search over entries using embeddings"))
+
+storeOpts :: OA.Parser DBStoreOpts
+storeOpts =
+  DBStoreOpts
+    <$> switch
+      ( long "no-embed"
+          <> help "Skip automatic embedding after store"
+      )
+    <*> embedOpts
 
 queryOpts :: OA.Parser DBQueryOpts
 queryOpts =
@@ -223,6 +269,93 @@ formatOpt =
         <> value TextFormat
         <> showDefault
     )
+
+embedOpts :: OA.Parser DBEmbedOpts
+embedOpts =
+  DBEmbedOpts
+    <$> strOption
+      ( long "base-url"
+          <> help "Embedding API base URL (e.g., https://api.openai.com)"
+          <> value "http://localhost:11434"
+          <> showDefault
+      )
+    <*> strOption
+      ( long "model"
+          <> short 'm'
+          <> help "Embedding model name"
+          <> value "text-embedding-3-small"
+          <> showDefault
+      )
+    <*> strOption
+      ( long "api-key"
+          <> help "API key (use any string for local servers)"
+          <> value "unused"
+          <> showDefault
+      )
+    <*> option
+      auto
+      ( long "batch-size"
+          <> help "Number of texts per API call"
+          <> value 50
+          <> showDefault
+      )
+    <*> optional
+      ( option
+          auto
+          ( long "dimensions"
+              <> help "Override embedding dimensions (for text-embedding-3-* models)"
+          )
+      )
+    <*> option
+      auto
+      ( long "chunk-size"
+          <> help "Maximum characters per text chunk (entries are split into chunks for embedding)"
+          <> value 2000
+          <> showDefault
+      )
+
+searchOpts :: OA.Parser DBSearchOpts
+searchOpts =
+  DBSearchOpts
+    <$> strArgument
+      ( metavar "QUERY"
+          <> help "Search text"
+      )
+    <*> option
+      auto
+      ( short 'n'
+          <> long "limit"
+          <> help "Maximum number of results"
+          <> value 10
+          <> showDefault
+      )
+    <*> formatOpt
+    <*> strOption
+      ( long "base-url"
+          <> help "Embedding API base URL"
+          <> value "http://localhost:11434"
+          <> showDefault
+      )
+    <*> strOption
+      ( long "model"
+          <> short 'm'
+          <> help "Embedding model name (must match the model used for db embed)"
+          <> value "text-embedding-3-small"
+          <> showDefault
+      )
+    <*> strOption
+      ( long "api-key"
+          <> help "API key"
+          <> value "unused"
+          <> showDefault
+      )
+    <*> optional
+      ( option
+          auto
+          ( long "dimensions"
+              <> help "Override embedding dimensions"
+          )
+      )
 
 readFormat :: OA.ReadM OutputFormat
 readFormat = eitherReader $ \s -> case s of
