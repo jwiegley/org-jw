@@ -17,18 +17,7 @@ CABAL_FILES =					\
 FIND_FILES = find -L ~/org \( \( -name .git -o -name template -o -name data \) -type d -prune -o -name '*.org' \) -type f
 HS_FILES = find flatparse-util org-cbor org-data org-filetags org-json org-jw org-lint org-parse org-print org-site org-types -name '*.hs' -type f
 
-all: $(CABAL_FILES)
-	cabal build all
-	$(FIND_FILES)					\
-	    | time cabal run org-jw:exe:org --	\
-		--config ~/org/org.yaml			\
-		--keywords ~/org/org.dot		\
-		lint					\
-		--check-dir ~/.local/share/org-jw	\
-		--round-trip				\
-		-l INFO					\
-		-F -					\
-		+RTS -N
+all: lint
 
 lint: $(CABAL_FILES)
 	cabal build all
