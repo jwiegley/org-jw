@@ -12,6 +12,7 @@ module Org.DB.Embed (
 import Control.Exception (IOException, SomeException, try)
 import Control.Monad (when)
 import Data.Aeson (FromJSON (..), ToJSON (..), eitherDecode, encode, object, withObject, (.:), (.=))
+import Data.Bifunctor (second)
 import Data.ByteString.Lazy qualified as LBS
 import Data.List (sortBy)
 import Data.Ord (comparing)
@@ -270,33 +271,34 @@ data TextSegment = TextSegment
   , segText :: !Text
   }
 
--- | Fetch structured text segments for an entry, each labeled with its source.
-fetchEntrySegments :: DBHandle -> Text -> IO [TextSegment]
-fetchEntrySegments db entryId = do
-  contextSegs <- fetchContextSegment db entryId
-  titleSegs <- fetchTitleSegment db entryId
+{- | Fetch content segments for an entry (body, log, properties).
+The context header (path, title, tags, categories) is prepended to every
+chunk separately in 'buildEntryChunks'.
+-}
+fetchContentSegments :: DBHandle -> Text -> IO [TextSegment]
+fetchContentSegments db entryId = do
   bodySegs <- fetchBodySegments db entryId
   logSegs <- fetchLogSegments db entryId
   propSegs <- fetchPropertySegment db entryId
-  pure (contextSegs ++ titleSegs ++ bodySegs ++ logSegs ++ propSegs)
+  pure (bodySegs ++ logSegs ++ propSegs)
 
-{- | Build a context segment from ancestor titles, tags, and categories.
-This gives the embedding model the organizational context that the entry
-title alone may not convey (e.g. "Call Leak Geeks" under "Pool > Pool leak repair").
+{- | Build a header that is prepended to every embedded chunk for an entry.
+Includes the ancestor path, title, tags, and categories so that each chunk
+carries enough context for semantic search (e.g. a body chunk under
+"Pool > Pool leak repair" will contain the word "pool").
 -}
-fetchContextSegment :: DBHandle -> Text -> IO [TextSegment]
-fetchContextSegment db entryId = do
+fetchChunkHeader :: DBHandle -> Text -> IO Text
+fetchChunkHeader db entryId = do
   ancestors <- fetchAncestorTitles db entryId
+  title <- fetchTitleText db entryId
   tags <- fetchEntryTags db entryId
   cats <- fetchEntryCategories db entryId
   let parts =
         ["Path: " <> T.intercalate " > " ancestors | not (null ancestors)]
+          ++ ["Title: " <> title | not (T.null title)]
           ++ ["Tags: " <> T.intercalate ", " tags | not (null tags)]
           ++ ["Categories: " <> T.intercalate ", " cats | not (null cats)]
-  pure
-    [ TextSegment "context" (T.intercalate "\n" parts)
-    | not (null parts)
-    ]
+  pure (T.intercalate "\n" parts)
 
 fetchAncestorTitles :: DBHandle -> Text -> IO [Text]
 fetchAncestorTitles db entryId = do
@@ -334,19 +336,17 @@ fetchEntryCategories db entryId = do
       IO [[SqlValue]]
   pure [t | [SqlText t] <- rows]
 
-fetchTitleSegment :: DBHandle -> Text -> IO [TextSegment]
-fetchTitleSegment db entryId = do
+fetchTitleText :: DBHandle -> Text -> IO Text
+fetchTitleText db entryId = do
   rows <-
     dbQuery
       db
       "SELECT COALESCE(title, '') FROM entries WHERE id = ?"
       [SqlText entryId] ::
       IO [[SqlValue]]
-  pure
-    [ TextSegment "title" t
-    | [SqlText t] <- rows
-    , not (T.null (T.strip t))
-    ]
+  pure $ case rows of
+    ([SqlText t] : _) -> T.strip t
+    _ -> ""
 
 fetchBodySegments :: DBHandle -> Text -> IO [TextSegment]
 fetchBodySegments db entryId = do
@@ -405,17 +405,27 @@ fetchPropertySegment db entryId = do
 -- Chunk building with source labels
 ------------------------------------------------------------------------
 
--- | Build labeled, position-numbered chunks for a single entry.
+{- | Build labeled, position-numbered chunks for a single entry.
+Every chunk is prefixed with the entry's context header (path, title,
+tags, categories) so that each embedded chunk is self-contained for search.
+-}
 buildEntryChunks :: DBHandle -> EmbedConfig -> Text -> IO [(Text, Int, Text, Text)]
 buildEntryChunks db cfg entryId = do
-  segments <- fetchEntrySegments db entryId
-  let labeled =
+  header <- fetchChunkHeader db entryId
+  segments <- fetchContentSegments db entryId
+  let headerPrefix = if T.null header then "" else header <> "\n\n"
+      contentSize = max 100 (embedChunkSize cfg - T.length headerPrefix)
+      labeled =
         concatMap
           ( \seg ->
-              map (segSource seg,) (chunkText (embedChunkSize cfg) (segText seg))
+              map (segSource seg,) (chunkText contentSize (segText seg))
           )
           segments
-  pure (zipWith (\pos (src, txt) -> (entryId, pos, txt, src)) [0 ..] labeled)
+      -- Prepend header to every chunk; if no content, emit header alone
+      prefixed = case labeled of
+        [] -> [("header", header) | not (T.null header)]
+        _ -> map (second (headerPrefix <>)) labeled
+  pure (zipWith (\pos (src, txt) -> (entryId, pos, txt, src)) [0 ..] prefixed)
 
 ------------------------------------------------------------------------
 -- Batch processing
