@@ -66,7 +66,7 @@ data Options = Options
   , configFile :: !FilePath
   , keywordsGraph :: !(Maybe FilePath)
   , command :: !Command
-  , inputs :: !InputFiles
+  , inputs :: !(Maybe InputFiles)
   }
   deriving (Show, Eq, Typeable, Generic)
 
@@ -109,7 +109,7 @@ tradeJournalOpts =
           <> tripCommand
           <> dbCommand
       )
-    <*> filesOptions
+    <*> optional filesOptions
  where
   filesOptions =
     ( ( \x ->

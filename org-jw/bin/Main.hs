@@ -41,7 +41,7 @@ main = do
     Nothing -> pure cfg'
     Just path -> applyDotFile cfg' <$> readFile path
 
-  paths <- getInputPaths (inputs opts)
+  paths <- maybe (pure []) getInputPaths (inputs opts)
   paths' <- case command opts of
     Lint lintOpts ->
       -- When linting, only check files that have changed since the last lint
