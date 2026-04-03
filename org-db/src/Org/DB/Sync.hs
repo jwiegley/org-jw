@@ -77,7 +77,7 @@ syncOneFileToDb db org = do
       , mt >= mtime ->
           pure emptySyncResult{syncFilesProcessed = 1, syncFilesSkipped = 1}
     _ -> do
-      storeOrgFile db org
+      _ <- storeOrgFile db org
       pure emptySyncResult{syncFilesProcessed = 1, syncFilesUpdated = 1}
 
 -- | Load the entire database as a Collection. DB is source of truth.
@@ -102,7 +102,7 @@ syncBidirectionalFile db org = do
   existing <- queryFileByPath db pathText
   case existing of
     Nothing -> do
-      storeOrgFile db org
+      _ <- storeOrgFile db org
       pure emptySyncResult{syncFilesProcessed = 1, syncFilesUpdated = 1}
     Just row -> do
       let dbMtime = frModTime row
@@ -125,7 +125,7 @@ syncBidirectionalFile db org = do
           | dbMt == mtime ->
               pure emptySyncResult{syncFilesProcessed = 1, syncFilesSkipped = 1}
         _ -> do
-          storeOrgFile db org
+          _ <- storeOrgFile db org
           pure emptySyncResult{syncFilesProcessed = 1, syncFilesUpdated = 1}
 
 mergeSyncResult :: SyncResult -> SyncResult -> SyncResult

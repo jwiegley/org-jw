@@ -6,6 +6,8 @@
 module Org.DB.Store (
   storeCollection,
   storeOrgFile,
+  StoreResult (..),
+  emptyStoreResult,
   deleteFile,
   queryFiles,
   queryFileByPath,
@@ -48,12 +50,44 @@ import System.FilePath (takeFileName)
 -- Public API
 ------------------------------------------------------------------------
 
+-- | Result of storing files into the database.
+data StoreResult = StoreResult
+  { storeFilesProcessed :: !Int
+  , storeFilesSkipped :: !Int
+  , storeFilesInserted :: !Int
+  , storeFilesUpdated :: !Int
+  , storeEntriesCreated :: !Int
+  , storeEntriesUpdated :: !Int
+  , storeEntriesDeleted :: !Int
+  , storeErrors :: [Text]
+  }
+  deriving (Show, Eq)
+
+emptyStoreResult :: StoreResult
+emptyStoreResult = StoreResult 0 0 0 0 0 0 0 []
+
+addResults :: StoreResult -> StoreResult -> StoreResult
+addResults a b =
+  StoreResult
+    { storeFilesProcessed = storeFilesProcessed a + storeFilesProcessed b
+    , storeFilesSkipped = storeFilesSkipped a + storeFilesSkipped b
+    , storeFilesInserted = storeFilesInserted a + storeFilesInserted b
+    , storeFilesUpdated = storeFilesUpdated a + storeFilesUpdated b
+    , storeEntriesCreated = storeEntriesCreated a + storeEntriesCreated b
+    , storeEntriesUpdated = storeEntriesUpdated a + storeEntriesUpdated b
+    , storeEntriesDeleted = storeEntriesDeleted a + storeEntriesDeleted b
+    , storeErrors = storeErrors a ++ storeErrors b
+    }
+
 {- | Store an entire collection into the database.
 Each file is stored in its own transaction for atomicity.
 -}
-storeCollection :: DBHandle -> Collection -> IO ()
+storeCollection :: DBHandle -> Collection -> IO StoreResult
 storeCollection db coll =
-  mapM_ (storeOrgFile db) (coll ^.. items . traverse . _OrgItem)
+  foldM
+    (\acc org -> addResults acc <$> storeOrgFile db org)
+    emptyStoreResult
+    (coll ^.. items . traverse . _OrgItem)
 
 {- | Store a single OrgFile, skipping if unchanged since last store.
 A file is skipped when its filesystem mtime is not newer than the
@@ -62,7 +96,7 @@ has not changed (in which case only the mtime is updated).
 When the file has changed, entries are compared individually by hash
 so that unchanged entries (and their embeddings) are preserved.
 -}
-storeOrgFile :: DBHandle -> OrgFile -> IO ()
+storeOrgFile :: DBHandle -> OrgFile -> IO StoreResult
 storeOrgFile db org = do
   let path = org ^. orgFilePath
       pathText = T.pack path
@@ -70,12 +104,15 @@ storeOrgFile db org = do
   existing <- queryFileByPath db pathText
   case existing of
     Just row
-      | Just mt <- frModTime row, mt >= mtime -> pure ()
+      | Just mt <- frModTime row
+      , mt >= mtime ->
+          pure emptyStoreResult{storeFilesProcessed = 1, storeFilesSkipped = 1}
       | otherwise -> do
           fileHash <- hashFileText path
           if frHash row == Just fileHash
-            then
+            then do
               dbExecute_ db "UPDATE files SET mod_time = ?, updated_at = now() WHERE id = ?" [SqlUTCTime mtime, SqlText (frId row)]
+              pure emptyStoreResult{storeFilesProcessed = 1, storeFilesSkipped = 1}
             else
               dbTransaction db $ updateOrgFile db org (frId row) pathText mtime fileHash
     Nothing -> do
@@ -83,23 +120,31 @@ storeOrgFile db org = do
       dbTransaction db $ insertNewFile db org pathText mtime fileHash
 
 -- | Insert a brand new file (no previous version exists).
-insertNewFile :: DBHandle -> OrgFile -> Text -> UTCTime -> Text -> IO ()
+insertNewFile :: DBHandle -> OrgFile -> Text -> UTCTime -> Text -> IO StoreResult
 insertNewFile db org pathText mtime fileHash = do
   fileId <- toText <$> nextRandom
   insertFileRow db fileId org pathText mtime fileHash
   insertFileProps db fileId org
   let fileCat = fileCategory org
+      entries = org ^. orgFileEntries
+      created = countAllEntries entries
   zipWithM_
     (insertEntry db fileId Nothing fileCat)
     [0 ..]
-    (org ^. orgFileEntries)
+    entries
+  pure
+    emptyStoreResult
+      { storeFilesProcessed = 1
+      , storeFilesInserted = 1
+      , storeEntriesCreated = created
+      }
 
 {- | Update an existing file, preserving unchanged entries.
 Entries with a stable :ID: property are matched by ID; their content
 hash is compared so unchanged entries (and their embeddings) are kept.
 Entries without :ID: are always re-inserted.
 -}
-updateOrgFile :: DBHandle -> OrgFile -> Text -> Text -> UTCTime -> Text -> IO ()
+updateOrgFile :: DBHandle -> OrgFile -> Text -> Text -> UTCTime -> Text -> IO StoreResult
 updateOrgFile db org fileId _pathText mtime fileHash = do
   -- Update file metadata
   updateFileRow db fileId org mtime fileHash
@@ -111,13 +156,22 @@ updateOrgFile db org fileId _pathText mtime fileHash = do
   let existingMap = Map.fromList [(erId row, erHash row) | row <- existingEntries]
   -- Process entries incrementally, collecting all live entry IDs
   let fileCat = fileCategory org
-  liveIds <-
+  (liveIds, created, updated) <-
     processEntriesIncremental db fileId Nothing fileCat existingMap [0 ..] (org ^. orgFileEntries)
   -- Delete stale entries (no longer in the file)
   let staleIds = Map.keysSet existingMap `Set.difference` liveIds
+      deleted = Set.size staleIds
   mapM_ (\eid -> dbExecute_ db "DELETE FROM entries WHERE id = ?" [SqlText eid]) staleIds
+  pure
+    emptyStoreResult
+      { storeFilesProcessed = 1
+      , storeFilesUpdated = 1
+      , storeEntriesCreated = created
+      , storeEntriesUpdated = updated
+      , storeEntriesDeleted = deleted
+      }
 
--- | Process entries incrementally, returning the set of all live entry IDs.
+-- | Process entries incrementally, returning (live IDs, created count, updated count).
 processEntriesIncremental ::
   DBHandle ->
   Text ->
@@ -126,10 +180,10 @@ processEntriesIncremental ::
   Map.Map Text (Maybe Text) ->
   [Int] ->
   [Entry] ->
-  IO (Set.Set Text)
+  IO (Set.Set Text, Int, Int)
 processEntriesIncremental db fileId parentId fileCat existingMap positions entries =
   foldM
-    ( \acc (position, entry) -> do
+    ( \(acc, cr, up) (position, entry) -> do
         entryId <- resolveEntryId entry
         let contentHash = computeEntryHash entry
         case Map.lookup entryId existingMap of
@@ -143,7 +197,7 @@ processEntriesIncremental db fileId parentId fileCat existingMap positions entri
               , SqlText entryId
               ]
             -- Recurse into children
-            childIds <-
+            (childIds, childCr, childUp) <-
               processEntriesIncremental
                 db
                 fileId
@@ -152,7 +206,7 @@ processEntriesIncremental db fileId parentId fileCat existingMap positions entri
                 existingMap
                 [0 ..]
                 (entry ^. entryItems)
-            pure (Set.insert entryId acc <> childIds)
+            pure (Set.insert entryId acc <> childIds, cr + childCr, up + childUp)
           Just _ -> do
             -- Entry exists but changed — delete children, update, re-insert children
             deleteEntryChildren db entryId
@@ -161,7 +215,7 @@ processEntriesIncremental db fileId parentId fileCat existingMap positions entri
             -- Null out embedding_hash so db embed will re-embed
             dbExecute_ db "UPDATE entries SET embedding_hash = NULL WHERE id = ?" [SqlText entryId]
             -- Recurse into children (all new since we can't match sub-entries)
-            childIds <-
+            (childIds, childCr, childUp) <-
               processEntriesIncremental
                 db
                 fileId
@@ -170,12 +224,12 @@ processEntriesIncremental db fileId parentId fileCat existingMap positions entri
                 existingMap
                 [0 ..]
                 (entry ^. entryItems)
-            pure (Set.insert entryId acc <> childIds)
+            pure (Set.insert entryId acc <> childIds, cr + childCr, up + 1 + childUp)
           Nothing -> do
-            -- New entry — insert everything
+            -- New entry — upsert (may exist from another file with same :ID:)
             insertEntryFull db entryId fileId parentId fileCat position entry contentHash
             -- Recurse into children
-            childIds <-
+            (childIds, childCr, childUp) <-
               processEntriesIncremental
                 db
                 fileId
@@ -184,19 +238,30 @@ processEntriesIncremental db fileId parentId fileCat existingMap positions entri
                 existingMap
                 [0 ..]
                 (entry ^. entryItems)
-            pure (Set.insert entryId acc <> childIds)
+            pure (Set.insert entryId acc <> childIds, cr + 1 + childCr, childUp)
     )
-    Set.empty
+    (Set.empty, 0, 0)
     (zip positions entries)
 
+-- | Count all entries recursively (entries + all descendants).
+countAllEntries :: [Entry] -> Int
+countAllEntries = go
+ where
+  go [] = 0
+  go (e : es) = 1 + go (e ^. entryItems) + go es
+
 {- | Resolve the stable ID for an entry.
-Uses the :ID: property when present; generates a random UUID otherwise.
+Uses the :ID: property when it looks like a valid UUID;
+generates a random UUID for template placeholders and missing IDs.
 -}
 resolveEntryId :: Entry -> IO Text
 resolveEntryId entry =
   case entry ^? entryId of
-    Just eid -> pure (T.pack eid)
-    Nothing -> toText <$> nextRandom
+    Just eid
+      | isValidId eid -> pure (T.pack eid)
+    _ -> toText <$> nextRandom
+ where
+  isValidId s = not (null s) && all (\c -> c `elem` ("0123456789abcdefABCDEF-" :: String)) s
 
 {- | Compute a content hash for an entry (excluding children).
 Used to detect whether an entry's own content has changed.
@@ -322,13 +387,15 @@ insertEntryChildren db entryId entry fileCat = do
     Just cat -> dbExecute_ db insertCategorySQL [SqlText entryId, SqlText cat, SqlBool True, SqlNull]
     Nothing -> dbExecute_ db insertCategorySQL [SqlText entryId, SqlText fileCat, SqlBool False, SqlNull]
 
--- | Insert a complete new entry with all its children.
+{- | Insert a complete new entry with all its children.
+  Uses upsert to handle duplicate :ID: values across files.
+-}
 insertEntryFull :: DBHandle -> Text -> Text -> Maybe Text -> Text -> Int -> Entry -> Text -> IO ()
 insertEntryFull db entryId fileId parentId fileCat position entry contentHash = do
   let (kwType, kwValue) = keywordInfo (entry ^. entryKeyword)
   dbExecute_
     db
-    insertEntryWithHashSQL
+    upsertEntrySQL
     [ SqlText entryId
     , SqlText fileId
     , maybe SqlNull SqlText parentId
@@ -345,6 +412,7 @@ insertEntryFull db entryId fileId parentId fileCat position entry contentHash = 
     , maybe SqlNull (SqlText . T.pack) (entry ^. entryLocator)
     , SqlText contentHash
     ]
+  deleteEntryChildren db entryId
   insertEntryChildren db entryId entry fileCat
 
 -- | Delete a file and all its associated data (cascading).
@@ -760,11 +828,20 @@ insertFilePropertySQL =
   "INSERT INTO file_properties (file_id, position, name, value, source) \
   \VALUES (?, ?, ?, ?, ?)"
 
-insertEntryWithHashSQL :: Text
-insertEntryWithHashSQL =
+upsertEntrySQL :: Text
+upsertEntrySQL =
   "INSERT INTO entries (id, file_id, parent_id, depth, position, \
   \byte_offset, keyword_type, keyword_value, priority, headline, \
-  \title, verb, context, locator, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  \title, verb, context, locator, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+  \ON CONFLICT (id) DO UPDATE SET \
+  \file_id = EXCLUDED.file_id, parent_id = EXCLUDED.parent_id, \
+  \depth = EXCLUDED.depth, position = EXCLUDED.position, \
+  \byte_offset = EXCLUDED.byte_offset, keyword_type = EXCLUDED.keyword_type, \
+  \keyword_value = EXCLUDED.keyword_value, priority = EXCLUDED.priority, \
+  \headline = EXCLUDED.headline, title = EXCLUDED.title, \
+  \verb = EXCLUDED.verb, context = EXCLUDED.context, \
+  \locator = EXCLUDED.locator, hash = EXCLUDED.hash, \
+  \embedding_hash = NULL, updated_at = now()"
 
 insertStampSQL :: Text
 insertStampSQL =

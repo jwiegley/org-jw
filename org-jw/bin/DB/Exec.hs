@@ -33,8 +33,26 @@ execDb _cfg opts coll = do
     DBStore sopts -> withDB dbCfg $ \db -> do
       initDB db
       _ <- runMigrations db
-      storeCollection db coll
-      putStrLn "Collection stored."
+      sr <- storeCollection db coll
+      putStrLn $
+        "Stored: "
+          ++ show (storeFilesProcessed sr)
+          ++ " file(s) processed, "
+          ++ show (storeFilesInserted sr)
+          ++ " inserted, "
+          ++ show (storeFilesUpdated sr)
+          ++ " updated, "
+          ++ show (storeFilesSkipped sr)
+          ++ " skipped"
+      putStrLn $
+        "Entries: "
+          ++ show (storeEntriesCreated sr)
+          ++ " created, "
+          ++ show (storeEntriesUpdated sr)
+          ++ " updated, "
+          ++ show (storeEntriesDeleted sr)
+          ++ " deleted"
+      mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (storeErrors sr)
       if sopts ^. storeNoEmbed
         then pure ()
         else do
