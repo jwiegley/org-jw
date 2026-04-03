@@ -341,13 +341,15 @@ computeEntryPathFn =
   "CREATE OR REPLACE FUNCTION compute_entry_path(\
   \  entry_id TEXT, entry_parent_id TEXT\
   \) RETURNS ltree AS $$\
-  \DECLARE parent_path ltree;\
+  \DECLARE parent_path ltree; safe_id TEXT;\
   \BEGIN\
+  \  safe_id := regexp_replace(replace(entry_id, '-', '_'), '[^A-Za-z0-9_]', '', 'g');\
+  \  IF safe_id = '' THEN safe_id := 'x'; END IF;\
   \  IF entry_parent_id IS NULL THEN\
-  \    RETURN replace(entry_id, '-', '_')::ltree;\
+  \    RETURN safe_id::ltree;\
   \  ELSE\
   \    SELECT path INTO parent_path FROM entries WHERE id = entry_parent_id;\
-  \    RETURN parent_path || replace(entry_id, '-', '_');\
+  \    RETURN parent_path || safe_id;\
   \  END IF;\
   \END;\
   \$$ LANGUAGE plpgsql"
