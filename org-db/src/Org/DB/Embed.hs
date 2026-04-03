@@ -204,34 +204,60 @@ fetchCandidateIds db = do
   rows <- dbQuery db candidateIdsSQL [] :: IO [[SqlValue]]
   pure [eid | [SqlText eid] <- rows]
 
+{- | SQL fragment that computes the combined text for hash comparison.
+Includes ancestor titles, tags, and categories so that embeddings are
+re-generated when an entry's organizational context changes.
+-}
+combinedTextExpr :: Text
+combinedTextExpr =
+  "COALESCE((\
+  \  WITH RECURSIVE anc AS (\
+  \    SELECT parent_id FROM entries WHERE id = e.id \
+  \    UNION ALL \
+  \    SELECT e2.parent_id FROM entries e2 JOIN anc a ON e2.id = a.parent_id \
+  \    WHERE e2.parent_id IS NOT NULL\
+  \  ) SELECT string_agg(e2.title, ' > ' ORDER BY e2.depth) \
+  \    FROM anc a JOIN entries e2 ON a.parent_id = e2.id\
+  \), '') || E'\\n' ||\
+  \COALESCE((\
+  \  SELECT string_agg(t.tag, ', ' ORDER BY t.tag) \
+  \  FROM entry_tags t WHERE t.entry_id = e.id\
+  \), '') || E'\\n' ||\
+  \COALESCE((\
+  \  SELECT string_agg(c.category, ', ' ORDER BY c.category) \
+  \  FROM entry_categories c WHERE c.entry_id = e.id\
+  \), '') || E'\\n' ||\
+  \COALESCE(e.title, '') || E'\\n' ||\
+  \COALESCE((\
+  \  SELECT string_agg(bb.content, E'\\n' ORDER BY bb.position)\
+  \  FROM entry_body_blocks bb\
+  \  WHERE bb.entry_id = e.id AND bb.content IS NOT NULL\
+  \), '') || E'\\n' ||\
+  \COALESCE((\
+  \  SELECT string_agg(lb.content, E'\\n' ORDER BY le.position, lb.position)\
+  \  FROM entry_log_entries le\
+  \  JOIN log_entry_body_blocks lb ON lb.log_entry_id = le.id\
+  \  WHERE le.entry_id = e.id AND lb.content IS NOT NULL\
+  \), '') || E'\\n' ||\
+  \COALESCE((\
+  \  SELECT string_agg(ep.name || ': ' || ep.value, E'\\n' ORDER BY ep.name)\
+  \  FROM entry_properties ep\
+  \  WHERE ep.entry_id = e.id\
+  \), '')"
+
 candidateIdsSQL :: Text
 candidateIdsSQL =
   "WITH entry_text AS (\
-  \  SELECT e.id,\
-  \    COALESCE(e.title, '') || E'\\n' ||\
-  \    COALESCE((\
-  \      SELECT string_agg(bb.content, E'\\n' ORDER BY bb.position)\
-  \      FROM entry_body_blocks bb\
-  \      WHERE bb.entry_id = e.id AND bb.content IS NOT NULL\
-  \    ), '') || E'\\n' ||\
-  \    COALESCE((\
-  \      SELECT string_agg(lb.content, E'\\n' ORDER BY le.position, lb.position)\
-  \      FROM entry_log_entries le\
-  \      JOIN log_entry_body_blocks lb ON lb.log_entry_id = le.id\
-  \      WHERE le.entry_id = e.id AND lb.content IS NOT NULL\
-  \    ), '') || E'\\n' ||\
-  \    COALESCE((\
-  \      SELECT string_agg(ep.name || ': ' || ep.value, E'\\n' ORDER BY ep.name)\
-  \      FROM entry_properties ep\
-  \      WHERE ep.entry_id = e.id\
-  \    ), '') AS combined_text\
-  \  FROM entries e\
-  \) \
-  \SELECT et.id \
-  \FROM entry_text et \
-  \JOIN entries e ON e.id = et.id \
-  \WHERE e.embedding_hash IS NULL \
-  \   OR e.embedding_hash IS DISTINCT FROM md5(et.combined_text)"
+  \  SELECT e.id, "
+    <> combinedTextExpr
+    <> " AS combined_text\
+       \  FROM entries e\
+       \) \
+       \SELECT et.id \
+       \FROM entry_text et \
+       \JOIN entries e ON e.id = et.id \
+       \WHERE e.embedding_hash IS NULL \
+       \   OR e.embedding_hash IS DISTINCT FROM md5(et.combined_text)"
 
 ------------------------------------------------------------------------
 -- Labeled text segments
@@ -247,11 +273,66 @@ data TextSegment = TextSegment
 -- | Fetch structured text segments for an entry, each labeled with its source.
 fetchEntrySegments :: DBHandle -> Text -> IO [TextSegment]
 fetchEntrySegments db entryId = do
+  contextSegs <- fetchContextSegment db entryId
   titleSegs <- fetchTitleSegment db entryId
   bodySegs <- fetchBodySegments db entryId
   logSegs <- fetchLogSegments db entryId
   propSegs <- fetchPropertySegment db entryId
-  pure (titleSegs ++ bodySegs ++ logSegs ++ propSegs)
+  pure (contextSegs ++ titleSegs ++ bodySegs ++ logSegs ++ propSegs)
+
+{- | Build a context segment from ancestor titles, tags, and categories.
+This gives the embedding model the organizational context that the entry
+title alone may not convey (e.g. "Call Leak Geeks" under "Pool > Pool leak repair").
+-}
+fetchContextSegment :: DBHandle -> Text -> IO [TextSegment]
+fetchContextSegment db entryId = do
+  ancestors <- fetchAncestorTitles db entryId
+  tags <- fetchEntryTags db entryId
+  cats <- fetchEntryCategories db entryId
+  let parts =
+        ["Path: " <> T.intercalate " > " ancestors | not (null ancestors)]
+          ++ ["Tags: " <> T.intercalate ", " tags | not (null tags)]
+          ++ ["Categories: " <> T.intercalate ", " cats | not (null cats)]
+  pure
+    [ TextSegment "context" (T.intercalate "\n" parts)
+    | not (null parts)
+    ]
+
+fetchAncestorTitles :: DBHandle -> Text -> IO [Text]
+fetchAncestorTitles db entryId = do
+  rows <-
+    dbQuery
+      db
+      "WITH RECURSIVE anc AS (\
+      \  SELECT parent_id FROM entries WHERE id = ? \
+      \  UNION ALL \
+      \  SELECT e.parent_id FROM entries e JOIN anc a ON e.id = a.parent_id \
+      \  WHERE e.parent_id IS NOT NULL\
+      \) \
+      \SELECT e.title FROM anc a JOIN entries e ON a.parent_id = e.id"
+      [SqlText entryId] ::
+      IO [[SqlValue]]
+  pure (reverse [t | [SqlText t] <- rows])
+
+fetchEntryTags :: DBHandle -> Text -> IO [Text]
+fetchEntryTags db entryId = do
+  rows <-
+    dbQuery
+      db
+      "SELECT tag FROM entry_tags WHERE entry_id = ? ORDER BY tag"
+      [SqlText entryId] ::
+      IO [[SqlValue]]
+  pure [t | [SqlText t] <- rows]
+
+fetchEntryCategories :: DBHandle -> Text -> IO [Text]
+fetchEntryCategories db entryId = do
+  rows <-
+    dbQuery
+      db
+      "SELECT category FROM entry_categories WHERE entry_id = ? ORDER BY category"
+      [SqlText entryId] ::
+      IO [[SqlValue]]
+  pure [t | [SqlText t] <- rows]
 
 fetchTitleSegment :: DBHandle -> Text -> IO [TextSegment]
 fetchTitleSegment db entryId = do
@@ -404,25 +485,13 @@ updateEmbeddingHash :: DBHandle -> Text -> IO ()
 updateEmbeddingHash db entryId =
   dbExecute_
     db
-    "UPDATE entries SET embedding_hash = md5(\
-    \  COALESCE(title, '') || E'\\n' ||\
-    \  COALESCE((\
-    \    SELECT string_agg(bb.content, E'\\n' ORDER BY bb.position)\
-    \    FROM entry_body_blocks bb\
-    \    WHERE bb.entry_id = entries.id AND bb.content IS NOT NULL\
-    \  ), '') || E'\\n' ||\
-    \  COALESCE((\
-    \    SELECT string_agg(lb.content, E'\\n' ORDER BY le.position, lb.position)\
-    \    FROM entry_log_entries le\
-    \    JOIN log_entry_body_blocks lb ON lb.log_entry_id = le.id\
-    \    WHERE le.entry_id = entries.id AND lb.content IS NOT NULL\
-    \  ), '') || E'\\n' ||\
-    \  COALESCE((\
-    \    SELECT string_agg(ep.name || ': ' || ep.value, E'\\n' ORDER BY ep.name)\
-    \    FROM entry_properties ep\
-    \    WHERE ep.entry_id = entries.id\
-    \  ), '')\
-    \) WHERE id = ?"
+    ( "UPDATE entries SET embedding_hash = (\
+      \  SELECT md5("
+        <> combinedTextExpr
+        <> ")\
+           \  FROM entries e WHERE e.id = entries.id\
+           \) WHERE id = ?"
+    )
     [SqlText entryId]
 
 showDouble :: Double -> Text
