@@ -296,6 +296,7 @@ indexDDL =
   , "CREATE INDEX IF NOT EXISTS idx_entries_parent ON entries(parent_id)"
   , "CREATE INDEX IF NOT EXISTS idx_entries_keyword ON entries(keyword_value) WHERE keyword_value IS NOT NULL"
   , "CREATE INDEX IF NOT EXISTS idx_entries_path ON entries USING GIST (path)"
+  , "CREATE INDEX IF NOT EXISTS idx_entries_embedding_hash ON entries(embedding_hash)"
   , -- entry_tags
     "CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag)"
   , -- entry_properties
@@ -307,6 +308,7 @@ indexDDL =
   , -- entry_log_entries
     "CREATE INDEX IF NOT EXISTS idx_log_entries_entry ON entry_log_entries(entry_id)"
   , "CREATE INDEX IF NOT EXISTS idx_log_entries_type ON entry_log_entries(log_type)"
+  , "CREATE INDEX IF NOT EXISTS idx_log_entries_logbook ON entry_log_entries(logbook_id) WHERE logbook_id IS NOT NULL"
   , -- log_entry_body_blocks
     "CREATE INDEX IF NOT EXISTS idx_log_body_blocks_log_entry ON log_entry_body_blocks(log_entry_id)"
   , -- entry_body_blocks
