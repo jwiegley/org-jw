@@ -227,6 +227,8 @@ printSearchRowJson db row src chunk dist = do
       <> jsonEscape fpath
       <> "\",\"title\":\""
       <> jsonEscape (erTitle row)
+      <> "\",\"headline\":\""
+      <> jsonEscape (erHeadline row)
       <> "\",\"keyword\":"
       <> maybe "null" (\k -> "\"" <> k <> "\"") (erKeywordValue row)
       <> ",\"depth\":"
