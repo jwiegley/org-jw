@@ -30,9 +30,15 @@ elapsed_ms() {
 
 START=$(elapsed_ms)
 
+CHECK=false
+if [[ $(hostname) =~ [Hh]era ]]; then
+    CHECK=true
+fi
+
 eval "$FIND_FILES" \
     | cabal run org-jw:exe:org -- \
-        --config "$ORG_YAML" \
+	--config <(cat "$ORG_YAML" |					\
+		   sed -e "s/checkFiles: true/checkFiles: $CHECK/")	\
         --keywords "$ORG_DOT" \
         lint \
         --round-trip \

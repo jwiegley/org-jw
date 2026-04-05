@@ -39,13 +39,19 @@ fi
 # Remove stale .tix before running so we get a clean measurement.
 rm -f "$TIX_FILE"
 
+CHECK=false
+if [[ $(hostname) =~ [Hh]era ]]; then
+    CHECK=true
+fi
+
 echo "Running round-trip with coverage..."
 # The executable has -with-rtsopts=-N (threaded, all capabilities) but
 # GHC's HPC runtime fails to write .tix with multiple capabilities.
 # Override with -N1 so the atexit handler runs on the main OS thread.
 eval "$FIND_FILES" \
     | "$ORG_EXE" \
-        --config "$ORG_YAML" \
+	--config <(cat "$ORG_YAML" |					\
+		   sed -e "s/checkFiles: true/checkFiles: $CHECK/")	\
         --keywords "$ORG_DOT" \
         lint \
         --round-trip \

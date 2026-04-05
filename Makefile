@@ -22,14 +22,19 @@ all: lint
 lint: $(CABAL_FILES)
 	cabal build all
 	cd ~/org
-	$(FIND_FILES)					\
-	    | time cabal run org-jw:exe:org --	\
-		--config ~/org/org.yaml			\
-		--keywords ~/org/org.dot		\
-		lint					\
-		--round-trip				\
-		-l INFO					\
-		-F -					\
+	@CHECK=false;								\
+	if [[ $$(hostname) =~ [Hh]era ]]; then					\
+	    CHECK=true;								\
+	fi;									\
+	$(FIND_FILES)								\
+	    | time cabal run org-jw:exe:org --					\
+		--config <(cat ~/org/org.yaml |					\
+			   sed -e "s/checkFiles: true/checkFiles: $$CHECK/")	\
+		--keywords ~/org/org.dot					\
+		lint								\
+		--round-trip							\
+		-l INFO								\
+		-F -								\
 		+RTS -N
 
 json: $(CABAL_FILES)
