@@ -4,6 +4,7 @@
 module DB.Exec where
 
 import Control.Lens
+import Control.Monad (when)
 import DB.Options
 import Data.ByteString.Char8 qualified as BS8
 import Data.Maybe (fromMaybe)
@@ -57,7 +58,10 @@ execDb _cfg opts coll = do
         then pure ()
         else do
           let eopts = sopts ^. storeEmbedOpts
-              ecfg =
+          when (eopts ^. embedForce) $ do
+            putStrLn "Clearing all embedding hashes (--force)..."
+            dbExecute_ db "UPDATE entries SET embedding_hash = NULL" []
+          let ecfg =
                 EmbedConfig
                   { embedBaseUrl = T.pack (eopts ^. embedBaseUrlOpt)
                   , embedModel = T.pack (eopts ^. embedModelOpt)
@@ -120,6 +124,9 @@ execDb _cfg opts coll = do
     DBEmbed eopts -> withDB dbCfg $ \db -> do
       initDB db
       _ <- runMigrations db
+      when (eopts ^. embedForce) $ do
+        putStrLn "Clearing all embedding hashes (--force)..."
+        dbExecute_ db "UPDATE entries SET embedding_hash = NULL" []
       let ecfg =
             EmbedConfig
               { embedBaseUrl = T.pack (eopts ^. embedBaseUrlOpt)

@@ -60,6 +60,7 @@ data DBEmbedOpts = DBEmbedOpts
   , _embedBatchSizeOpt :: !Int
   , _embedDimensionsOpt :: !(Maybe Int)
   , _embedChunkSizeOpt :: !Int
+  , _embedForce :: !Bool
   }
   deriving (Show, Eq, Typeable, Generic)
 
@@ -312,6 +313,10 @@ embedOpts =
           <> help "Maximum characters per text chunk (entries are split into chunks for embedding)"
           <> value 2000
           <> showDefault
+      )
+    <*> switch
+      ( long "force"
+          <> help "Re-embed all entries, ignoring cached hashes"
       )
 
 searchOpts :: OA.Parser DBSearchOpts
