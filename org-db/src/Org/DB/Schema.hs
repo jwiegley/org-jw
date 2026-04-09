@@ -309,6 +309,7 @@ indexDDL =
     "CREATE INDEX IF NOT EXISTS idx_log_entries_entry ON entry_log_entries(entry_id)"
   , "CREATE INDEX IF NOT EXISTS idx_log_entries_type ON entry_log_entries(log_type)"
   , "CREATE INDEX IF NOT EXISTS idx_log_entries_logbook ON entry_log_entries(logbook_id) WHERE logbook_id IS NOT NULL"
+  , "CREATE INDEX IF NOT EXISTS idx_log_entries_time_day ON entry_log_entries(time_day) WHERE time_day IS NOT NULL"
   , -- log_entry_body_blocks
     "CREATE INDEX IF NOT EXISTS idx_log_body_blocks_log_entry ON log_entry_body_blocks(log_entry_id)"
   , -- entry_body_blocks
