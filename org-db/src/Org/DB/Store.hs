@@ -22,6 +22,9 @@ module Org.DB.Store (
 
   -- * Vector embedding operations
   querySimilar,
+
+  -- * Title similarity review
+  queryReviewGroups,
 ) where
 
 import Control.Lens hiding ((<.>))
@@ -212,8 +215,8 @@ processEntriesIncremental db fileId parentId fileCat existingMap positions entri
             deleteEntryChildren db entryId
             updateEntryRow db entryId fileId parentId position entry contentHash
             insertEntryChildren db entryId entry fileCat
-            -- Null out embedding_hash so db embed will re-embed
-            dbExecute_ db "UPDATE entries SET embedding_hash = NULL WHERE id = ?" [SqlText entryId]
+            -- Null out embedding_hash and title_embedding so db embed will re-embed
+            dbExecute_ db "UPDATE entries SET embedding_hash = NULL, title_embedding = NULL WHERE id = ?" [SqlText entryId]
             -- Recurse into children (all new since we can't match sub-entries)
             (childIds, childCr, childUp) <-
               processEntriesIncremental
@@ -569,6 +572,53 @@ parseSearchRow vals
   | otherwise = Nothing
 
 ------------------------------------------------------------------------
+-- Title similarity review
+------------------------------------------------------------------------
+
+{- | Find pairs of open entries whose titles are semantically similar,
+within the given cosine distance threshold. Returns pairs of
+(entry_a, entry_b, distance) sorted by distance.
+-}
+queryReviewGroups :: DBHandle -> Double -> Int -> IO [(EntryRow, EntryRow, Double)]
+queryReviewGroups db threshold limit = do
+  rows <-
+    dbQuery
+      db
+      "SELECT a.id, a.file_id, a.parent_id, a.depth, a.position, \
+      \a.byte_offset, a.keyword_type, a.keyword_value, a.priority, \
+      \a.headline, a.title, a.verb, a.context, a.locator, \
+      \a.hash, a.mod_time, a.created_time, a.path::text, \
+      \b.id, b.file_id, b.parent_id, b.depth, b.position, \
+      \b.byte_offset, b.keyword_type, b.keyword_value, b.priority, \
+      \b.headline, b.title, b.verb, b.context, b.locator, \
+      \b.hash, b.mod_time, b.created_time, b.path::text, \
+      \a.title_embedding <=> b.title_embedding AS distance \
+      \FROM entries a, entries b \
+      \WHERE a.id < b.id \
+      \AND a.title <> b.title \
+      \AND a.keyword_type = 'open' \
+      \AND b.keyword_type = 'open' \
+      \AND a.title_embedding IS NOT NULL \
+      \AND b.title_embedding IS NOT NULL \
+      \AND a.title_embedding <=> b.title_embedding < ? \
+      \ORDER BY distance \
+      \LIMIT ?"
+      [SqlDouble threshold, SqlInt (fromIntegral limit)] ::
+      IO [[SqlValue]]
+  pure [triple | row <- rows, Just triple <- [parseReviewRow row]]
+
+parseReviewRow :: [SqlValue] -> Maybe (EntryRow, EntryRow, Double)
+parseReviewRow vals
+  | length vals == 37 =
+      let aVals = take 18 vals
+          bVals = take 18 (drop 18 vals)
+          distVal = vals !! 36
+       in case (fromRow aVals, fromRow bVals, extractDouble distVal) of
+            (Right a, Right b, Right dist) -> Just (a, b, dist)
+            _ -> Nothing
+  | otherwise = Nothing
+
+------------------------------------------------------------------------
 -- Internal: Insert helpers
 ------------------------------------------------------------------------
 
@@ -841,7 +891,7 @@ upsertEntrySQL =
   \headline = EXCLUDED.headline, title = EXCLUDED.title, \
   \verb = EXCLUDED.verb, context = EXCLUDED.context, \
   \locator = EXCLUDED.locator, hash = EXCLUDED.hash, \
-  \embedding_hash = NULL, updated_at = now()"
+  \embedding_hash = NULL, title_embedding = NULL, updated_at = now()"
 
 insertStampSQL :: Text
 insertStampSQL =

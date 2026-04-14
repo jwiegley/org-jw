@@ -75,6 +75,13 @@ data DBSearchOpts = DBSearchOpts
   }
   deriving (Show, Eq, Typeable, Generic)
 
+data DBReviewOpts = DBReviewOpts
+  { _reviewThreshold :: !Double
+  , _reviewLimit :: !Int
+  , _reviewFormat :: !OutputFormat
+  }
+  deriving (Show, Eq, Typeable, Generic)
+
 data DBCommand
   = DBInit
   | DBStore DBStoreOpts
@@ -84,6 +91,7 @@ data DBCommand
   | DBDot DBDotOpts
   | DBEmbed DBEmbedOpts
   | DBSearch DBSearchOpts
+  | DBReview DBReviewOpts
   deriving (Show, Eq, Typeable, Generic)
 
 data DbOptions = DbOptions
@@ -103,6 +111,7 @@ makeLenses ''DBDumpOpts
 makeLenses ''DBDotOpts
 makeLenses ''DBEmbedOpts
 makeLenses ''DBSearchOpts
+makeLenses ''DBReviewOpts
 makeLenses ''DbOptions
 
 ------------------------------------------------------------------------
@@ -127,6 +136,7 @@ dbOptions =
           <> dotCommand
           <> embedCommand
           <> searchCommand
+          <> reviewCommand
       )
  where
   initCommand =
@@ -145,6 +155,8 @@ dbOptions =
     OA.command "embed" (info (DBEmbed <$> embedOpts) (progDesc "Generate vector embeddings for entries"))
   searchCommand =
     OA.command "search" (info (DBSearch <$> searchOpts) (progDesc "Semantic search over entries using embeddings"))
+  reviewCommand =
+    OA.command "review" (info (DBReview <$> reviewOpts) (progDesc "Find groups of entries with similar titles"))
 
 storeOpts :: OA.Parser DBStoreOpts
 storeOpts =
@@ -361,6 +373,26 @@ searchOpts =
               <> help "Override embedding dimensions"
           )
       )
+
+reviewOpts :: OA.Parser DBReviewOpts
+reviewOpts =
+  DBReviewOpts
+    <$> option
+      auto
+      ( long "threshold"
+          <> help "Maximum cosine distance to consider titles similar (0.0-2.0)"
+          <> value 0.15
+          <> showDefault
+      )
+    <*> option
+      auto
+      ( short 'n'
+          <> long "limit"
+          <> help "Maximum number of pairs to consider for grouping"
+          <> value 1000
+          <> showDefault
+      )
+    <*> formatOpt
 
 readFormat :: OA.ReadM OutputFormat
 readFormat = eitherReader $ \s -> case s of

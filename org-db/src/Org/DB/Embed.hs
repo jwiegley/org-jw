@@ -6,6 +6,7 @@ module Org.DB.Embed (
   EmbedConfig (..),
   EmbedResult (..),
   embedEntries,
+  embedTitles,
   embedQuery,
 ) where
 
@@ -557,6 +558,116 @@ embedQuery cfg queryText = do
   case eds of
     [ed] -> pure (_edEmbedding ed)
     _ -> fail $ "Expected 1 embedding, got " <> show (length eds)
+
+------------------------------------------------------------------------
+-- Title embedding
+------------------------------------------------------------------------
+
+{- | Embed titles for entries that have content embeddings but are missing
+title embeddings. Titles are embedded as-is (no chunking) and stored
+directly in the entries.title_embedding column.
+-}
+embedTitles :: DBHandle -> EmbedConfig -> (Int -> Int -> IO ()) -> IO EmbedResult
+embedTitles db cfg progress = do
+  manager <- newManager tlsManagerSettings
+  candidates <- fetchTitleCandidates db
+  if null candidates
+    then pure (EmbedResult 0 0 [])
+    else do
+      let total = length candidates
+          batches = chunksOf (max 1 (embedBatchSize cfg)) candidates
+      goTitles manager batches 0 [] total
+ where
+  goTitles _ [] processed errs _ =
+    pure (EmbedResult processed (length errs) (reverse errs))
+  goTitles manager (batch : rest) processed errs total = do
+    result <- processTitleBatch db cfg manager batch
+    case result of
+      Right n -> do
+        let processed' = processed + n
+        progress processed' total
+        when (processed == 0) $ ensureTitleEmbeddingIndex db
+        goTitles manager rest processed' errs total
+      Left err ->
+        goTitles manager rest processed (err : errs) total
+
+{- | Find entries that are missing title embeddings.
+Returns (entry_id, title) pairs for all entries with non-empty titles.
+-}
+fetchTitleCandidates :: DBHandle -> IO [(Text, Text)]
+fetchTitleCandidates db = do
+  rows <-
+    dbQuery
+      db
+      "SELECT id, COALESCE(title, '') FROM entries \
+      \WHERE title_embedding IS NULL \
+      \AND COALESCE(title, '') != ''"
+      [] ::
+      IO [[SqlValue]]
+  pure [(eid, title) | [SqlText eid, SqlText title] <- rows]
+
+processTitleBatch ::
+  DBHandle ->
+  EmbedConfig ->
+  Manager ->
+  [(Text, Text)] ->
+  IO (Either Text Int)
+processTitleBatch db cfg manager batch = do
+  let titles = map snd batch
+  result <-
+    try (callEmbeddingAPI cfg manager titles) ::
+      IO (Either IOException [EmbeddingData])
+  case result of
+    Left err -> pure (Left (T.pack (show err)))
+    Right eds -> do
+      let vecs = map _edEmbedding (sortBy (comparing _edIndex) eds)
+      if length vecs /= length batch
+        then
+          pure
+            ( Left
+                ( "API returned "
+                    <> T.pack (show (length vecs))
+                    <> " title embeddings for "
+                    <> T.pack (show (length batch))
+                    <> " inputs"
+                )
+            )
+        else do
+          dbTransaction db $
+            mapM_
+              ( \((entryId, _), vec) ->
+                  storeTitleEmbedding db entryId vec
+              )
+              (zip batch vecs)
+          pure (Right (length batch))
+
+storeTitleEmbedding :: DBHandle -> Text -> [Double] -> IO ()
+storeTitleEmbedding db entryId vec = do
+  let vecText = "[" <> T.intercalate "," (map showDouble vec) <> "]"
+  dbExecute_
+    db
+    "UPDATE entries SET title_embedding = ?::vector WHERE id = ?"
+    [SqlText vecText, SqlText entryId]
+
+{- | Create HNSW index on title_embedding if it doesn't already exist.
+Called after the first successful batch of title embeddings, since the
+untyped vector column needs data before an HNSW index can be created.
+-}
+ensureTitleEmbeddingIndex :: DBHandle -> IO ()
+ensureTitleEmbeddingIndex db = do
+  result <-
+    try
+      ( dbExecute_
+          db
+          "CREATE INDEX IF NOT EXISTS idx_entries_title_embedding \
+          \ON entries USING hnsw (title_embedding vector_cosine_ops) \
+          \WHERE title_embedding IS NOT NULL"
+          []
+      ) ::
+      IO (Either SomeException ())
+  case result of
+    Right () -> pure ()
+    Left _ -> pure ()
 
 ------------------------------------------------------------------------
 -- Utilities

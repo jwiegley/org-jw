@@ -129,6 +129,14 @@ migrations =
           , "UPDATE entries SET embedding_hash = NULL"
           ]
       }
+  , Migration
+      { migVersion = 11
+      , migDescription = "Add title_embedding column for title-only similarity"
+      , migUp =
+          [ "ALTER TABLE entries ADD COLUMN IF NOT EXISTS \
+            \title_embedding vector"
+          ]
+      }
   ]
 
 {- | Run all pending migrations.

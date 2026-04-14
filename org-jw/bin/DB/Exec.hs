@@ -7,7 +7,10 @@ import Control.Lens
 import Control.Monad (when)
 import DB.Options
 import Data.ByteString.Char8 qualified as BS8
+import Data.List (sortBy)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Ord (comparing)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Text.Lazy.IO qualified as TLIO
@@ -60,7 +63,7 @@ execDb _cfg opts coll = do
           let eopts = sopts ^. storeEmbedOpts
           when (eopts ^. embedForce) $ do
             putStrLn "Clearing all embedding hashes (--force)..."
-            dbExecute_ db "UPDATE entries SET embedding_hash = NULL" []
+            dbExecute_ db "UPDATE entries SET embedding_hash = NULL, title_embedding = NULL" []
           let ecfg =
                 EmbedConfig
                   { embedBaseUrl = T.pack (eopts ^. embedBaseUrlOpt)
@@ -83,6 +86,19 @@ execDb _cfg opts coll = do
                   ++ ", Failed: "
                   ++ show (embedFailed result)
               mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (embedErrors result)
+          let titleProgress done total =
+                putStrLn $
+                  "Title embeddings: " ++ show done ++ " / " ++ show total
+          titleResult <- embedTitles db ecfg titleProgress
+          case embedProcessed titleResult of
+            0 -> pure ()
+            n -> do
+              putStrLn $
+                "Title embedding done. Processed: "
+                  ++ show n
+                  ++ ", Failed: "
+                  ++ show (embedFailed titleResult)
+              mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (embedErrors titleResult)
     DBQuery qopts -> withDB dbCfg $ \db -> do
       rows <- case qopts ^. queryOrgQl of
         Just ql -> do
@@ -126,7 +142,7 @@ execDb _cfg opts coll = do
       _ <- runMigrations db
       when (eopts ^. embedForce) $ do
         putStrLn "Clearing all embedding hashes (--force)..."
-        dbExecute_ db "UPDATE entries SET embedding_hash = NULL" []
+        dbExecute_ db "UPDATE entries SET embedding_hash = NULL, title_embedding = NULL" []
       let ecfg =
             EmbedConfig
               { embedBaseUrl = T.pack (eopts ^. embedBaseUrlOpt)
@@ -146,6 +162,16 @@ execDb _cfg opts coll = do
           ++ ", Failed: "
           ++ show (embedFailed result)
       mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (embedErrors result)
+      let titleProgress done total =
+            putStrLn $
+              "Title embeddings: " ++ show done ++ " / " ++ show total
+      titleResult <- embedTitles db ecfg titleProgress
+      putStrLn $
+        "Title embedding done. Processed: "
+          ++ show (embedProcessed titleResult)
+          ++ ", Failed: "
+          ++ show (embedFailed titleResult)
+      mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (embedErrors titleResult)
     DBDot dopts -> withDB dbCfg $ \db -> do
       rels <- dbQuery db "SELECT * FROM entry_relationships" [] :: IO [RelationshipRow]
       entryRows <- queryEntries db
@@ -187,6 +213,18 @@ execDb _cfg opts coll = do
           putStrLn "id,file_id,depth,keyword,title"
           mapM_ (\(row, _, _, _) -> printEntryRowCsv row) results
         JsonFormat -> mapM_ (\(row, src, chunk, dist) -> printSearchRowJson db row src chunk dist) results
+    DBReview ropts -> withDB dbCfg $ \db -> do
+      initDB db
+      _ <- runMigrations db
+      pairs <- queryReviewGroups db (ropts ^. reviewThreshold) (ropts ^. reviewLimit)
+      if null pairs
+        then putStrLn "No similar title groups found."
+        else do
+          let groups = clusterPairs pairs
+          case ropts ^. reviewFormat of
+            TextFormat -> printReviewGroups groups
+            JsonFormat -> printReviewGroupsJson groups
+            CsvFormat -> printReviewGroupsCsv groups
 
 printEntryRow :: EntryRow -> IO ()
 printEntryRow row =
@@ -333,3 +371,133 @@ printConflict c =
       ++ T.unpack (conflictFile c)
       ++ " - "
       ++ T.unpack (conflictReason c)
+
+------------------------------------------------------------------------
+-- Review: union-find clustering and display
+------------------------------------------------------------------------
+
+-- | Cluster similar-title pairs into connected components.
+clusterPairs :: [(EntryRow, EntryRow, Double)] -> [[(EntryRow, Double)]]
+clusterPairs pairs =
+  let entryMap =
+        Map.fromList $
+          concatMap (\(a, b, _) -> [(erId a, a), (erId b, b)]) pairs
+      edges = concatMap (\(a, b, d) -> [(erId a, erId b, d), (erId b, erId a, d)]) pairs
+      parentMap = buildComponents (Map.keys entryMap) [(erId a, erId b) | (a, b, _) <- pairs]
+      -- Build minimum distance per entry from its edges
+      distMap = Map.fromListWith min [(src, d) | (src, _, d) <- edges]
+      componentMap =
+        Map.fromListWith
+          (++)
+          [ (rep, [(eid, Map.findWithDefault 1.0 eid distMap)])
+          | eid <- Map.keys entryMap
+          , let rep = findRoot parentMap eid
+          ]
+      groups =
+        [ [(er, dist) | (eid, dist) <- members, Just er <- [Map.lookup eid entryMap]]
+        | members <- Map.elems componentMap
+        , length members > 1
+        ]
+   in sortBy (comparing groupMinDist) groups
+ where
+  groupMinDist grp = minimum [d | (_, d) <- grp]
+
+buildComponents :: [T.Text] -> [(T.Text, T.Text)] -> Map.Map T.Text T.Text
+buildComponents nodes =
+  foldl (\m (a, b) -> unionNodes m a b) initial
+ where
+  initial = Map.fromList [(n, n) | n <- nodes]
+
+findRoot :: Map.Map T.Text T.Text -> T.Text -> T.Text
+findRoot m x = case Map.lookup x m of
+  Just p | p /= x -> findRoot m p
+  _ -> x
+
+unionNodes :: Map.Map T.Text T.Text -> T.Text -> T.Text -> Map.Map T.Text T.Text
+unionNodes m a b =
+  let ra = findRoot m a
+      rb = findRoot m b
+   in if ra == rb then m else Map.insert ra rb m
+
+printReviewGroups :: [[(EntryRow, Double)]] -> IO ()
+printReviewGroups groups =
+  mapM_ (uncurry printGroup) (zip [1 :: Int ..] groups)
+
+printGroup :: Int -> [(EntryRow, Double)] -> IO ()
+printGroup groupNum members = do
+  let minDist = minimum [d | (_, d) <- members]
+  putStrLn $ "\nGroup " ++ show groupNum ++ " (distance: " ++ showDist minDist ++ "):"
+  mapM_ printGroupMember members
+
+printGroupMember :: (EntryRow, Double) -> IO ()
+printGroupMember (row, _) = do
+  let fpath = fromMaybe (erFileId row) (erPath row)
+  putStrLn $
+    "  "
+      ++ T.unpack fpath
+      ++ ":"
+      ++ show (erByteOffset row)
+      ++ " "
+      ++ maybe "" (\kw -> T.unpack kw ++ " ") (erKeywordValue row)
+      ++ T.unpack (erTitle row)
+
+printReviewGroupsJson :: [[(EntryRow, Double)]] -> IO ()
+printReviewGroupsJson groups =
+  mapM_ (uncurry printGroupJson) (zip [1 :: Int ..] groups)
+
+printGroupJson :: Int -> [(EntryRow, Double)] -> IO ()
+printGroupJson groupNum members = do
+  let minDist = minimum [d | (_, d) <- members]
+  TIO.putStr $
+    "{\"group\":"
+      <> T.pack (show groupNum)
+      <> ",\"min_distance\":"
+      <> T.pack (show minDist)
+      <> ",\"entries\":["
+  mapM_
+    ( \(idx, (row, dist)) -> do
+        when (idx > 0) $ TIO.putStr ","
+        let fpath = fromMaybe (erFileId row) (erPath row)
+        TIO.putStr $
+          "{\"id\":\""
+            <> erId row
+            <> "\",\"file\":\""
+            <> jsonEscape fpath
+            <> "\",\"title\":\""
+            <> jsonEscape (erTitle row)
+            <> "\",\"keyword\":"
+            <> maybe "null" (\k -> "\"" <> k <> "\"") (erKeywordValue row)
+            <> ",\"distance\":"
+            <> T.pack (show dist)
+            <> "}"
+    )
+    (zip [0 :: Int ..] members)
+  TIO.putStrLn "]}"
+
+printReviewGroupsCsv :: [[(EntryRow, Double)]] -> IO ()
+printReviewGroupsCsv groups = do
+  putStrLn "group,file,id,keyword,title,distance"
+  mapM_
+    ( \(i, grp) ->
+        mapM_
+          ( \(row, dist) -> do
+              let fpath = fromMaybe (erFileId row) (erPath row)
+              TIO.putStrLn $
+                T.pack (show i)
+                  <> ","
+                  <> csvEscape fpath
+                  <> ","
+                  <> erId row
+                  <> ","
+                  <> fromMaybe "" (erKeywordValue row)
+                  <> ","
+                  <> csvEscape (erTitle row)
+                  <> ","
+                  <> T.pack (show dist)
+          )
+          grp
+    )
+    (zip [1 :: Int ..] groups)
+
+showDist :: Double -> String
+showDist d = show (fromIntegral (round (d * 1000) :: Int) / 1000 :: Double)
