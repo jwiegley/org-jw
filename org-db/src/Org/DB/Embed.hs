@@ -10,7 +10,7 @@ module Org.DB.Embed (
   embedQuery,
 ) where
 
-import Control.Exception (IOException, try)
+import Control.Exception (SomeException, try)
 
 import Data.Aeson (FromJSON (..), ToJSON (..), eitherDecode, encode, object, withObject, (.:), (.=))
 import Data.Bifunctor (second)
@@ -441,7 +441,7 @@ processChunkBatch db cfg manager batch = do
   let texts = map (\(_, _, t, _) -> t) batch
   result <-
     try (callEmbeddingAPI cfg manager texts) ::
-      IO (Either IOException [EmbeddingData])
+      IO (Either SomeException [EmbeddingData])
   case result of
     Left err -> pure (Left (T.pack (show err)))
     Right eds -> do
@@ -616,7 +616,7 @@ processTitleBatch db cfg manager batch = do
   let titles = map snd batch
   result <-
     try (callEmbeddingAPI cfg manager titles) ::
-      IO (Either IOException [EmbeddingData])
+      IO (Either SomeException [EmbeddingData])
   case result of
     Left err -> pure (Left (T.pack (show err)))
     Right eds -> do
