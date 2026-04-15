@@ -137,6 +137,45 @@ migrations =
             \title_embedding vector"
           ]
       }
+  , Migration
+      { migVersion = 12
+      , migDescription = "Convert vector columns to typed dimensions and create HNSW indexes"
+      , migUp =
+          [ -- Create settings table for databases that predate it
+            "CREATE TABLE IF NOT EXISTS db_settings (\
+            \  key TEXT PRIMARY KEY,\
+            \  value TEXT NOT NULL\
+            \)"
+          , -- Infer dimension from existing embeddings if not already stored
+            "INSERT INTO db_settings (key, value) \
+            \SELECT 'embedding_dimensions', \
+            \  (SELECT vector_dims(embedding)::text \
+            \   FROM entry_embeddings WHERE embedding IS NOT NULL LIMIT 1) \
+            \WHERE EXISTS (SELECT 1 FROM entry_embeddings WHERE embedding IS NOT NULL) \
+            \ON CONFLICT (key) DO NOTHING"
+          , -- Convert columns to typed and create HNSW indexes using PL/pgSQL
+            "DO $$ \
+            \DECLARE dim INT; \
+            \BEGIN \
+            \  SELECT value::int INTO dim \
+            \    FROM db_settings WHERE key = 'embedding_dimensions'; \
+            \  IF dim IS NOT NULL THEN \
+            \    EXECUTE format(\
+            \      'ALTER TABLE entry_embeddings ALTER COLUMN embedding TYPE vector(%s) USING embedding::vector(%s)', \
+            \      dim, dim); \
+            \    EXECUTE format(\
+            \      'ALTER TABLE entries ALTER COLUMN title_embedding TYPE vector(%s) USING title_embedding::vector(%s)', \
+            \      dim, dim); \
+            \    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_entry_embeddings_vector \
+            \      ON entry_embeddings USING hnsw (embedding vector_cosine_ops) \
+            \      WHERE embedding IS NOT NULL'; \
+            \    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_entries_title_embedding \
+            \      ON entries USING hnsw (title_embedding vector_cosine_ops) \
+            \      WHERE title_embedding IS NOT NULL'; \
+            \  END IF; \
+            \END $$"
+          ]
+      }
   ]
 
 {- | Run all pending migrations.
