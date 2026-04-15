@@ -3,6 +3,7 @@
 
 module Org.DB.Schema (
   initDB,
+  unstoreDB,
   schemaVersion,
   getEmbeddingDimensions,
 ) where
@@ -72,6 +73,30 @@ getEmbeddingDimensions db = do
   case result of
     Right ([SqlText t] : _) -> pure (readMaybe (T.unpack t))
     _ -> pure Nothing
+
+{- | Drop all data tables, preserving only schema_version and db_settings.
+This allows re-running init + store from scratch without recreating the
+database itself.
+-}
+unstoreDB :: DBHandle -> IO ()
+unstoreDB db =
+  dbTransaction db $
+    mapM_
+      (\ddl -> dbExecute_ db ddl [])
+      [ "DROP TABLE IF EXISTS entry_embeddings CASCADE"
+      , "DROP TABLE IF EXISTS entry_links CASCADE"
+      , "DROP TABLE IF EXISTS entry_categories CASCADE"
+      , "DROP TABLE IF EXISTS entry_relationships CASCADE"
+      , "DROP TABLE IF EXISTS entry_body_blocks CASCADE"
+      , "DROP TABLE IF EXISTS log_entry_body_blocks CASCADE"
+      , "DROP TABLE IF EXISTS entry_log_entries CASCADE"
+      , "DROP TABLE IF EXISTS entry_stamps CASCADE"
+      , "DROP TABLE IF EXISTS entry_properties CASCADE"
+      , "DROP TABLE IF EXISTS entry_tags CASCADE"
+      , "DROP TABLE IF EXISTS entries CASCADE"
+      , "DROP TABLE IF EXISTS file_properties CASCADE"
+      , "DROP TABLE IF EXISTS files CASCADE"
+      ]
 
 ------------------------------------------------------------------------
 -- Extensions

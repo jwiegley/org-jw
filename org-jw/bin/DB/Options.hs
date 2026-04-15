@@ -82,6 +82,7 @@ data DBReviewOpts = DBReviewOpts
 
 data DBCommand
   = DBInit !Int
+  | DBUnstore
   | DBStore DBStoreOpts
   | DBQuery DBQueryOpts
   | DBSync DBSyncOpts
@@ -127,6 +128,7 @@ dbOptions =
       )
     <*> hsubparser
       ( initCommand
+          <> unstoreCommand
           <> storeCommand
           <> queryCommand
           <> syncCommand
@@ -151,6 +153,8 @@ dbOptions =
           )
           (progDesc "Initialize database schema with typed vector columns")
       )
+  unstoreCommand =
+    OA.command "unstore" (info (pure DBUnstore) (progDesc "Drop all data tables (preserves settings, requires re-init)"))
   storeCommand =
     OA.command "store" (info (DBStore <$> storeOpts) (progDesc "Store org files into database (embeds by default)"))
   queryCommand =

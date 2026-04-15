@@ -34,6 +34,9 @@ execDb _cfg opts coll = do
           putStrLn $ "Database initialized (dimensions=" ++ show dims ++ ", schema up to date)."
         MigrationFailed v msg ->
           putStrLn $ "Database initialized, but migration " ++ show v ++ " failed: " ++ T.unpack msg
+    DBUnstore -> withDB dbCfg $ \db -> do
+      unstoreDB db
+      putStrLn "All data tables dropped. Run 'org db init --dimensions <N>' to reinitialize."
     DBStore sopts -> withDB dbCfg $ \db -> do
       dims <- requireEmbeddingDimensions db
       _ <- runMigrations db
