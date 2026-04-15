@@ -24,18 +24,18 @@ execDb :: Config -> DbOptions -> Collection -> IO ()
 execDb _cfg opts coll = do
   let dbCfg = DBConfig (BS8.pack (opts ^. dbConnStr))
   case opts ^. dbCommand of
-    DBInit -> withDB dbCfg $ \db -> do
-      initDB db
+    DBInit dims -> withDB dbCfg $ \db -> do
+      initDB db dims
       result <- runMigrations db
       case result of
         MigrationsApplied n ->
-          putStrLn $ "Database initialized. " ++ show n ++ " migration(s) applied."
+          putStrLn $ "Database initialized (dimensions=" ++ show dims ++ "). " ++ show n ++ " migration(s) applied."
         AlreadyCurrent ->
-          putStrLn "Database initialized (schema up to date)."
+          putStrLn $ "Database initialized (dimensions=" ++ show dims ++ ", schema up to date)."
         MigrationFailed v msg ->
           putStrLn $ "Database initialized, but migration " ++ show v ++ " failed: " ++ T.unpack msg
     DBStore sopts -> withDB dbCfg $ \db -> do
-      initDB db
+      dims <- requireEmbeddingDimensions db
       _ <- runMigrations db
       sr <- storeCollection db coll
       putStrLn $
@@ -70,7 +70,7 @@ execDb _cfg opts coll = do
                   , embedModel = T.pack (eopts ^. embedModelOpt)
                   , embedApiKey = T.pack (eopts ^. embedApiKeyOpt)
                   , embedBatchSize = eopts ^. embedBatchSizeOpt
-                  , embedDimensions = eopts ^. embedDimensionsOpt
+                  , embedDimensions = dims
                   , embedChunkSize = eopts ^. embedChunkSizeOpt
                   }
               progress done total =
@@ -118,7 +118,7 @@ execDb _cfg opts coll = do
           mapM_ printEntryRowCsv limited
         JsonFormat -> mapM_ printEntryRowJson limited
     DBSync sopts -> withDB dbCfg $ \db -> do
-      initDB db
+      _ <- requireEmbeddingDimensions db
       case sopts ^. syncDirection of
         "from-db" -> do
           dbColl <- syncFromDb db
@@ -138,7 +138,7 @@ execDb _cfg opts coll = do
       rows <- dbQuery db ("SELECT * FROM " <> table <> " ORDER BY 1" <> limitClause) [] :: IO [[SqlValue]]
       mapM_ (putStrLn . showSqlRow) rows
     DBEmbed eopts -> withDB dbCfg $ \db -> do
-      initDB db
+      dims <- requireEmbeddingDimensions db
       _ <- runMigrations db
       when (eopts ^. embedForce) $ do
         putStrLn "Clearing all embedding hashes (--force)..."
@@ -149,7 +149,7 @@ execDb _cfg opts coll = do
               , embedModel = T.pack (eopts ^. embedModelOpt)
               , embedApiKey = T.pack (eopts ^. embedApiKeyOpt)
               , embedBatchSize = eopts ^. embedBatchSizeOpt
-              , embedDimensions = eopts ^. embedDimensionsOpt
+              , embedDimensions = dims
               , embedChunkSize = eopts ^. embedChunkSizeOpt
               }
           progress done total =
@@ -196,13 +196,14 @@ execDb _cfg opts coll = do
         Just path -> TLIO.writeFile path dotText
         Nothing -> TLIO.putStr dotText
     DBSearch sopts -> withDB dbCfg $ \db -> do
+      dims <- requireEmbeddingDimensions db
       let ecfg =
             EmbedConfig
               { embedBaseUrl = T.pack (sopts ^. searchBaseUrlOpt)
               , embedModel = T.pack (sopts ^. searchModelOpt)
               , embedApiKey = T.pack (sopts ^. searchApiKeyOpt)
               , embedBatchSize = 1
-              , embedDimensions = sopts ^. searchDimensionsOpt
+              , embedDimensions = dims
               , embedChunkSize = 8000
               }
       vec <- embedQuery ecfg (T.pack (sopts ^. searchQuery))
@@ -214,7 +215,7 @@ execDb _cfg opts coll = do
           mapM_ (\(row, _, _, _) -> printEntryRowCsv row) results
         JsonFormat -> mapM_ (\(row, src, chunk, dist) -> printSearchRowJson db row src chunk dist) results
     DBReview ropts -> withDB dbCfg $ \db -> do
-      initDB db
+      _ <- requireEmbeddingDimensions db
       _ <- runMigrations db
       pairs <- queryReviewGroups db (ropts ^. reviewThreshold) (ropts ^. reviewLimit)
       if null pairs
@@ -501,3 +502,11 @@ printReviewGroupsCsv groups = do
 
 showDist :: Double -> String
 showDist d = show (fromIntegral (round (d * 1000) :: Int) / 1000 :: Double)
+
+-- | Read embedding dimensions from db_settings or fail with guidance.
+requireEmbeddingDimensions :: DBHandle -> IO Int
+requireEmbeddingDimensions db = do
+  dims <- getEmbeddingDimensions db
+  case dims of
+    Just n -> pure n
+    Nothing -> fail "Database not initialized. Run: org db init --dimensions <N>"

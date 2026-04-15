@@ -58,7 +58,6 @@ data DBEmbedOpts = DBEmbedOpts
   , _embedModelOpt :: !String
   , _embedApiKeyOpt :: !String
   , _embedBatchSizeOpt :: !Int
-  , _embedDimensionsOpt :: !(Maybe Int)
   , _embedChunkSizeOpt :: !Int
   , _embedForce :: !Bool
   }
@@ -71,7 +70,6 @@ data DBSearchOpts = DBSearchOpts
   , _searchBaseUrlOpt :: !String
   , _searchModelOpt :: !String
   , _searchApiKeyOpt :: !String
-  , _searchDimensionsOpt :: !(Maybe Int)
   }
   deriving (Show, Eq, Typeable, Generic)
 
@@ -83,7 +81,7 @@ data DBReviewOpts = DBReviewOpts
   deriving (Show, Eq, Typeable, Generic)
 
 data DBCommand
-  = DBInit
+  = DBInit !Int
   | DBStore DBStoreOpts
   | DBQuery DBQueryOpts
   | DBSync DBSyncOpts
@@ -140,7 +138,19 @@ dbOptions =
       )
  where
   initCommand =
-    OA.command "init" (info (pure DBInit) (progDesc "Initialize database schema"))
+    OA.command
+      "init"
+      ( info
+          ( DBInit
+              <$> option
+                auto
+                ( long "dimensions"
+                    <> metavar "N"
+                    <> help "Vector embedding dimensions (e.g. 1536 for text-embedding-3-small)"
+                )
+          )
+          (progDesc "Initialize database schema with typed vector columns")
+      )
   storeCommand =
     OA.command "store" (info (DBStore <$> storeOpts) (progDesc "Store org files into database (embeds by default)"))
   queryCommand =
@@ -312,13 +322,6 @@ embedOpts =
           <> value 50
           <> showDefault
       )
-    <*> optional
-      ( option
-          auto
-          ( long "dimensions"
-              <> help "Override embedding dimensions (for text-embedding-3-* models)"
-          )
-      )
     <*> option
       auto
       ( long "chunk-size"
@@ -365,13 +368,6 @@ searchOpts =
           <> help "API key"
           <> value "unused"
           <> showDefault
-      )
-    <*> optional
-      ( option
-          auto
-          ( long "dimensions"
-              <> help "Override embedding dimensions"
-          )
       )
 
 reviewOpts :: OA.Parser DBReviewOpts

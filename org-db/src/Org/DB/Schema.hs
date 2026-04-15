@@ -4,28 +4,40 @@
 module Org.DB.Schema (
   initDB,
   schemaVersion,
+  getEmbeddingDimensions,
 ) where
 
 import Control.Exception (SomeException, try)
 import Data.Text (Text)
+import qualified Data.Text as T
 import Org.DB.Types
+import Text.Read (readMaybe)
 
 -- | Current schema version. Bump when changing table definitions.
 schemaVersion :: Int
 schemaVersion = 2
 
 {- | Initialize the database schema, creating all tables if they don't exist.
+The embedding dimension is required and determines the vector column types.
+It is stored in db_settings so that subsequent commands can read it.
+
 Extension creation is best-effort since it requires superuser.
 If extensions are missing, create them manually:
   psql -U postgres -d <dbname> -c 'CREATE EXTENSION IF NOT EXISTS ltree; CREATE EXTENSION IF NOT EXISTS vector'
 -}
-initDB :: DBHandle -> IO ()
-initDB db = do
+initDB :: DBHandle -> Int -> IO ()
+initDB db dims = do
   -- Extensions run outside the transaction since failure (permission denied)
   -- would abort the entire transaction in PostgreSQL.
   mapM_ tryExt extensionsDDL
   dbTransaction db $ do
-    mapM_ (\ddl -> dbExecute_ db ddl []) tableDDL
+    mapM_ (\ddl -> dbExecute_ db ddl []) (tableDDL dims)
+    -- Store the embedding dimensions for use by other commands
+    dbExecute_
+      db
+      "INSERT INTO db_settings (key, value) VALUES ('embedding_dimensions', ?) \
+      \ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
+      [SqlText (T.pack (show dims))]
     mapM_ (\ddl -> dbExecute_ db ddl []) indexDDL
     mapM_ (\ddl -> dbExecute_ db ddl []) triggerDDL
     existing <- dbQuery db "SELECT version FROM schema_version WHERE version = ?" [SqlInt (fromIntegral schemaVersion)] :: IO [[SqlValue]]
@@ -43,6 +55,24 @@ initDB db = do
       Right () -> pure ()
       Left _ -> pure () -- Skip — requires superuser
 
+{- | Read the embedding dimensions from db_settings.
+Returns Nothing if the database has not been initialized or if the
+db_settings table does not exist.
+-}
+getEmbeddingDimensions :: DBHandle -> IO (Maybe Int)
+getEmbeddingDimensions db = do
+  result <-
+    try
+      ( dbQuery
+          db
+          "SELECT value FROM db_settings WHERE key = 'embedding_dimensions'"
+          []
+      ) ::
+      IO (Either SomeException [[SqlValue]])
+  case result of
+    Right ([SqlText t] : _) -> pure (readMaybe (T.unpack t))
+    _ -> pure Nothing
+
 ------------------------------------------------------------------------
 -- Extensions
 ------------------------------------------------------------------------
@@ -57,12 +87,13 @@ extensionsDDL =
 -- Table DDL
 ------------------------------------------------------------------------
 
-tableDDL :: [Text]
-tableDDL =
+tableDDL :: Int -> [Text]
+tableDDL dims =
   [ createSchemaVersion
+  , createDBSettings
   , createFiles
   , createFileProperties
-  , createEntries
+  , createEntries dims
   , createEntryTags
   , createEntryProperties
   , createEntryStamps
@@ -72,7 +103,7 @@ tableDDL =
   , createEntryRelationships
   , createEntryCategories
   , createEntryLinks
-  , createEntryEmbeddings
+  , createEntryEmbeddings dims
   ]
 
 createSchemaVersion :: Text
@@ -81,6 +112,13 @@ createSchemaVersion =
   \  version INTEGER PRIMARY KEY,\
   \  applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),\
   \  description TEXT\
+  \)"
+
+createDBSettings :: Text
+createDBSettings =
+  "CREATE TABLE IF NOT EXISTS db_settings (\
+  \  key TEXT PRIMARY KEY,\
+  \  value TEXT NOT NULL\
   \)"
 
 createFiles :: Text
@@ -108,8 +146,8 @@ createFileProperties =
   \  PRIMARY KEY (file_id, name, source, position)\
   \)"
 
-createEntries :: Text
-createEntries =
+createEntries :: Int -> Text
+createEntries dims =
   "CREATE TABLE IF NOT EXISTS entries (\
   \  id TEXT PRIMARY KEY,\
   \  file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,\
@@ -129,9 +167,13 @@ createEntries =
   \  mod_time TIMESTAMPTZ,\
   \  created_time TIMESTAMPTZ,\
   \  path ltree,\
-  \  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\
-  \  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\
-  \)"
+  \  embedding_hash TEXT,\
+  \  title_embedding vector("
+    <> T.pack (show dims)
+    <> "),\
+       \  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\
+       \  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\
+       \)"
 
 createEntryTags :: Text
 createEntryTags =
@@ -273,17 +315,19 @@ createEntryLinks =
   \  position INTEGER NOT NULL\
   \)"
 
-createEntryEmbeddings :: Text
-createEntryEmbeddings =
+createEntryEmbeddings :: Int -> Text
+createEntryEmbeddings dims =
   "CREATE TABLE IF NOT EXISTS entry_embeddings (\
   \  id BIGSERIAL PRIMARY KEY,\
   \  entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,\
   \  chunk_position INTEGER NOT NULL,\
   \  chunk_source TEXT NOT NULL,\
   \  chunk_text TEXT NOT NULL,\
-  \  embedding vector,\
-  \  UNIQUE (entry_id, chunk_position)\
-  \)"
+  \  embedding vector("
+    <> T.pack (show dims)
+    <> "),\
+       \  UNIQUE (entry_id, chunk_position)\
+       \)"
 
 ------------------------------------------------------------------------
 -- Index DDL

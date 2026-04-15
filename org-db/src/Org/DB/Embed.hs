@@ -10,8 +10,8 @@ module Org.DB.Embed (
   embedQuery,
 ) where
 
-import Control.Exception (IOException, SomeException, try)
-import Control.Monad (when)
+import Control.Exception (IOException, try)
+
 import Data.Aeson (FromJSON (..), ToJSON (..), eitherDecode, encode, object, withObject, (.:), (.=))
 import Data.Bifunctor (second)
 import Data.ByteString.Lazy qualified as LBS
@@ -32,7 +32,7 @@ data EmbedConfig = EmbedConfig
   , embedModel :: !Text
   , embedApiKey :: !Text
   , embedBatchSize :: !Int
-  , embedDimensions :: !(Maybe Int)
+  , embedDimensions :: !Int
   , embedChunkSize :: !Int
   }
 
@@ -188,7 +188,6 @@ embedEntries db cfg progress = do
       Right n -> do
         let processed' = processed + n
         progress processed' total
-        when (processed == 0) $ ensureEmbeddingIndex db
         go manager rest processed' errs total
       Left err ->
         go manager rest processed (err : errs) total
@@ -520,7 +519,7 @@ callEmbeddingAPI cfg manager texts = do
           EmbeddingRequest
             { _erqModel = embedModel cfg
             , _erqInput = texts
-            , _erqDimensions = embedDimensions cfg
+            , _erqDimensions = Just (embedDimensions cfg)
             }
   initReq <- parseRequest url
   let req =
@@ -586,7 +585,6 @@ embedTitles db cfg progress = do
       Right n -> do
         let processed' = processed + n
         progress processed' total
-        when (processed == 0) $ ensureTitleEmbeddingIndex db
         goTitles manager rest processed' errs total
       Left err ->
         goTitles manager rest processed (err : errs) total
@@ -649,26 +647,6 @@ storeTitleEmbedding db entryId vec = do
     "UPDATE entries SET title_embedding = ?::vector WHERE id = ?"
     [SqlText vecText, SqlText entryId]
 
-{- | Create HNSW index on title_embedding if it doesn't already exist.
-Called after the first successful batch of title embeddings, since the
-untyped vector column needs data before an HNSW index can be created.
--}
-ensureTitleEmbeddingIndex :: DBHandle -> IO ()
-ensureTitleEmbeddingIndex db = do
-  result <-
-    try
-      ( dbExecute_
-          db
-          "CREATE INDEX IF NOT EXISTS idx_entries_title_embedding \
-          \ON entries USING hnsw (title_embedding vector_cosine_ops) \
-          \WHERE title_embedding IS NOT NULL"
-          []
-      ) ::
-      IO (Either SomeException ())
-  case result of
-    Right () -> pure ()
-    Left _ -> pure ()
-
 ------------------------------------------------------------------------
 -- Utilities
 ------------------------------------------------------------------------
@@ -680,23 +658,3 @@ chunksOf n xs = let (h, t) = splitAt n xs in h : chunksOf n t
 unique :: (Eq a) => [a] -> [a]
 unique [] = []
 unique (x : xs) = x : unique (filter (/= x) xs)
-
-{- | Create HNSW index on the embedding column if it doesn't already exist.
-Best-effort: the untyped vector column only supports indexing after data
-is present, so we call this after the first successful batch.
--}
-ensureEmbeddingIndex :: DBHandle -> IO ()
-ensureEmbeddingIndex db = do
-  result <-
-    try
-      ( dbExecute_
-          db
-          "CREATE INDEX IF NOT EXISTS idx_entry_embeddings_vector \
-          \ON entry_embeddings USING hnsw (embedding vector_cosine_ops) \
-          \WHERE embedding IS NOT NULL"
-          []
-      ) ::
-      IO (Either SomeException ())
-  case result of
-    Right () -> pure ()
-    Left _ -> pure () -- Index creation may fail on untyped vector; that's OK
