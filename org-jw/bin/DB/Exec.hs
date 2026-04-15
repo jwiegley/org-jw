@@ -19,6 +19,7 @@ import Org.DB
 import Org.Data
 import Org.Dot
 import Org.Types
+import System.IO (hPutStrLn, stderr)
 
 execDb :: Config -> DbOptions -> Collection -> IO ()
 execDb _cfg opts coll = do
@@ -80,28 +81,12 @@ execDb _cfg opts coll = do
                 putStrLn $
                   "Embedded " ++ show done ++ " / " ++ show total ++ " chunks"
           result <- embedEntries db ecfg progress
-          case embedProcessed result of
-            0 -> pure ()
-            n -> do
-              putStrLn $
-                "Embedding done. Processed: "
-                  ++ show n
-                  ++ ", Failed: "
-                  ++ show (embedFailed result)
-              mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (embedErrors result)
+          printEmbedResult "Embedding" result
           let titleProgress done total =
                 putStrLn $
                   "Title embeddings: " ++ show done ++ " / " ++ show total
           titleResult <- embedTitles db ecfg titleProgress
-          case embedProcessed titleResult of
-            0 -> pure ()
-            n -> do
-              putStrLn $
-                "Title embedding done. Processed: "
-                  ++ show n
-                  ++ ", Failed: "
-                  ++ show (embedFailed titleResult)
-              mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (embedErrors titleResult)
+          printEmbedResult "Title embedding" titleResult
     DBQuery qopts -> withDB dbCfg $ \db -> do
       rows <- case qopts ^. queryOrgQl of
         Just ql -> do
@@ -159,22 +144,12 @@ execDb _cfg opts coll = do
             putStrLn $
               "Embedded " ++ show done ++ " / " ++ show total ++ " chunks"
       result <- embedEntries db ecfg progress
-      putStrLn $
-        "Done. Processed: "
-          ++ show (embedProcessed result)
-          ++ ", Failed: "
-          ++ show (embedFailed result)
-      mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (embedErrors result)
+      printEmbedResult "Embedding" result
       let titleProgress done total =
             putStrLn $
               "Title embeddings: " ++ show done ++ " / " ++ show total
       titleResult <- embedTitles db ecfg titleProgress
-      putStrLn $
-        "Title embedding done. Processed: "
-          ++ show (embedProcessed titleResult)
-          ++ ", Failed: "
-          ++ show (embedFailed titleResult)
-      mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (embedErrors titleResult)
+      printEmbedResult "Title embedding" titleResult
     DBDot dopts -> withDB dbCfg $ \db -> do
       rels <- dbQuery db "SELECT * FROM entry_relationships" [] :: IO [RelationshipRow]
       entryRows <- queryEntries db
@@ -513,3 +488,33 @@ requireEmbeddingDimensions db = do
   case dims of
     Just n -> pure n
     Nothing -> fail "Database not initialized. Run: org db init --dimensions <N>"
+
+-- | Print embedding results, always showing errors even when nothing was processed.
+printEmbedResult :: String -> EmbedResult -> IO ()
+printEmbedResult label result
+  | embedProcessed result == 0 && embedFailed result == 0 =
+      pure () -- Nothing to do
+  | embedProcessed result == 0 = do
+      hPutStrLn stderr $
+        "WARNING: "
+          ++ label
+          ++ " failed for all "
+          ++ show (embedFailed result)
+          ++ " batch(es). Is the embedding API reachable?"
+      printUniqueErrors (embedErrors result)
+  | otherwise = do
+      putStrLn $
+        label
+          ++ " done. Processed: "
+          ++ show (embedProcessed result)
+          ++ ", Failed: "
+          ++ show (embedFailed result)
+      printUniqueErrors (embedErrors result)
+
+-- | Print unique errors with counts, deduplicating repeated messages.
+printUniqueErrors :: [T.Text] -> IO ()
+printUniqueErrors errs =
+  mapM_ printOne (Map.toList (Map.fromListWith (+) [(e, 1 :: Int) | e <- errs]))
+ where
+  printOne (e, 1) = hPutStrLn stderr $ "  Error: " ++ T.unpack e
+  printOne (e, n) = hPutStrLn stderr $ "  Error (" ++ show n ++ "x): " ++ T.unpack e
