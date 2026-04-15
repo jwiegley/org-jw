@@ -46,7 +46,7 @@ import Numeric (showHex)
 import Org.DB.Types
 import Org.Data
 import Org.Types
-import System.Directory (getModificationTime)
+import System.Directory (canonicalizePath, getModificationTime)
 import System.FilePath (takeFileName)
 
 ------------------------------------------------------------------------
@@ -102,7 +102,8 @@ so that unchanged entries (and their embeddings) are preserved.
 storeOrgFile :: DBHandle -> OrgFile -> IO StoreResult
 storeOrgFile db org = do
   let path = org ^. orgFilePath
-      pathText = T.pack path
+  canonPath <- canonicalizePath path
+  let pathText = T.pack canonPath
   mtime <- getModificationTime path
   existing <- queryFileByPath db pathText
   case existing of
