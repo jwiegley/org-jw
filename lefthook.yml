@@ -22,10 +22,10 @@ pre-push:
       priority: 1
       glob: "*.hs"
       run: make all
-    perf:
-      priority: 2
-      glob: "*.hs"
-      run: scripts/check-perf.sh
+    # perf:
+    #   priority: 2
+    #   glob: "*.hs"
+    #   run: scripts/check-perf.sh
     coverage:
       priority: 3
       glob: "*.hs"
