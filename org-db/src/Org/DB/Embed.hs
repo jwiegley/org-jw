@@ -539,10 +539,12 @@ callEmbeddingAPI cfg manager texts = do
       Left err -> fail ("Failed to parse embedding response: " <> err)
     else
       fail
-        ( "Embedding API returned status "
+        ( "POST "
+            <> url
+            <> " returned status "
             <> show sc
-            <> ": "
-            <> take 500 (show (LBS.take 1000 (responseBody resp)))
+            <> ":\n"
+            <> take 1000 (T.unpack (TE.decodeUtf8With (\_ _ -> Just '?') (LBS.toStrict (LBS.take 1000 (responseBody resp)))))
         )
 
 ------------------------------------------------------------------------
