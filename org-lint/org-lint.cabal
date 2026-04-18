@@ -47,6 +47,7 @@ test-suite org-lint-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      LintCheckersTest
       LintRulesTest
       PureLintTest
       ShowLintOrgTest

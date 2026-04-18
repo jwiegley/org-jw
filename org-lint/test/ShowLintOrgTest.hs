@@ -75,6 +75,13 @@ allCodes =
 formatted :: LintMessageCode -> String
 formatted code = showLintOrg "/tmp/file.org" (LintMessage 1 LintWarn code)
 
+-- 'length' is used (instead of 'null' or similar) to force full evaluation
+-- of the formatted message. This matters for HPC coverage: we want to make
+-- sure each constructor arm of 'showLintOrg's inner case-on-code is evaluated.
+{-# ANN isFullyFormatted ("HLint: ignore Use null" :: String) #-}
+isFullyFormatted :: LintMessageCode -> Bool
+isFullyFormatted code = length (formatted code) > 0
+
 tests :: TestTree
 tests =
   testGroup
@@ -82,7 +89,7 @@ tests =
     [ testCase "all codes format to a nonempty string" $
         mapM_
           ( \code ->
-              assertBool (show code) (not (null (formatted code)))
+              assertBool (show code) (isFullyFormatted code)
           )
           allCodes
     , testCase "prefix includes file and line" $
@@ -115,4 +122,273 @@ tests =
             `isInfixOf` showLintOrg
               "/tmp/file.org"
               (LintMessage 1 LintDebug FileFailsToRoundTrip)
+    , testGroup
+        "each code formats to a distinct, descriptive message"
+        [ testCase "FileSlugMismatch mentions git mv" $
+            assertBool
+              "slug"
+              ("git mv" `isInfixOf` formatted (FileSlugMismatch "new-slug"))
+        , testCase "TodoMissingProperty mentions property name" $
+            assertBool
+              "prop"
+              ( "\"PROP\""
+                  `isInfixOf` formatted (TodoMissingProperty "PROP")
+              )
+        , testCase "FileMissingProperty mentions property name" $
+            assertBool
+              "fprop"
+              ( "\"FPROP\""
+                  `isInfixOf` formatted (FileMissingProperty "FPROP")
+              )
+        , testCase "TaskMissingAssignment mentions task" $
+            assertBool
+              "task"
+              ("Task" `isInfixOf` formatted TaskMissingAssignment)
+        , testCase "TodoLinkDoesNotMatchUrl mentions URL" $
+            assertBool
+              "link"
+              ("URL" `isInfixOf` formatted TodoLinkDoesNotMatchUrl)
+        , testCase "TodoFileDoesNotMatchAttachment mentions FILE" $
+            assertBool
+              "file"
+              ( ":FILE:"
+                  `isInfixOf` formatted TodoFileDoesNotMatchAttachment
+              )
+        , testCase "ArchiveTagFileDoesNotExist mentions path" $
+            assertBool
+              "arch"
+              ( "xyz.org"
+                  `isInfixOf` formatted (ArchiveTagFileDoesNotExist "xyz.org")
+              )
+        , testCase "TodoLinkKeywordImpliesLinkTag mentions LINK" $
+            assertBool
+              "link-kw"
+              ("LINK" `isInfixOf` formatted TodoLinkKeywordImpliesLinkTag)
+        , testCase "MisplacedProperty mentions PROPERTIES" $
+            assertBool
+              "mp"
+              (":PROPERTIES:" `isInfixOf` formatted MisplacedProperty)
+        , testCase "MisplacedTimestamp mentions SCHEDULED" $
+            assertBool
+              "mt"
+              ("SCHEDULED" `isInfixOf` formatted MisplacedTimestamp)
+        , testCase "MisplacedLogEntry mentions log" $
+            assertBool
+              "mle"
+              ("log" `isInfixOf` formatted MisplacedLogEntry)
+        , testCase "MisplacedDrawerEnd mentions drawer" $
+            assertBool
+              "mde"
+              ("drawer" `isInfixOf` formatted MisplacedDrawerEnd)
+        , testCase "WhitespaceAtStartOfLogEntry mentions Log entry" $
+            assertBool
+              "wsle"
+              ("Log entry" `isInfixOf` formatted WhitespaceAtStartOfLogEntry)
+        , testCase "FileTitleMissing mentions Title" $
+            assertBool
+              "title"
+              ("Title" `isInfixOf` formatted FileTitleMissing)
+        , testCase "TitleWithExcessiveWhitespace mentions whitespace" $
+            assertBool
+              "twew"
+              ( "whitespace"
+                  `isInfixOf` formatted TitleWithExcessiveWhitespace
+              )
+        , testCase "OverlyLongHeadline mentions long" $
+            assertBool
+              "olh"
+              ("long" `isInfixOf` formatted OverlyLongHeadline)
+        , testCase "DuplicateFileProperty mentions name" $
+            assertBool
+              "dfp"
+              ( "\"NAME\""
+                  `isInfixOf` formatted (DuplicateFileProperty "NAME")
+              )
+        , testCase "DuplicateProperty mentions name" $
+            assertBool
+              "dp"
+              ( "\"NAME\""
+                  `isInfixOf` formatted (DuplicateProperty "NAME")
+              )
+        , testCase "DuplicateTag mentions tag" $
+            assertBool
+              "dt"
+              ( "\"TAG\""
+                  `isInfixOf` formatted (DuplicateTag "TAG")
+              )
+        , testCase "DuplicatedIdentifier mentions id" $
+            assertBool
+              "di"
+              ( "id-001"
+                  `isInfixOf` formatted (DuplicatedIdentifier "id-001")
+              )
+        , testCase "InvalidStateChangeTransitionNotAllowed mentions arrow" $
+            assertBool
+              "isctna"
+              ( "->"
+                  `isInfixOf` formatted
+                    ( InvalidStateChangeTransitionNotAllowed
+                        "X"
+                        (Just "Y")
+                        ["Z"]
+                    )
+              )
+        , testCase "InvalidStateChangeInvalidTransition FirstTransition says initial" $
+            assertBool
+              "first"
+              ( "initial"
+                  `isInfixOf` formatted
+                    (InvalidStateChangeInvalidTransition FirstTransition "A" "B")
+              )
+        , testCase "InvalidStateChangeInvalidTransition IntermediateTransition says intermediate" $
+            assertBool
+              "inter"
+              ( "intermediate"
+                  `isInfixOf` formatted
+                    (InvalidStateChangeInvalidTransition IntermediateTransition "A" "B")
+              )
+        , testCase "InvalidStateChangeInvalidTransition LastTransition says final" $
+            assertBool
+              "last"
+              ( "final"
+                  `isInfixOf` formatted
+                    (InvalidStateChangeInvalidTransition LastTransition "A" "B")
+              )
+        , testCase "InvalidStateChangeWrongTimeOrder mentions log" $
+            assertBool
+              "iscwto"
+              ( "log"
+                  `isInfixOf` formatted
+                    (InvalidStateChangeWrongTimeOrder sampleTime sampleTime)
+              )
+        , testCase "InvalidStateChangeIdempotent mentions Idempotent" $
+            assertBool
+              "isci"
+              ( "Idempotent"
+                  `isInfixOf` formatted (InvalidStateChangeIdempotent "K")
+              )
+        , testCase "MultipleLogbooks mentions logbooks" $
+            assertBool
+              "mlb"
+              ("logbooks" `isInfixOf` formatted MultipleLogbooks)
+        , testCase "MixedLogbooks mentions logbooks" $
+            assertBool
+              "mixlb"
+              ("logbooks" `isInfixOf` formatted MixedLogbooks)
+        , testCase "TimestampsOnNonTodo mentions non-todo" $
+            assertBool
+              "tont"
+              ("non-todo" `isInfixOf` formatted TimestampsOnNonTodo)
+        , testCase "InconsistentWhitespace mentions description" $
+            assertBool
+              "iws"
+              ( "describe me"
+                  `isInfixOf` formatted (InconsistentWhitespace "describe me")
+              )
+        , testCase "InconsistentFilePreambleWhitespace mentions preamble" $
+            assertBool
+              "ifpw"
+              ( "preamble"
+                  `isInfixOf` formatted InconsistentFilePreambleWhitespace
+              )
+        , testCase "EmptyBodyWhitespace mentions body" $
+            assertBool
+              "ebw"
+              ("body" `isInfixOf` formatted EmptyBodyWhitespace)
+        , testCase "UnnecessaryWhitespace mentions Unnecessary" $
+            assertBool
+              "uw"
+              ("Unnecessary" `isInfixOf` formatted UnnecessaryWhitespace)
+        , testCase "MultipleBlankLines mentions blank lines" $
+            assertBool
+              "mbl"
+              ("blank lines" `isInfixOf` formatted MultipleBlankLines)
+        , testCase "CategoryTooLong mentions category name" $
+            assertBool
+              "ctl"
+              ( "BigCategory"
+                  `isInfixOf` formatted (CategoryTooLong "BigCategory")
+              )
+        , testCase "FileCreatedTimeMismatch mentions does not match" $
+            assertBool
+              "fctm"
+              ( "does not match"
+                  `isInfixOf` formatted
+                    (FileCreatedTimeMismatch sampleTime sampleTime)
+              )
+        , testCase "TitlePropertyNotLast mentions last" $
+            assertBool
+              "tpnl"
+              ("last" `isInfixOf` formatted TitlePropertyNotLast)
+        , testCase "FileTagsTodoMismatch mentions Filetags" $
+            assertBool
+              "fttm"
+              ("Filetags" `isInfixOf` formatted FileTagsTodoMismatch)
+        , testCase "TagInFileUnknown mentions tag" $
+            assertBool
+              "tifu"
+              ( "weirdtag"
+                  `isInfixOf` formatted (TagInFileUnknown "weirdtag")
+              )
+        , testCase "VerbInFileUnknown mentions verb" $
+            assertBool
+              "vifu"
+              ( "weirdverb"
+                  `isInfixOf` formatted (VerbInFileUnknown "weirdverb")
+              )
+        , testCase "InvalidLocation mentions location" $
+            assertBool
+              "il"
+              ( "somewhere"
+                  `isInfixOf` formatted (InvalidLocation "somewhere")
+              )
+        , testCase "InvalidDrawerCase PlainDrawer mentions drawer" $
+            assertBool
+              "idcp"
+              ( "PlainDrawer"
+                  `isInfixOf` formatted (InvalidDrawerCase (PlainDrawer "Foo"))
+              )
+        , testCase "InvalidDrawerCase BeginDrawer mentions drawer" $
+            assertBool
+              "idcb"
+              ( "BeginDrawer"
+                  `isInfixOf` formatted (InvalidDrawerCase (BeginDrawer "Foo"))
+              )
+        , testCase "TodoMissingReviewProperties mentions REVIEW" $
+            assertBool
+              "tmrp"
+              ( "REVIEW"
+                  `isInfixOf` formatted TodoMissingReviewProperties
+              )
+        , testCase "NonTodoWithReviewProperties mentions REVIEW" $
+            assertBool
+              "ntrp"
+              ( "REVIEW"
+                  `isInfixOf` formatted NonTodoWithReviewProperties
+              )
+        , testCase "BrokenLink mentions link" $
+            assertBool
+              "bl"
+              ( "some-link"
+                  `isInfixOf` formatted (BrokenLink "some-link")
+              )
+        , testCase "HashesDoNotMatch mentions both hashes" $
+            assertBool
+              "hdnm"
+              ( "aa"
+                  `isInfixOf` formatted (HashesDoNotMatch "aa" "bb")
+              )
+        , testCase "FileFailsToRoundTrip mentions round trip" $
+            assertBool
+              "fftrt"
+              ( "round trip"
+                  `isInfixOf` formatted FileFailsToRoundTrip
+              )
+        , testCase "AudioFileNotFound mentions AUDIO" $
+            assertBool
+              "afnf"
+              ( "AUDIO"
+                  `isInfixOf` formatted (AudioFileNotFound "/tmp/a.ogg")
+              )
+        ]
     ]

@@ -1,5 +1,6 @@
 module Main where
 
+import qualified LintCheckersTest
 import qualified LintRulesTest
 import qualified PureLintTest
 import qualified ShowLintOrgTest
@@ -13,4 +14,5 @@ main =
       [ PureLintTest.tests
       , ShowLintOrgTest.tests
       , LintRulesTest.tests
+      , LintCheckersTest.tests
       ]
