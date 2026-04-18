@@ -32,7 +32,7 @@ echo "Running unit test suites with coverage..."
 # Test suites emit their own .tix files which we merge with the
 # round-trip .tix below (via hpc sum --union). Failures here are
 # non-fatal because the round-trip data is still useful on its own.
-cabal test org-data-test org-lint-test org-types-test org-print-test \
+cabal test org-data-test org-lint-test org-types-test org-print-test org-parse-test \
     --enable-coverage \
     --builddir="$COVERAGE_BUILDDIR" \
     --test-show-details=failures 2>&1 | tail -3 || true

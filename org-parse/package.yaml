@@ -24,3 +24,17 @@ library:
     - Org.Parse
   dependencies:
     - org-types
+
+tests:
+  org-parse-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - org-parse
+      - org-types
+      - tasty
+      - tasty-hunit
