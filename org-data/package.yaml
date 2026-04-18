@@ -29,3 +29,17 @@ library:
     - org-types
     - org-parse
     - org-print
+
+tests:
+  org-data-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - org-data
+      - org-types
+      - tasty
+      - tasty-hunit
