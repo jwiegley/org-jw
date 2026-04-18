@@ -39,7 +39,10 @@ tests:
       - -rtsopts
       - -with-rtsopts=-N
     dependencies:
+      - bytestring
       - org-data
+      - org-parse
+      - org-print
       - org-types
       - tasty
       - tasty-hunit
