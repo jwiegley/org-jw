@@ -5,8 +5,11 @@ import qualified AnyPropertyTest
 import qualified BodySpaceTest
 import qualified CollectionMapTest
 import qualified DataHelpersTest
+import qualified FieldLensesTest
 import qualified FileNameTest
 import qualified FoldEntriesTest
+import qualified MoreHelpersTest
+import qualified PlatedTest
 import qualified PrismTest
 import qualified PropertyLookupTest
 import qualified RoundTripTest
@@ -35,4 +38,7 @@ main =
       , PrismTest.tests
       , StampTimeTest.tests
       , StringTimeTest.tests
+      , FieldLensesTest.tests
+      , PlatedTest.tests
+      , MoreHelpersTest.tests
       ]

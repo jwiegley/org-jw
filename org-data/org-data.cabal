@@ -45,8 +45,11 @@ test-suite org-data-test
       BodySpaceTest
       CollectionMapTest
       DataHelpersTest
+      FieldLensesTest
       FileNameTest
       FoldEntriesTest
+      MoreHelpersTest
+      PlatedTest
       PrismTest
       PropertyLookupTest
       RoundTripTest
