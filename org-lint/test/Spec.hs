@@ -1,5 +1,6 @@
 module Main where
 
+import qualified LintRulesTest
 import qualified PureLintTest
 import qualified ShowLintOrgTest
 import Test.Tasty
@@ -11,4 +12,5 @@ main =
       "org-lint"
       [ PureLintTest.tests
       , ShowLintOrgTest.tests
+      , LintRulesTest.tests
       ]
