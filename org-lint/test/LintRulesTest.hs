@@ -5,6 +5,8 @@ module LintRulesTest (tests) where
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import Data.Map (Map)
+import qualified Data.Map as M
 import Org.Lint
 import Org.Parse (parseOrgFile)
 import Org.Types
@@ -38,11 +40,32 @@ fromLines = BS.intercalate "\n" . (++ [""])
 
 -- Parse the given bytes and run lint, returning all messages produced.
 runLint :: Config -> FilePath -> ByteString -> [LintMessage]
-runLint cfg path input =
+runLint cfg = runLintAt cfg LintInfo
+
+-- Like 'runLint' but accepts an explicit lint level. Needed for rules that
+-- only fire when the level is 'LintAll' (e.g. 'BrokenLink').
+runLintAt :: Config -> LintMessageKind -> FilePath -> ByteString -> [LintMessage]
+runLintAt cfg level path input =
   case parseOrgFile cfg path input of
     Left (_, msg) ->
       error $ "test fixture must parse: " ++ msg ++ "\ninput: " ++ show input
-    Right org -> lintOrgFile cfg LintInfo org
+    Right org -> lintOrgFile cfg level org
+
+-- Parse multiple fixtures and run cross-file lint, returning the per-file
+-- message map. Used to trigger rules that only fire across files
+-- (e.g. DuplicatedIdentifier).
+runLintFiles :: Config -> [(FilePath, ByteString)] -> Map FilePath [LintMessage]
+runLintFiles cfg inputs =
+  let parsed =
+        map
+          ( \(path, bs) -> case parseOrgFile cfg path bs of
+              Left (_, msg) ->
+                error $
+                  "test fixture must parse: " ++ msg ++ "\ninput: " ++ show bs
+              Right org -> org
+          )
+          inputs
+   in lintOrgFiles cfg LintInfo parsed
 
 -- Predicate: does this LintMessageCode match (ignoring its arguments)?
 hasCode ::
@@ -274,6 +297,95 @@ tests =
                       , ":CREATED:  [2024-10-07 Mon 20:15]"
                       , ":SAME:     a"
                       , ":SAME:     b"
+                      , ":END:"
+                      , "#+title: t"
+                      ]
+                  )
+              )
+        , testCase "FileSlugMismatch fires when filename slug differs from title" $
+            shouldFire
+              "FileSlugMismatch"
+              ( \case
+                  FileSlugMismatch _ -> True
+                  _ -> False
+              )
+              ( runLint
+                  lintConfig
+                  "20240101-bad-slug.org"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-031"
+                      , ":CREATED:  [2024-01-01 Mon 09:00]"
+                      , ":END:"
+                      , "#+title: Totally Different Name"
+                      ]
+                  )
+              )
+        , testCase "FileCreatedTimeMismatch fires when filename date differs from CREATED" $
+            shouldFire
+              "FileCreatedTimeMismatch"
+              ( \case
+                  FileCreatedTimeMismatch _ _ -> True
+                  _ -> False
+              )
+              ( runLint
+                  lintConfig
+                  "20240601"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-032"
+                      , ":CREATED:  [2023-01-15 Sun]"
+                      , ":END:"
+                      , "#+title: 20240601"
+                      ]
+                  )
+              )
+        , -- Note: the ruleCheckAllLinks rule is gated so that it effectively
+          -- only fires at the LintAll level, so we use runLintAt here.
+          testCase "BrokenLink fires for missing file link in preamble" $
+            shouldFire
+              "BrokenLink"
+              ( \case
+                  BrokenLink _ -> True
+                  _ -> False
+              )
+              ( runLintAt
+                  ( lintConfig
+                      { _checkFiles = True
+                      , _homeDirectory = Just "/tmp"
+                      }
+                  )
+                  LintAll
+                  "/tmp/broken-link.org"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-033"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "#+title: t"
+                      , "See [[file:/tmp/definitely-nonexistent-dir/nope.org][here]] for details."
+                      ]
+                  )
+              )
+        , testCase "AudioFileNotFound fires for missing :AUDIO: file" $
+            shouldFire
+              "AudioFileNotFound"
+              ( \case
+                  AudioFileNotFound _ -> True
+                  _ -> False
+              )
+              ( runLint
+                  ( lintConfig
+                      { _checkFiles = True
+                      , _homeDirectory = Just "/tmp"
+                      }
+                  )
+                  "/tmp/audio.org"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-034"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":AUDIO:    /tmp/definitely-nonexistent-audio.ogg"
                       , ":END:"
                       , "#+title: t"
                       ]
@@ -742,5 +854,266 @@ tests =
                       ]
                   )
               )
+        , testCase "MultipleLogbooks fires for two LOGBOOK drawers" $
+            shouldFire
+              "MultipleLogbooks"
+              (== MultipleLogbooks)
+              ( runLint
+                  lintConfig
+                  "mlb.org"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-031"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "#+title: t"
+                      , "* TODO With two logbooks"
+                      , ":PROPERTIES:"
+                      , ":ID:       ENTRY-019"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , ":LOGBOOK:"
+                      , "CLOCK: [2024-10-08 Tue 09:00]--[2024-10-08 Tue 10:00] =>  1:00"
+                      , ":END:"
+                      , ":LOGBOOK:"
+                      , "CLOCK: [2024-10-09 Wed 09:00]--[2024-10-09 Wed 10:00] =>  1:00"
+                      , ":END:"
+                      ]
+                  )
+              )
+        , testCase "MixedLogbooks fires when log entries live inside and outside LOGBOOK" $
+            shouldFire
+              "MixedLogbooks"
+              (== MixedLogbooks)
+              ( runLint
+                  lintConfig
+                  "mixlb.org"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-032"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "#+title: t"
+                      , "* TODO Mixed log layout"
+                      , ":PROPERTIES:"
+                      , ":ID:       ENTRY-020"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "- Note taken on [2024-10-08 Tue 10:00]"
+                      , ":LOGBOOK:"
+                      , "- Note taken on [2024-10-09 Wed 10:00]"
+                      , ":END:"
+                      ]
+                  )
+              )
+        , -- Note: 'MultipleBlankLines' is not currently reachable by the parser
+          -- output. 'parseWhitespaceBlock' stores only the leading spaces from
+          -- a blank line and never the newline itself, so the text of any
+          -- 'Whitespace' block never has more than zero newlines, and the
+          -- rule's 'lines' check never exceeds one element. If the parser ever
+          -- changes to embed newlines in Whitespace, add a fixture here that
+          -- produces a single Whitespace block with multi-line text. The rule
+          -- is exercised via the 'ShowLintOrgTest' formatting tests.
+          testCase "UnnecessaryWhitespace fires for leading space on body line" $
+            shouldFire
+              "UnnecessaryWhitespace"
+              (== UnnecessaryWhitespace)
+              ( runLint
+                  lintConfig
+                  "uw.org"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-034"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "#+title: t"
+                      , "* TODO Leading space"
+                      , ":PROPERTIES:"
+                      , ":ID:       ENTRY-022"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , " leading space on first line"
+                      ]
+                  )
+              )
+        , testCase "InconsistentWhitespace fires when body leading/trailing differ" $
+            shouldFire
+              "InconsistentWhitespace"
+              ( \case
+                  InconsistentWhitespace _ -> True
+                  _ -> False
+              )
+              ( runLint
+                  lintConfig
+                  "iws.org"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-035"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "#+title: t"
+                      , "* TODO First"
+                      , ":PROPERTIES:"
+                      , ":ID:       ENTRY-023"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , ""
+                      , "Some text"
+                      , "* TODO Second"
+                      , ":PROPERTIES:"
+                      , ":ID:       ENTRY-024"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      ]
+                  )
+              )
+        , testCase "InvalidStateChangeWrongTimeOrder fires for out-of-order log times" $
+            shouldFire
+              "InvalidStateChangeWrongTimeOrder"
+              ( \case
+                  InvalidStateChangeWrongTimeOrder _ _ -> True
+                  _ -> False
+              )
+              ( runLint
+                  lintConfig
+                  "iscwto.org"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-036"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "#+title: t"
+                      , "* WAIT Out of order"
+                      , ":PROPERTIES:"
+                      , ":ID:       ENTRY-025"
+                      , ":CREATED:  [2024-10-01 Tue 10:00]"
+                      , ":END:"
+                      , "- State \"DONE\"       from \"TODO\"       [2024-10-01 Tue 10:00]"
+                      , "- State \"WAIT\"       from \"DONE\"       [2024-10-05 Sat 10:00]"
+                      ]
+                  )
+              )
+        , testCase "InvalidStateChangeInvalidTransition LastTransition fires for mismatched final state" $
+            shouldFire
+              "InvalidStateChangeInvalidTransition LastTransition"
+              ( \case
+                  InvalidStateChangeInvalidTransition LastTransition _ _ -> True
+                  _ -> False
+              )
+              ( runLint
+                  lintConfig
+                  "isclt.org"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-037"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "#+title: t"
+                      , "* TODO Last mismatch"
+                      , ":PROPERTIES:"
+                      , ":ID:       ENTRY-026"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "- State \"DONE\"       from \"TODO\"       [2024-10-08 Tue 09:00]"
+                      ]
+                  )
+              )
+        , testCase "InvalidStateChangeTransitionNotAllowed fires for disallowed target" $
+            shouldFire
+              "InvalidStateChangeTransitionNotAllowed"
+              ( \case
+                  InvalidStateChangeTransitionNotAllowed{} -> True
+                  _ -> False
+              )
+              ( runLint
+                  lintConfig
+                  "isctna.org"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-038"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "#+title: t"
+                      , "* WAIT Bad transition"
+                      , ":PROPERTIES:"
+                      , ":ID:       ENTRY-027"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "- State \"WAIT\"       from \"TASK\"       [2024-10-08 Tue 09:00]"
+                      ]
+                  )
+              )
+        , testCase "WhitespaceAtStartOfLogEntry fires for blank-line start of note body" $
+            shouldFire
+              "WhitespaceAtStartOfLogEntry"
+              (== WhitespaceAtStartOfLogEntry)
+              ( runLint
+                  lintConfig
+                  "wsle.org"
+                  ( fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       FILE-ID-039"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "#+title: t"
+                      , "* TODO Log note with blank start"
+                      , ":PROPERTIES:"
+                      , ":ID:       ENTRY-028"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , ":LOGBOOK:"
+                      , "- Note taken on [2024-10-08 Tue 09:00] \\\\"
+                      , ""
+                      , "  body content"
+                      , ":END:"
+                      ]
+                  )
+              )
+        ]
+    , testGroup
+        "cross-file rules"
+        [ testCase "DuplicatedIdentifier fires when two files share an ID" $
+            let msgs =
+                  runLintFiles
+                    lintConfig
+                    [
+                      ( "dup-a.org"
+                      , fromLines
+                          [ ":PROPERTIES:"
+                          , ":ID:       FILE-ID-040"
+                          , ":CREATED:  [2024-10-07 Mon 20:15]"
+                          , ":END:"
+                          , "#+title: a"
+                          , "* TODO Shared"
+                          , ":PROPERTIES:"
+                          , ":ID:       SHARED-ID-001"
+                          , ":CREATED:  [2024-10-07 Mon 20:15]"
+                          , ":END:"
+                          ]
+                      )
+                    ,
+                      ( "dup-b.org"
+                      , fromLines
+                          [ ":PROPERTIES:"
+                          , ":ID:       FILE-ID-041"
+                          , ":CREATED:  [2024-10-07 Mon 20:15]"
+                          , ":END:"
+                          , "#+title: b"
+                          , "* TODO Shared"
+                          , ":PROPERTIES:"
+                          , ":ID:       SHARED-ID-001"
+                          , ":CREATED:  [2024-10-07 Mon 20:15]"
+                          , ":END:"
+                          ]
+                      )
+                    ]
+                allMsgs = concat (M.elems msgs)
+             in shouldFire
+                  "DuplicatedIdentifier"
+                  ( \case
+                      DuplicatedIdentifier _ -> True
+                      _ -> False
+                  )
+                  allMsgs
         ]
     ]

@@ -57,6 +57,8 @@ echo "Running round-trip with coverage..."
 # The executable has -with-rtsopts=-N (threaded, all capabilities) but
 # GHC's HPC runtime fails to write .tix with multiple capabilities.
 # Override with -N1 so the atexit handler runs on the main OS thread.
+# Lint exits nonzero when it finds any messages; we only care that the
+# HPC .tix file was written, so swallow the status here.
 eval "$FIND_FILES" \
     | "$ORG_EXE" \
 	--config <(cat "$ORG_YAML" |					\
@@ -65,7 +67,8 @@ eval "$FIND_FILES" \
         lint \
         --round-trip \
         -F - \
-        +RTS -N1 2>/dev/null
+        +RTS -N1 2>/dev/null \
+    || true
 
 # Locate the .tix file: prefer the explicit HPCTIXFILE path, fall back
 # to CWD (where GHC writes it when HPCTIXFILE is unset).
