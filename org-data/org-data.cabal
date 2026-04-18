@@ -40,12 +40,19 @@ test-suite org-data-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      AllOrgFilesTest
+      AnyPropertyTest
+      BodySpaceTest
       CollectionMapTest
       DataHelpersTest
       FileNameTest
+      FoldEntriesTest
+      PrismTest
       PropertyLookupTest
       RoundTripTest
       SluggifyTest
+      StampTimeTest
+      StringTimeTest
       TagListTest
       Paths_org_data
   hs-source-dirs:
