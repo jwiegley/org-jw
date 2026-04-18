@@ -519,7 +519,7 @@ callEmbeddingAPI cfg manager texts = do
           EmbeddingRequest
             { _erqModel = embedModel cfg
             , _erqInput = texts
-            , _erqDimensions = Just (embedDimensions cfg)
+            , _erqDimensions = Nothing
             }
   initReq <- parseRequest url
   let req =
