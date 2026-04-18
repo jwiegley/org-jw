@@ -36,3 +36,18 @@ library:
     - org-parse
     - org-print
     - org-data
+
+tests:
+  org-lint-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - org-lint
+      - org-data
+      - org-types
+      - tasty
+      - tasty-hunit
