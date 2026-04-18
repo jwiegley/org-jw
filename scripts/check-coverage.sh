@@ -28,6 +28,15 @@ fi
 echo "Building with HPC coverage instrumentation..."
 cabal build all --enable-coverage --builddir="$COVERAGE_BUILDDIR" 2>&1 | tail -1
 
+echo "Running unit test suites with coverage..."
+# Test suites emit their own .tix files which we merge with the
+# round-trip .tix below (via hpc sum --union). Failures here are
+# non-fatal because the round-trip data is still useful on its own.
+cabal test org-data-test org-lint-test \
+    --enable-coverage \
+    --builddir="$COVERAGE_BUILDDIR" \
+    --test-show-details=failures 2>&1 | tail -3 || true
+
 # Locate the built executable directly.  cabal run wraps the process
 # in a way that can interfere with HPC's atexit .tix dump.
 ORG_EXE=$(cabal list-bin org-jw:exe:org --builddir="$COVERAGE_BUILDDIR" 2>/dev/null)
@@ -101,16 +110,27 @@ fi
 #    exercised by the lint --round-trip command
 #  - org-jw executable modules (Main, Options, etc.): CLI glue
 #
-# hpc --exclude accepts [PACKAGE:][MODULE] patterns.  We exclude by
-# module prefix, which covers all submodules (e.g. Org.DB matches
-# Org.DB.Schema, Org.DB.Store, etc.).
+# hpc --exclude requires exact module names (prefix matching does NOT
+# work), so every submodule must be listed explicitly.
 EXCLUDES=""
-EXCLUDES="$EXCLUDES --exclude=Org.DB"
+# org-db modules
+EXCLUDES="$EXCLUDES --exclude=Org.DB.Connection"
+EXCLUDES="$EXCLUDES --exclude=Org.DB.Deserialize"
+EXCLUDES="$EXCLUDES --exclude=Org.DB.Embed"
+EXCLUDES="$EXCLUDES --exclude=Org.DB.Migrate"
+EXCLUDES="$EXCLUDES --exclude=Org.DB.Query"
+EXCLUDES="$EXCLUDES --exclude=Org.DB.Schema"
+EXCLUDES="$EXCLUDES --exclude=Org.DB.Store"
+EXCLUDES="$EXCLUDES --exclude=Org.DB.Sync"
+EXCLUDES="$EXCLUDES --exclude=Org.DB.Types"
+# single-module feature packages
 EXCLUDES="$EXCLUDES --exclude=Org.Dot"
 EXCLUDES="$EXCLUDES --exclude=Org.Site"
 EXCLUDES="$EXCLUDES --exclude=Org.JSON"
 EXCLUDES="$EXCLUDES --exclude=Org.CBOR"
-EXCLUDES="$EXCLUDES --exclude=Org.FileTags"
+# org-filetags modules
+EXCLUDES="$EXCLUDES --exclude=Org.FileTags.Filter"
+EXCLUDES="$EXCLUDES --exclude=Org.FileTags.TagTrees"
 # org-jw executable modules (no Org. prefix)
 EXCLUDES="$EXCLUDES --exclude=Main"
 EXCLUDES="$EXCLUDES --exclude=Options"
@@ -144,6 +164,18 @@ EXCLUDES="$EXCLUDES --exclude=Paths_org_data"
 EXCLUDES="$EXCLUDES --exclude=Paths_org_lint"
 EXCLUDES="$EXCLUDES --exclude=Paths_flatparse_util"
 
+# Merge any additional .tix files produced by the test suites into the
+# round-trip .tix so the report reflects all covered code paths.
+MERGED_TIX="$COVERAGE_BUILDDIR/merged.tix"
+EXTRA_TIX=$(find "$COVERAGE_BUILDDIR" -path "*/hpc/vanilla/tix/*" -name "*.tix" -type f 2>/dev/null | grep -v "/org.tix$" || true)
+if [ -n "$EXTRA_TIX" ]; then
+    # shellcheck disable=SC2086
+    if hpc sum --union --output="$MERGED_TIX" "$TIX_FILE" $EXTRA_TIX 2>/dev/null; then
+        TIX_FILE="$MERGED_TIX"
+        echo "Merged test-suite .tix files into $MERGED_TIX"
+    fi
+fi
+
 # Generate report and extract expression coverage percentage
 # shellcheck disable=SC2086
 REPORT=$(hpc report "$TIX_FILE" $HPCDIRS $EXCLUDES 2>&1 || true)
@@ -157,9 +189,14 @@ fi
 
 echo "Current expression coverage: ${CURRENT}%"
 
-# Generate HTML report
+# Generate HTML report. Source paths in .mix files are relative to each
+# package's root, so list all covered package directories via --srcdir.
+SRCDIRS=""
+for pkg in flatparse-util org-types org-parse org-print org-data org-lint; do
+    SRCDIRS="$SRCDIRS --srcdir=$pkg"
+done
 # shellcheck disable=SC2086
-hpc markup "$TIX_FILE" $HPCDIRS $EXCLUDES --destdir=coverage-report 2>/dev/null || true
+hpc markup "$TIX_FILE" $HPCDIRS $EXCLUDES $SRCDIRS --destdir=coverage-report 2>/dev/null || true
 echo "HTML report: coverage-report/hpc_index.html"
 
 # Compare against baseline
