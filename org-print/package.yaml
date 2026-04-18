@@ -22,3 +22,18 @@ library:
     - Org.Print
   dependencies:
     - org-types
+
+tests:
+  org-print-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - mtl
+      - org-print
+      - org-types
+      - tasty
+      - tasty-hunit
