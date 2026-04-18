@@ -2,6 +2,7 @@ module Main where
 
 import qualified BodyTest
 import qualified ConfigTest
+import qualified InstancesTest
 import qualified StampTest
 import Test.Tasty
 import qualified TimeConversionTest
@@ -15,4 +16,5 @@ main =
       , BodyTest.tests
       , StampTest.tests
       , ConfigTest.tests
+      , InstancesTest.tests
       ]
