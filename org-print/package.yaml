@@ -32,6 +32,7 @@ tests:
       - -rtsopts
       - -with-rtsopts=-N
     dependencies:
+      - deepseq
       - mtl
       - org-print
       - org-types

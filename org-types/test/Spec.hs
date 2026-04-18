@@ -6,6 +6,7 @@ import qualified InstancesTest
 import qualified StampTest
 import Test.Tasty
 import qualified TimeConversionTest
+import qualified UncoveredInstancesTest
 
 main :: IO ()
 main =
@@ -17,4 +18,5 @@ main =
       , StampTest.tests
       , ConfigTest.tests
       , InstancesTest.tests
+      , UncoveredInstancesTest.tests
       ]

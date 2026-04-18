@@ -33,8 +33,13 @@ test-suite org-print-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      ShowDurationTest
+      ShowLogEntryExtraTest
       ShowLogEntryTest
+      ShowOrgFileTest
+      ShowTimeExtraTest
       ShowTimeTest
+      SummarizeEntryExtraTest
       SummarizeEntryTest
       Paths_org_print
   hs-source-dirs:
@@ -42,6 +47,7 @@ test-suite org-print-test
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.5
+    , deepseq
     , mtl
     , org-print
     , org-types

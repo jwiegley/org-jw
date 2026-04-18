@@ -9,6 +9,7 @@ import qualified FieldLensesTest
 import qualified FileNameTest
 import qualified FoldEntriesTest
 import qualified MoreHelpersTest
+import qualified OrgDataExtraTest
 import qualified PlatedTest
 import qualified PrismTest
 import qualified PropertyLookupTest
@@ -41,4 +42,5 @@ main =
       , FieldLensesTest.tests
       , PlatedTest.tests
       , MoreHelpersTest.tests
+      , OrgDataExtraTest.tests
       ]

@@ -37,6 +37,7 @@ test-suite org-types-test
       InstancesTest
       StampTest
       TimeConversionTest
+      UncoveredInstancesTest
       Paths_org_types
   hs-source-dirs:
       test
