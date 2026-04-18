@@ -120,16 +120,16 @@ tests =
     , testGroup
         "inheritProperties"
         [ testCase "adds inherited property when entry has none" $
-            let inherited = [Property loc0 False "CATEGORY" "parent"]
-                e' = inheritProperties inherited (entryWith [])
+            let inh = [Property loc0 False "CATEGORY" "parent"]
+                e' = inheritProperties inh (entryWith [])
              in e' ^? property "CATEGORY" @?= Just "parent"
         , testCase "does not overwrite existing property" $
-            let inherited = [Property loc0 False "CATEGORY" "parent"]
-                e' = inheritProperties inherited (entryWith props)
+            let inh = [Property loc0 False "CATEGORY" "parent"]
+                e' = inheritProperties inh (entryWith props)
              in e' ^? property "CATEGORY" @?= Just "work"
         , testCase "marks inherited properties as inherited=True" $
-            let inherited = [Property loc0 False "CATEGORY" "parent"]
-                e' = inheritProperties inherited (entryWith [])
+            let inh = [Property loc0 False "CATEGORY" "parent"]
+                e' = inheritProperties inh (entryWith [])
                 ps' = _entryProperties e'
              in case ps' of
                   [p] -> _inherited p @?= True

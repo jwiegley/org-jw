@@ -48,6 +48,7 @@ test-suite org-lint-test
   main-is: Spec.hs
   other-modules:
       LintCheckersTest
+      LintExtraTest
       LintRulesTest
       LintUncoveredTest
       PureLintTest

@@ -49,6 +49,7 @@ test-suite org-data-test
       FileNameTest
       FoldEntriesTest
       MoreHelpersTest
+      OrgDataExtraTest
       PlatedTest
       PrismTest
       PropertyLookupTest
@@ -65,6 +66,7 @@ test-suite org-data-test
       base >=4.5
     , bytestring
     , containers
+    , deepseq
     , filepath
     , flatparse
     , flatparse-util

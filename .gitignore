@@ -2,8 +2,10 @@
 /org.prof
 /dist-newstyle/
 /dist-coverage/
+/dist-cov-print/
 /combined.tix
 /coverage-report/
+/coverage-report-merged/
 /.coverage-baseline
 /.perf-baseline
 /result

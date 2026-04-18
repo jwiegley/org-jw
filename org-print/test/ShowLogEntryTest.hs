@@ -1,5 +1,8 @@
+{-# LANGUAGE BangPatterns #-}
+
 module ShowLogEntryTest (tests) where
 
+import Control.DeepSeq (NFData, deepseq, force)
 import Control.Monad.Reader (runReader)
 import Data.List (isInfixOf, isPrefixOf)
 import Org.Print
@@ -39,25 +42,44 @@ entryWithLog le =
     , _entryItems = []
     }
 
+{- | Render a log entry and deep-force the resulting lines so HPC ticks
+all expressions inside the helper CAFs and record construction.
+-}
 render :: LogEntry -> [String]
-render le = runReader (showEntry (entryWithLog le)) cfg
+render le =
+  let !e = force (entryWithLog le)
+      !out = force (runReader (showEntry e) cfg)
+   in out
+
+{- | Strict variant of 'assertBool' that forces the debug message even
+when the assertion passes, so HPC ticks the 'show' call.
+-}
+assertBool' :: String -> Bool -> Assertion
+assertBool' msg cond = msg `deepseq` assertBool msg cond
+
+-- | Force a value for HPC-tick purposes.  Returns ().
+tick :: (NFData a) => a -> Assertion
+tick !x = x `deepseq` return ()
 
 tests :: TestTree
 tests =
   testGroup
     "showLogEntry arms"
-    [ testCase "LogClosing without body" $
+    [ testCase "helper CAFs are forced" $
+        -- Force the top-level CAFs so their RHS evaluates once for HPC.
+        tick (loc0, tm, tm2, cfg)
+    , testCase "LogClosing without body" $
         let out = render (LogClosing loc0 tm Nothing)
-         in assertBool (show out) (any ("- CLOSING NOTE" `isInfixOf`) out)
+         in assertBool' (show out) (any ("- CLOSING NOTE" `isInfixOf`) out)
     , testCase "LogClosing with body adds line-break marker" $
         let out =
               render
                 (LogClosing loc0 tm (Just (Body [Paragraph loc0 ["note"]])))
-         in assertBool (show out) (any (" \\\\" `isInfixOf`) out)
+         in assertBool' (show out) (any (" \\\\" `isInfixOf`) out)
     , testCase "LogState with no previous keyword" $
         let out =
               render (LogState loc0 (OpenKeyword loc0 "DONE") Nothing tm Nothing)
-         in assertBool (show out) (any ("- State" `isInfixOf`) out)
+         in assertBool' (show out) (any ("- State" `isInfixOf`) out)
     , testCase "LogState with previous keyword" $
         let out =
               render
@@ -68,48 +90,48 @@ tests =
                     tm
                     Nothing
                 )
-         in assertBool (show out) (any ("from \"TODO\"" `isInfixOf`) out)
+         in assertBool' (show out) (any ("from \"TODO\"" `isInfixOf`) out)
     , testCase "LogNote" $
         let out = render (LogNote loc0 tm Nothing)
-         in assertBool (show out) (any ("- Note taken on" `isInfixOf`) out)
+         in assertBool' (show out) (any ("- Note taken on" `isInfixOf`) out)
     , testCase "LogRescheduled" $
         let out = render (LogRescheduled loc0 tm tm2 Nothing)
-         in assertBool
+         in assertBool'
               (show out)
               (any ("- Rescheduled from" `isInfixOf`) out)
     , testCase "LogNotScheduled" $
         let out = render (LogNotScheduled loc0 tm tm2 Nothing)
-         in assertBool
+         in assertBool'
               (show out)
               (any ("- Not scheduled, was" `isInfixOf`) out)
     , testCase "LogDeadline" $
         let out = render (LogDeadline loc0 tm tm2 Nothing)
-         in assertBool
+         in assertBool'
               (show out)
               (any ("- New deadline from" `isInfixOf`) out)
     , testCase "LogNoDeadline" $
         let out = render (LogNoDeadline loc0 tm tm2 Nothing)
-         in assertBool
+         in assertBool'
               (show out)
               (any ("- Removed deadline, was" `isInfixOf`) out)
     , testCase "LogRefiling" $
         let out = render (LogRefiling loc0 tm Nothing)
-         in assertBool (show out) (any ("- Refiled on" `isInfixOf`) out)
+         in assertBool' (show out) (any ("- Refiled on" `isInfixOf`) out)
     , testCase "LogClock without duration" $
         let out = render (LogClock loc0 tm Nothing)
-         in assertBool (show out) (any ("CLOCK:" `isPrefixOf`) out)
+         in assertBool' (show out) (any ("CLOCK:" `isPrefixOf`) out)
     , testCase "LogClock duration single-digit hour pads with space" $
         let out = render (LogClock loc0 tm (Just (Duration 1 30)))
-         in assertBool (show out) (any (" =>  1:30" `isInfixOf`) out)
+         in assertBool' (show out) (any (" =>  1:30" `isInfixOf`) out)
     , testCase "LogClock duration zero-pads minutes" $
         let out = render (LogClock loc0 tm (Just (Duration 10 5)))
-         in assertBool (show out) (any (" => 10:05" `isInfixOf`) out)
+         in assertBool' (show out) (any (" => 10:05" `isInfixOf`) out)
     , testCase "LogClock duration handles multi-digit hours" $
         let out = render (LogClock loc0 tm (Just (Duration 123 45)))
-         in assertBool (show out) (any (" => 123:45" `isInfixOf`) out)
+         in assertBool' (show out) (any (" => 123:45" `isInfixOf`) out)
     , testCase "LogBook wraps in LOGBOOK markers" $
         let out = render (LogBook loc0 [LogNote loc0 tm Nothing])
-         in assertBool
+         in assertBool'
               (show out)
               ( any (":LOGBOOK:" `isInfixOf`) out
                   && any (":END:" `isInfixOf`) out
@@ -118,11 +140,9 @@ tests =
         let out =
               render
                 (LogNote loc0 tm (Just (Body [Paragraph loc0 ["n"]])))
-         in assertBool (show out) (any (" \\\\" `isInfixOf`) out)
+         in assertBool' (show out) (any (" \\\\" `isInfixOf`) out)
     , testCase "showEntry without keyword renders plain title prefix" $
-        let e = entryWithLog (LogNote loc0 tm Nothing)
-            out = runReader (showEntry e) cfg
-         in case out of
-              (x : _) -> x @?= "* x"
-              [] -> assertFailure "showEntry returned no lines"
+        let !e = force (entryWithLog (LogNote loc0 tm Nothing))
+            !out = force (runReader (showEntry e) cfg)
+         in take 1 out @?= ["* x"]
     ]

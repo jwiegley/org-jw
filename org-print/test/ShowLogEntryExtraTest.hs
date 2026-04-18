@@ -1,5 +1,8 @@
+{-# LANGUAGE BangPatterns #-}
+
 module ShowLogEntryExtraTest (tests) where
 
+import Control.DeepSeq (NFData, deepseq, force)
 import Control.Monad.Reader (runReader)
 import Org.Print
 import Org.Types
@@ -38,8 +41,14 @@ entryWithLog le =
     , _entryItems = []
     }
 
+{- | Render a log entry and deep-force the resulting lines so HPC ticks
+all expressions inside the helper CAFs and record construction.
+-}
 render :: LogEntry -> [String]
-render le = runReader (showEntry (entryWithLog le)) cfg
+render le =
+  let !e = force (entryWithLog le)
+      !out = force (runReader (showEntry e) cfg)
+   in out
 
 -- Force every string line so HPC ticks internal concat expressions.
 forceLines :: [String] -> [String]
@@ -48,31 +57,44 @@ forceLines = map (\s -> length s `seq` s)
 noteBody :: Body
 noteBody = Body [Paragraph loc0 ["note line"]]
 
+{- | Strict variant of 'assertBool' that forces the debug message even
+when the assertion passes, so HPC ticks the 'show' call.
+-}
+assertBool' :: String -> Bool -> Assertion
+assertBool' msg cond = msg `deepseq` assertBool msg cond
+
+-- | Force a value for HPC-tick purposes.  Returns ().
+tick :: (NFData a) => a -> Assertion
+tick !x = x `deepseq` return ()
+
 tests :: TestTree
 tests =
   testGroup
     "showLogEntry (full equality)"
-    [ testCase "LogClosing full line equality" $
+    [ testCase "helper CAFs are forced" $
+        -- Force the top-level CAFs so their RHS evaluates once for HPC.
+        tick (loc0, tm, tm2, cfg, noteBody)
+    , testCase "LogClosing full line equality" $
         let out = forceLines (render (LogClosing loc0 tm Nothing))
-         in assertBool
+         in assertBool'
               (show out)
               ("- CLOSING NOTE[2023-02-25 Sat]" `elem` out)
     , testCase "LogClosing with body produces indented body line" $
         let out =
               forceLines
                 (render (LogClosing loc0 tm (Just noteBody)))
-         in assertBool
+         in assertBool'
               (show out)
               ("  note line" `elem` out)
     , testCase "LogNote full line equality" $
         let out = forceLines (render (LogNote loc0 tm Nothing))
-         in assertBool
+         in assertBool'
               (show out)
               ("- Note taken on [2023-02-25 Sat]" `elem` out)
     , testCase "LogNote with body line-break marker" $
         let out =
               forceLines (render (LogNote loc0 tm (Just noteBody)))
-         in assertBool
+         in assertBool'
               (show out)
               ( "- Note taken on [2023-02-25 Sat] \\\\" `elem` out
                   && "  note line" `elem` out
@@ -82,7 +104,7 @@ tests =
             expected =
               "- Rescheduled from \"[2023-02-25 Sat]\""
                 <> " on [2023-02-26 Sun]"
-         in assertBool (show out) (expected `elem` out)
+         in assertBool' (show out) (expected `elem` out)
     , testCase "LogRescheduled with body line-break marker" $
         let out =
               forceLines
@@ -90,7 +112,7 @@ tests =
             expected =
               "- Rescheduled from \"[2023-02-25 Sat]\""
                 <> " on [2023-02-26 Sun] \\\\"
-         in assertBool
+         in assertBool'
               (show out)
               ( expected `elem` out
                   && "  note line" `elem` out
@@ -100,7 +122,7 @@ tests =
             expected =
               "- Not scheduled, was \"[2023-02-25 Sat]\""
                 <> " on [2023-02-26 Sun]"
-         in assertBool (show out) (expected `elem` out)
+         in assertBool' (show out) (expected `elem` out)
     , testCase "LogNotScheduled with body line-break marker" $
         let out =
               forceLines
@@ -108,7 +130,7 @@ tests =
             expected =
               "- Not scheduled, was \"[2023-02-25 Sat]\""
                 <> " on [2023-02-26 Sun] \\\\"
-         in assertBool
+         in assertBool'
               (show out)
               ( expected `elem` out
                   && "  note line" `elem` out
@@ -118,7 +140,7 @@ tests =
             expected =
               "- New deadline from \"[2023-02-25 Sat]\""
                 <> " on [2023-02-26 Sun]"
-         in assertBool (show out) (expected `elem` out)
+         in assertBool' (show out) (expected `elem` out)
     , testCase "LogDeadline with body line-break marker" $
         let out =
               forceLines
@@ -126,7 +148,7 @@ tests =
             expected =
               "- New deadline from \"[2023-02-25 Sat]\""
                 <> " on [2023-02-26 Sun] \\\\"
-         in assertBool
+         in assertBool'
               (show out)
               ( expected `elem` out
                   && "  note line" `elem` out
@@ -136,7 +158,7 @@ tests =
             expected =
               "- Removed deadline, was \"[2023-02-25 Sat]\""
                 <> " on [2023-02-26 Sun]"
-         in assertBool (show out) (expected `elem` out)
+         in assertBool' (show out) (expected `elem` out)
     , testCase "LogNoDeadline with body line-break marker" $
         let out =
               forceLines
@@ -144,27 +166,27 @@ tests =
             expected =
               "- Removed deadline, was \"[2023-02-25 Sat]\""
                 <> " on [2023-02-26 Sun] \\\\"
-         in assertBool
+         in assertBool'
               (show out)
               ( expected `elem` out
                   && "  note line" `elem` out
               )
     , testCase "LogRefiling full line equality" $
         let out = forceLines (render (LogRefiling loc0 tm Nothing))
-         in assertBool
+         in assertBool'
               (show out)
               ("- Refiled on [2023-02-25 Sat]" `elem` out)
     , testCase "LogRefiling with body line-break marker" $
         let out =
               forceLines (render (LogRefiling loc0 tm (Just noteBody)))
-         in assertBool
+         in assertBool'
               (show out)
               ( "- Refiled on [2023-02-25 Sat] \\\\" `elem` out
                   && "  note line" `elem` out
               )
     , testCase "LogClock without duration full line equality" $
         let out = forceLines (render (LogClock loc0 tm Nothing))
-         in assertBool
+         in assertBool'
               (show out)
               ("CLOCK: [2023-02-25 Sat]" `elem` out)
     , testCase "LogState full line equality with previous keyword" $
@@ -183,7 +205,7 @@ tests =
             -- padded 18 on "from \"TODO\"" (11 chars) => 7 trailing spaces
             expected =
               "- State \"DONE\"       from \"TODO\"       [2023-02-25 Sat]"
-         in assertBool (show out) (expected `elem` out)
+         in assertBool' (show out) (expected `elem` out)
     , testCase "LogState full line equality without previous keyword" $
         let out =
               forceLines
@@ -198,7 +220,7 @@ tests =
                 )
             -- padded 13 on "\"CANCELLED\"" (11 chars) => 2 trailing spaces
             expected = "- State \"CANCELLED\"  [2023-02-25 Sat]"
-         in assertBool (show out) (expected `elem` out)
+         in assertBool' (show out) (expected `elem` out)
     , testCase "LogState with body adds trailing marker" $
         let out =
               forceLines
@@ -211,7 +233,7 @@ tests =
                         (Just noteBody)
                     )
                 )
-         in assertBool (show out) ("  note line" `elem` out)
+         in assertBool' (show out) ("  note line" `elem` out)
     , testCase "LogBook nested contents fully rendered" $
         let out =
               forceLines
@@ -223,7 +245,7 @@ tests =
                         ]
                     )
                 )
-         in assertBool
+         in assertBool'
               (show out)
               ( ":LOGBOOK:" `elem` out
                   && "- Note taken on [2023-02-25 Sat]" `elem` out

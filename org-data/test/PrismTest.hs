@@ -2,6 +2,7 @@
 
 module PrismTest (tests) where
 
+import Control.DeepSeq (force)
 import Control.Lens (has, review, (#), (^?))
 import Org.Data
 import Org.Types
@@ -9,18 +10,19 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 loc0 :: Loc
-loc0 = Loc "p.org" 0
+loc0 = force (Loc "p.org" 0)
 
 mkTime :: Integer -> Time
 mkTime day =
-  Time
-    { _timeKind = InactiveTime
-    , _timeDay = day
-    , _timeDayEnd = Nothing
-    , _timeStart = Nothing
-    , _timeEnd = Nothing
-    , _timeSuffix = Nothing
-    }
+  force
+    Time
+      { _timeKind = InactiveTime
+      , _timeDay = day
+      , _timeDayEnd = Nothing
+      , _timeStart = Nothing
+      , _timeEnd = Nothing
+      , _timeSuffix = Nothing
+      }
 
 t0 :: Time
 t0 = mkTime 60000
@@ -35,78 +37,85 @@ tests =
     [ testGroup
         "Stamp prisms"
         [ testCase "_ClosedStamp matches ClosedStamp" $
-            ClosedStamp loc0 t0 ^? _ClosedStamp @?= Just (loc0, t0)
+            force (ClosedStamp loc0 t0) ^? _ClosedStamp @?= Just (loc0, t0)
         , testCase "_ClosedStamp does not match ScheduledStamp" $
-            ScheduledStamp loc0 t0 ^? _ClosedStamp @?= Nothing
+            force (ScheduledStamp loc0 t0) ^? _ClosedStamp @?= Nothing
         , testCase "_ClosedStamp builds via review" $
-            _ClosedStamp # (loc0, t0) @?= ClosedStamp loc0 t0
+            _ClosedStamp # (loc0, t0) @?= force (ClosedStamp loc0 t0)
         , testCase "_ScheduledStamp matches ScheduledStamp" $
-            ScheduledStamp loc0 t0 ^? _ScheduledStamp @?= Just (loc0, t0)
+            force (ScheduledStamp loc0 t0) ^? _ScheduledStamp @?= Just (loc0, t0)
         , testCase "_ScheduledStamp builds" $
-            review _ScheduledStamp (loc0, t0) @?= ScheduledStamp loc0 t0
+            review _ScheduledStamp (loc0, t0) @?= force (ScheduledStamp loc0 t0)
         , testCase "_DeadlineStamp matches DeadlineStamp" $
-            DeadlineStamp loc0 t0 ^? _DeadlineStamp @?= Just (loc0, t0)
+            force (DeadlineStamp loc0 t0) ^? _DeadlineStamp @?= Just (loc0, t0)
         , testCase "_DeadlineStamp builds" $
-            _DeadlineStamp # (loc0, t0) @?= DeadlineStamp loc0 t0
+            _DeadlineStamp # (loc0, t0) @?= force (DeadlineStamp loc0 t0)
         , testCase "_ActiveStamp matches ActiveStamp" $
-            ActiveStamp loc0 t0 ^? _ActiveStamp @?= Just (loc0, t0)
+            force (ActiveStamp loc0 t0) ^? _ActiveStamp @?= Just (loc0, t0)
         , testCase "_ActiveStamp builds" $
-            _ActiveStamp # (loc0, t0) @?= ActiveStamp loc0 t0
+            _ActiveStamp # (loc0, t0) @?= force (ActiveStamp loc0 t0)
         , testCase "_ActiveStamp mismatch" $
-            ClosedStamp loc0 t0 ^? _ActiveStamp @?= Nothing
+            force (ClosedStamp loc0 t0) ^? _ActiveStamp @?= Nothing
         ]
     , testGroup
         "Keyword prisms"
         [ testCase "_OpenKeyword matches OpenKeyword" $
-            OpenKeyword loc0 "TODO" ^? _OpenKeyword @?= Just (loc0, "TODO")
+            force (OpenKeyword loc0 "TODO") ^? _OpenKeyword
+              @?= Just (loc0, "TODO")
         , testCase "_OpenKeyword does not match ClosedKeyword" $
-            ClosedKeyword loc0 "DONE" ^? _OpenKeyword @?= Nothing
+            force (ClosedKeyword loc0 "DONE") ^? _OpenKeyword @?= Nothing
         , testCase "_OpenKeyword builds" $
-            _OpenKeyword # (loc0, "WAIT") @?= OpenKeyword loc0 "WAIT"
+            _OpenKeyword # (loc0, "WAIT") @?= force (OpenKeyword loc0 "WAIT")
         , testCase "_ClosedKeyword matches ClosedKeyword" $
-            ClosedKeyword loc0 "DONE" ^? _ClosedKeyword @?= Just (loc0, "DONE")
+            force (ClosedKeyword loc0 "DONE") ^? _ClosedKeyword
+              @?= Just (loc0, "DONE")
         , testCase "_ClosedKeyword builds" $
-            _ClosedKeyword # (loc0, "CANCELED") @?= ClosedKeyword loc0 "CANCELED"
+            _ClosedKeyword # (loc0, "CANCELED")
+              @?= force (ClosedKeyword loc0 "CANCELED")
         , testCase "_ClosedKeyword mismatch" $
-            OpenKeyword loc0 "TODO" ^? _ClosedKeyword @?= Nothing
+            force (OpenKeyword loc0 "TODO") ^? _ClosedKeyword @?= Nothing
         ]
     , testGroup
         "Tag prism"
         [ testCase "_PlainTag matches PlainTag" $
-            PlainTag "x" ^? _PlainTag @?= Just "x"
+            force (PlainTag "x") ^? _PlainTag @?= Just "x"
         , testCase "_PlainTag builds" $
-            _PlainTag # "foo" @?= PlainTag "foo"
+            _PlainTag # "foo" @?= force (PlainTag "foo")
         ]
     , testGroup
         "LogEntry prisms"
         [ testCase "_LogClosing matches LogClosing" $
-            has _LogClosing (LogClosing loc0 t0 Nothing) @?= True
+            has _LogClosing (force (LogClosing loc0 t0 Nothing)) @?= True
         , testCase "_LogClosing preview" $
-            LogClosing loc0 t0 Nothing ^? _LogClosing
+            force (LogClosing loc0 t0 Nothing) ^? _LogClosing
               @?= Just (loc0, t0, Nothing)
         , testCase "_LogClosing mismatch" $
-            has _LogClosing (LogNote loc0 t0 Nothing) @?= False
+            has _LogClosing (force (LogNote loc0 t0 Nothing)) @?= False
         , testCase "_LogState matches LogState" $
-            let kw = OpenKeyword loc0 "TODO"
-             in has _LogState (LogState loc0 kw Nothing t0 Nothing) @?= True
+            let kw = force (OpenKeyword loc0 "TODO")
+             in has _LogState (force (LogState loc0 kw Nothing t0 Nothing))
+                  @?= True
         , testCase "_LogNote matches LogNote" $
-            has _LogNote (LogNote loc0 t0 Nothing) @?= True
+            has _LogNote (force (LogNote loc0 t0 Nothing)) @?= True
         , testCase "_LogRescheduled matches LogRescheduled" $
-            has _LogRescheduled (LogRescheduled loc0 t0 t1 Nothing) @?= True
+            has _LogRescheduled (force (LogRescheduled loc0 t0 t1 Nothing))
+              @?= True
         , testCase "_LogNotScheduled matches LogNotScheduled" $
-            has _LogNotScheduled (LogNotScheduled loc0 t0 t1 Nothing) @?= True
+            has _LogNotScheduled (force (LogNotScheduled loc0 t0 t1 Nothing))
+              @?= True
         , testCase "_LogDeadline matches LogDeadline" $
-            has _LogDeadline (LogDeadline loc0 t0 t1 Nothing) @?= True
+            has _LogDeadline (force (LogDeadline loc0 t0 t1 Nothing)) @?= True
         , testCase "_LogNoDeadline matches LogNoDeadline" $
-            has _LogNoDeadline (LogNoDeadline loc0 t0 t1 Nothing) @?= True
+            has _LogNoDeadline (force (LogNoDeadline loc0 t0 t1 Nothing))
+              @?= True
         , testCase "_LogRefiling matches LogRefiling" $
-            has _LogRefiling (LogRefiling loc0 t0 Nothing) @?= True
+            has _LogRefiling (force (LogRefiling loc0 t0 Nothing)) @?= True
         , testCase "_LogClock matches LogClock" $
-            has _LogClock (LogClock loc0 t0 Nothing) @?= True
+            has _LogClock (force (LogClock loc0 t0 Nothing)) @?= True
         , testCase "_LogBook matches LogBook" $
-            has _LogBook (LogBook loc0 []) @?= True
+            has _LogBook (force (LogBook loc0 [])) @?= True
         , testCase "_LogBook preview yields (loc, entries)" $
-            LogBook loc0 [] ^? _LogBook @?= Just (loc0, [])
+            force (LogBook loc0 []) ^? _LogBook @?= Just (loc0, [])
         ]
     , testGroup
         "TimeSpan prisms"
@@ -166,40 +175,40 @@ tests =
     , testGroup
         "DrawerType prisms"
         [ testCase "_PlainDrawer matches PlainDrawer" $
-            PlainDrawer "LOGBOOK" ^? _PlainDrawer @?= Just "LOGBOOK"
+            force (PlainDrawer "LOGBOOK") ^? _PlainDrawer @?= Just "LOGBOOK"
         , testCase "_PlainDrawer does not match BeginDrawer" $
-            BeginDrawer "CUSTOM" ^? _PlainDrawer @?= Nothing
+            force (BeginDrawer "CUSTOM") ^? _PlainDrawer @?= Nothing
         , testCase "_BeginDrawer matches BeginDrawer" $
-            BeginDrawer "CUSTOM" ^? _BeginDrawer @?= Just "CUSTOM"
+            force (BeginDrawer "CUSTOM") ^? _BeginDrawer @?= Just "CUSTOM"
         , testCase "_PlainDrawer builds" $
-            _PlainDrawer # "x" @?= PlainDrawer "x"
+            _PlainDrawer # "x" @?= force (PlainDrawer "x")
         , testCase "_BeginDrawer builds" $
-            _BeginDrawer # "y" @?= BeginDrawer "y"
+            _BeginDrawer # "y" @?= force (BeginDrawer "y")
         ]
     , testGroup
         "Block prisms"
         [ testCase "preview a Whitespace block" $
-            Whitespace loc0 "  " ^? _Whitespace @?= Just (loc0, "  ")
+            force (Whitespace loc0 "  ") ^? _Whitespace @?= Just (loc0, "  ")
         , testCase "preview a Paragraph block" $
-            Paragraph loc0 ["l1", "l2"] ^? _Paragraph
+            force (Paragraph loc0 ["l1", "l2"]) ^? _Paragraph
               @?= Just (loc0, ["l1", "l2"])
         , testCase "preview a Drawer block" $
-            Drawer loc0 (PlainDrawer "D") ["a"] ^? _Drawer
+            force (Drawer loc0 (PlainDrawer "D") ["a"]) ^? _Drawer
               @?= Just (loc0, PlainDrawer "D", ["a"])
         ]
     , testGroup
         "TimeSuffix lens accessors"
         [ testCase "suffixKind gets" $
-            let s = TimeSuffix TimeRepeat 1 DaySpan Nothing
+            let s = force (TimeSuffix TimeRepeat 1 DaySpan Nothing)
              in _suffixKind s @?= TimeRepeat
         , testCase "suffixNum gets" $
-            let s = TimeSuffix TimeRepeat 3 DaySpan Nothing
+            let s = force (TimeSuffix TimeRepeat 3 DaySpan Nothing)
              in _suffixNum s @?= 3
         , testCase "suffixSpan gets" $
-            let s = TimeSuffix TimeRepeat 1 WeekSpan Nothing
+            let s = force (TimeSuffix TimeRepeat 1 WeekSpan Nothing)
              in _suffixSpan s @?= WeekSpan
         , testCase "suffixLargerSpan gets" $
-            let s = TimeSuffix TimeRepeat 1 DaySpan (Just (2, MonthSpan))
+            let s = force (TimeSuffix TimeRepeat 1 DaySpan (Just (2, MonthSpan)))
              in _suffixLargerSpan s @?= Just (2, MonthSpan)
         ]
     ]
