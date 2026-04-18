@@ -91,7 +91,7 @@ someTill p e = go []
  where
   go acc = do
     x <- p
-    ((x : acc) <$ e)
+    (reverse (x : acc) <$ e)
       <|> go (x : acc)
 
 newline :: FP.Parser r e ()
