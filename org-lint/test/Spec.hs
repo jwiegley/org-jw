@@ -2,6 +2,7 @@ module Main where
 
 import qualified LintCheckersTest
 import qualified LintRulesTest
+import qualified LintUncoveredTest
 import qualified PureLintTest
 import qualified ShowLintOrgTest
 import Test.Tasty
@@ -15,4 +16,5 @@ main =
       , ShowLintOrgTest.tests
       , LintRulesTest.tests
       , LintCheckersTest.tests
+      , LintUncoveredTest.tests
       ]

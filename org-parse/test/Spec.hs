@@ -4,6 +4,7 @@ import qualified EntryParseTest
 import qualified ErrorPathTest
 import qualified FilePropertiesTest
 import qualified LogEntryParseTest
+import qualified ParseUncoveredTest
 import qualified StampParseTest
 import Test.Tasty
 import qualified TimeParseTest
@@ -19,4 +20,5 @@ main =
       , ErrorPathTest.tests
       , FilePropertiesTest.tests
       , EntryParseTest.tests
+      , ParseUncoveredTest.tests
       ]

@@ -49,6 +49,7 @@ test-suite org-lint-test
   other-modules:
       LintCheckersTest
       LintRulesTest
+      LintUncoveredTest
       PureLintTest
       ShowLintOrgTest
       Paths_org_lint
