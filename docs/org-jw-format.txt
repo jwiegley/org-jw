@@ -1,0 +1,3420 @@
+
+
+
+
+org-jw Project                                              J. Wiegley
+Specification: ORG-JW-FMT/1                                 April 2026
+Category: Project Specification
+Status: Draft
+
+
+             The Org-jw Canonical Format Specification
+         for Org-mode Files Accepted by the org-jw Toolchain
+
+
+Abstract
+
+   This document specifies the canonical form of Org-mode files as
+   parsed, validated, transformed, and rendered by the org-jw
+   toolchain.  It defines the syntax of headings, keywords, priorities,
+   tags, timestamps, property drawers, log entries, block structures,
+   file-level properties, and inline tasks.  It further defines the
+   round-trip preservation property that conforming implementations
+   MUST satisfy and enumerates the validity constraints enforced by
+   the org-jw linter.
+
+   This specification is a project-scoped format standard.  It is not
+   an IETF document and does not extend the IETF Standards Process.
+   The form of this document is modelled on the conventions of the
+   IETF [RFC7322] for ease of reading.
+
+
+Status of This Document
+
+   This document describes the canonical Org-mode file format accepted
+   by the org-jw tool suite and its constituent packages (org-types,
+   org-parse, org-print, org-data, org-lint, org-json, org-cbor,
+   org-filetags, org-site, and the org-jw command-line executable).
+
+   This specification is informational and is maintained alongside the
+   org-jw source tree.  It supersedes no prior IETF document.  The
+   Emacs Org-mode manual [ORGMODE] is the historical reference for the
+   syntax family from which this specification is derived, but the
+   normative syntax described here is strictly that accepted by the
+   org-jw parser.  Constructs recognized by Emacs Org-mode but not
+   described here MUST NOT be relied upon for interoperability with
+   org-jw.
+
+
+Copyright Notice
+
+   Copyright (c) 2026 John Wiegley.  All rights reserved.  This
+   document is distributed under the project's BSD license.  Code
+   components extracted from this document are licensed under the
+   same terms.
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification             [Page 1]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . .  4
+   2.  Conventions Used in This Document . . . . . . . . . . . . .  5
+   3.  Requirements Overview . . . . . . . . . . . . . . . . . . .  6
+     3.1.  Conformance Classes . . . . . . . . . . . . . . . . . .  6
+     3.2.  Mandatory Requirements  . . . . . . . . . . . . . . . .  6
+   4.  Document Model  . . . . . . . . . . . . . . . . . . . . . .  7
+     4.1.  Abstract Syntax Tree  . . . . . . . . . . . . . . . . .  7
+     4.2.  Character Encoding  . . . . . . . . . . . . . . . . . .  8
+     4.3.  Line Terminators and Whitespace . . . . . . . . . . . .  8
+     4.4.  Terminology . . . . . . . . . . . . . . . . . . . . . .  9
+   5.  File Structure  . . . . . . . . . . . . . . . . . . . . . . 10
+     5.1.  File Header . . . . . . . . . . . . . . . . . . . . . . 10
+     5.2.  File-Level Property Drawer  . . . . . . . . . . . . . . 10
+     5.3.  File Property Lines . . . . . . . . . . . . . . . . . . 11
+     5.4.  Preamble  . . . . . . . . . . . . . . . . . . . . . . . 11
+     5.5.  Entry Tree  . . . . . . . . . . . . . . . . . . . . . . 12
+     5.6.  File Termination  . . . . . . . . . . . . . . . . . . . 12
+   6.  Entry Syntax  . . . . . . . . . . . . . . . . . . . . . . . 13
+     6.1.  Heading Line  . . . . . . . . . . . . . . . . . . . . . 13
+       6.1.1.  Stars and Depth . . . . . . . . . . . . . . . . . . 13
+       6.1.2.  Keyword . . . . . . . . . . . . . . . . . . . . . . 14
+       6.1.3.  Priority Cookie . . . . . . . . . . . . . . . . . . 14
+       6.1.4.  Context . . . . . . . . . . . . . . . . . . . . . . 15
+       6.1.5.  Verb  . . . . . . . . . . . . . . . . . . . . . . . 15
+       6.1.6.  Title . . . . . . . . . . . . . . . . . . . . . . . 15
+       6.1.7.  Locator . . . . . . . . . . . . . . . . . . . . . . 16
+       6.1.8.  Tags  . . . . . . . . . . . . . . . . . . . . . . . 16
+       6.1.9.  Tag Column Alignment  . . . . . . . . . . . . . . . 17
+     6.2.  Leading Timestamp Line  . . . . . . . . . . . . . . . . 17
+     6.3.  Property Drawer . . . . . . . . . . . . . . . . . . . . 18
+     6.4.  Log Entries Region  . . . . . . . . . . . . . . . . . . 19
+     6.5.  Active Timestamp Line . . . . . . . . . . . . . . . . . 19
+     6.6.  Entry Body  . . . . . . . . . . . . . . . . . . . . . . 20
+     6.7.  Child Entries . . . . . . . . . . . . . . . . . . . . . 20
+   7.  Timestamps  . . . . . . . . . . . . . . . . . . . . . . . . 21
+     7.1.  Active and Inactive Forms . . . . . . . . . . . . . . . 21
+     7.2.  Date  . . . . . . . . . . . . . . . . . . . . . . . . . 21
+     7.3.  Day of Week . . . . . . . . . . . . . . . . . . . . . . 22
+     7.4.  Time of Day . . . . . . . . . . . . . . . . . . . . . . 22
+     7.5.  Time Ranges . . . . . . . . . . . . . . . . . . . . . . 23
+     7.6.  Repeater and Warning Suffix . . . . . . . . . . . . . . 23
+     7.7.  Duration  . . . . . . . . . . . . . . . . . . . . . . . 24
+   8.  Log Entries . . . . . . . . . . . . . . . . . . . . . . . . 25
+     8.1.  LOGBOOK Drawer  . . . . . . . . . . . . . . . . . . . . 25
+
+
+
+Wiegley              org-jw Format Specification             [Page 2]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+     8.2.  State Change Entries  . . . . . . . . . . . . . . . . . 26
+     8.3.  Note Entries  . . . . . . . . . . . . . . . . . . . . . 26
+     8.4.  Scheduling Entries  . . . . . . . . . . . . . . . . . . 27
+     8.5.  Clock Entries . . . . . . . . . . . . . . . . . . . . . 28
+     8.6.  Log Entry Body  . . . . . . . . . . . . . . . . . . . . 28
+   9.  Drawers and Blocks  . . . . . . . . . . . . . . . . . . . . 29
+     9.1.  Plain Drawers . . . . . . . . . . . . . . . . . . . . . 29
+     9.2.  BEGIN/END Blocks  . . . . . . . . . . . . . . . . . . . 30
+     9.3.  Inline Tasks  . . . . . . . . . . . . . . . . . . . . . 30
+     9.4.  Paragraphs and Whitespace . . . . . . . . . . . . . . . 31
+   10. Tags  . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+     10.1. Syntax  . . . . . . . . . . . . . . . . . . . . . . . . 32
+     10.2. Tag Vocabulary  . . . . . . . . . . . . . . . . . . . . 32
+     10.3. Reserved Semantic Tags  . . . . . . . . . . . . . . . . 33
+   11. Keywords and State Transitions  . . . . . . . . . . . . . . 34
+     11.1. Configuration . . . . . . . . . . . . . . . . . . . . . 34
+     11.2. Open and Closed Classes . . . . . . . . . . . . . . . . 34
+     11.3. Transition Graph  . . . . . . . . . . . . . . . . . . . 35
+   12. Well-Known Properties . . . . . . . . . . . . . . . . . . . 36
+     12.1. File-Level Properties . . . . . . . . . . . . . . . . . 36
+     12.2. Entry-Level Properties  . . . . . . . . . . . . . . . . 37
+     12.3. Property Inheritance  . . . . . . . . . . . . . . . . . 38
+   13. Round-Trip Preservation . . . . . . . . . . . . . . . . . . 39
+     13.1. The Round-Trip Property . . . . . . . . . . . . . . . . 39
+     13.2. Canonical Form  . . . . . . . . . . . . . . . . . . . . 39
+     13.3. Preserved Features  . . . . . . . . . . . . . . . . . . 40
+   14. Validity Rules  . . . . . . . . . . . . . . . . . . . . . . 41
+     14.1. Lint Severity Classes . . . . . . . . . . . . . . . . . 41
+     14.2. File Validity . . . . . . . . . . . . . . . . . . . . . 41
+     14.3. Entry Validity  . . . . . . . . . . . . . . . . . . . . 42
+     14.4. Collection Validity . . . . . . . . . . . . . . . . . . 43
+     14.5. Opt-Out Mechanisms  . . . . . . . . . . . . . . . . . . 43
+   15. Implementation Requirements . . . . . . . . . . . . . . . . 44
+     15.1. Parser Requirements . . . . . . . . . . . . . . . . . . 44
+     15.2. Printer Requirements  . . . . . . . . . . . . . . . . . 44
+     15.3. Linter Requirements . . . . . . . . . . . . . . . . . . 45
+   16. Security Considerations . . . . . . . . . . . . . . . . . . 46
+   17. IANA Considerations . . . . . . . . . . . . . . . . . . . . 47
+   18. References  . . . . . . . . . . . . . . . . . . . . . . . . 48
+     18.1. Normative References  . . . . . . . . . . . . . . . . . 48
+     18.2. Informative References  . . . . . . . . . . . . . . . . 48
+   Appendix A.  Collected ABNF . . . . . . . . . . . . . . . . . . 49
+   Appendix B.  Examples . . . . . . . . . . . . . . . . . . . . . 53
+   Appendix C.  Linter Diagnostic Codes  . . . . . . . . . . . . . 56
+   Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . 58
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . 58
+
+
+
+
+Wiegley              org-jw Format Specification             [Page 3]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+1.  Introduction
+
+   Org-mode is a plain-text outlining and notation system historically
+   defined by the Emacs Org-mode implementation.  The syntax has
+   accreted many features over its history, and no external normative
+   specification exists that describes the form precisely enough for
+   an independent implementation to reproduce byte-for-byte.
+
+   The org-jw project is a Haskell-based toolchain that parses,
+   validates, transforms, and prints Org-mode files.  The project
+   relies on a round-trip identity: a file that enters the parser and
+   is re-emitted by the printer MUST be reproduced with exact byte
+   equality.  This identity is both the testing strategy of the
+   project and the primary correctness criterion for any conforming
+   implementation.
+
+   This document defines:
+
+   o  the canonical syntax of Org-mode files accepted by org-jw;
+   o  the structural constraints and validity rules enforced by the
+      org-jw linter;
+   o  the canonical output form produced by the org-jw printer; and
+   o  the conformance classes that external implementations may
+      claim with respect to this specification.
+
+   The specification is intentionally narrower than the full Emacs
+   Org-mode feature set.  Constructs not described here (for example,
+   tables, footnotes, LaTeX math delimiters, and export back-end
+   markers) are preserved verbatim by the parser as paragraph text
+   but are not assigned semantic structure.
+
+   The primary audience of this document is:
+
+   o  Developers maintaining or extending the org-jw toolchain;
+   o  Authors of Org-mode files who require that their files be
+      round-trip stable under org-jw;
+   o  Implementers of alternative Org-mode tools who wish to
+      interoperate at the byte level with org-jw output.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification             [Page 4]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+2.  Conventions Used in This Document
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL
+   NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED",
+   "MAY", and "OPTIONAL" in this document are to be interpreted as
+   described in BCP 14 [RFC2119] [RFC8174] when, and only when, they
+   appear in all capitals, as shown here.
+
+   Grammar productions are expressed in Augmented Backus-Naur Form
+   (ABNF) as defined in [RFC5234] and [RFC7405].  Where semantic
+   constraints exceed the expressive power of ABNF, prose takes
+   precedence.  The complete grammar is collected in Appendix A.
+
+   The following notational conventions are used throughout:
+
+   SP          A single U+0020 SPACE character.
+   LF          A single U+000A LINE FEED character.
+   HTAB        A single U+0009 CHARACTER TABULATION character.
+   <char>      The byte or character literally shown.
+   [ ... ]     An optional element.
+   *ELEMENT    Zero or more repetitions of ELEMENT.
+   1*ELEMENT   One or more repetitions of ELEMENT.
+   N*MELEMENT  Between N and M repetitions of ELEMENT, inclusive.
+
+   The term "canonical form" denotes the exact byte sequence produced
+   by the org-jw printer for a given abstract syntax tree (AST) under
+   a given Configuration (Section 11.1).  A file is "round-trip
+   stable" if its byte content equals the canonical form of its own
+   parse.
+
+   The term "Configuration" refers to the set of tunable parameters
+   provided to the parser, printer, and linter, as described in
+   Section 11.1.  When this document states that an implementation
+   "MUST accept" a construct, acceptance is relative to the active
+   Configuration.
+
+   Code points in this document are expressed in ISO 10646 notation
+   (U+NNNN).  Byte values are expressed in hexadecimal prefixed with
+   "0x".
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification             [Page 5]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+3.  Requirements Overview
+
+3.1.  Conformance Classes
+
+   An implementation of this specification MAY claim conformance to
+   one or more of the following classes.  Each class imposes a
+   distinct set of requirements:
+
+   Parser:      An implementation that accepts the byte stream of an
+                Org-mode file and produces an AST conforming to the
+                model defined in Section 4.
+
+   Printer:     An implementation that accepts an AST conforming to
+                the model defined in Section 4 and emits a byte
+                stream in canonical form.
+
+   Validator:   An implementation that, given an AST or its source
+                text, reports diagnostics according to the validity
+                rules defined in Section 14.
+
+   A round-trip-stable implementation MUST implement both the Parser
+   and the Printer classes such that, for every well-formed input F:
+
+      Printer(Parser(F)) == F
+
+   holds as byte-exact equality.
+
+3.2.  Mandatory Requirements
+
+   A conforming Parser:
+
+   o  MUST accept all syntactic constructs defined in Sections 5
+      through 9 with the semantics prescribed therein;
+   o  MUST reject input that violates the hard constraints noted in
+      those sections (for example, out-of-range timestamps);
+   o  MUST preserve byte-level whitespace and trailing spaces within
+      paragraphs, drawer bodies, and property values;
+   o  MUST NOT perform encoding conversion or line-ending
+      normalization (see Section 4.2 and 4.3).
+
+   A conforming Printer:
+
+   o  MUST emit the canonical form defined in Sections 6, 7, 8, 9,
+      and 13;
+   o  MUST honor the Configuration parameters defined in
+      Section 11.1, in particular the propertyColumn and tagsColumn
+      settings;
+   o  MUST NOT insert or remove content beyond the formatting
+      adjustments defined in this specification.
+
+
+
+Wiegley              org-jw Format Specification             [Page 6]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+4.  Document Model
+
+4.1.  Abstract Syntax Tree
+
+   An Org-mode document is a tree whose root is a File.  The abstract
+   structure is:
+
+      File       = Header, { Entry } ;
+      Header     = [ PropertyDrawer ], { FileProperty }, Preamble ;
+      Entry      = Heading,
+                   [ StampLine ],
+                   [ PropertyDrawer ],
+                   { LogEntry },
+                   [ ActiveStampLine ],
+                   Body,
+                   { Entry (child) } ;
+      Heading    = Stars, [ Keyword ], [ Priority ], [ Context ],
+                   [ Verb ], Title, [ Locator ], [ TagList ] ;
+      Body       = { Block } ;
+      Block      = Whitespace | Paragraph | Drawer | InlineTask ;
+      LogEntry   = Closing | State | Note | Rescheduled |
+                   NotScheduled | Deadline | NoDeadline | Refiling |
+                   Clock | LogBook ;
+
+   The Title, Locator, Context, Verb, and Priority components are
+   collectively referred to as the "title-group" of a heading.
+
+   A child Entry's depth is exactly one greater than its parent's
+   depth.  Entries at depth 15 are reserved for inline tasks
+   (Section 9.3) and MUST NOT appear as top-level or child entries
+   in the outline tree.
+
+   The abstract types and their fields are defined canonically in
+   the Haskell source of the org-types package.  This document
+   mirrors that source.  Where this document and the source
+   disagree, the source is authoritative until the specification is
+   updated.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification             [Page 7]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+4.2.  Character Encoding
+
+   Org-mode files processed by org-jw MUST be encoded in UTF-8
+   [RFC3629].  The parser performs no transcoding; multibyte
+   sequences are compared byte-wise.
+
+   Implementations MAY accept other encodings on input provided they
+   transcode to UTF-8 before parsing, but such implementations
+   forfeit byte-exact round-trip preservation for non-UTF-8 input.
+   A strictly conforming Parser MUST accept UTF-8 only.
+
+   A Byte Order Mark (U+FEFF) at the start of a file is not
+   recognized specially.  If present, it becomes part of the first
+   token of the file and SHOULD be removed by the author.
+
+4.3.  Line Terminators and Whitespace
+
+   The line terminator accepted by the Parser is a single LF
+   (U+000A).  Carriage Return (U+000D) is NOT recognized as line
+   terminator or as whitespace; files using CRLF terminators MUST be
+   converted before parsing.
+
+   The only whitespace character recognized as inline whitespace in
+   structural contexts (between heading elements, before/after
+   stamps, inside property drawer alignment, etc.) is SP (U+0020).
+   HTAB (U+0009) is NOT recognized as structural whitespace and, if
+   present in such a context, will typically cause the surrounding
+   construct to fail to parse and be absorbed as paragraph text
+   instead.
+
+   Blank lines, and lines consisting solely of SP characters, are
+   preserved verbatim as Whitespace blocks (Section 9.4).  The exact
+   count of SP characters in each such line is preserved.
+
+   Trailing whitespace on property values, paragraph lines, and
+   drawer content lines is preserved verbatim.  Authors are advised
+   that such whitespace is significant under the round-trip
+   identity and SHOULD be avoided unless intentional.
+
+   A file MUST end with a line terminator.  A file that does not end
+   with LF is not accepted by the Parser.
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification             [Page 8]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+4.4.  Terminology
+
+   The following terms are used throughout this document:
+
+   Depth:       The integer N such that a heading begins with N
+                consecutive '*' characters.  Depth 1 is the outermost
+                heading.  Depth 15 is reserved for inline tasks.
+
+   Entry:       The structural unit introduced by a heading.
+                Comprises the heading, a leading stamp line, an
+                optional property drawer, zero or more log entries,
+                an optional active-stamp line, a body, and zero or
+                more child entries.
+
+   Heading:     The single line introducing an Entry, consisting of
+                stars and a title-group.
+
+   Preamble:    The body region of a File Header occurring before
+                the first top-level Entry.
+
+   Stamp:       A timestamp of the form <YYYY-MM-DD ...> (active) or
+                [YYYY-MM-DD ...] (inactive).
+
+   Leading Stamp:  A stamp introduced by the literal label "CLOSED:
+                ", "SCHEDULED: ", or "DEADLINE: ", appearing on the
+                line immediately following a heading.
+
+   Active Stamp:  A stamp of the <...> form appearing on its own
+                line within an Entry, without a leading label.
+
+   Property:    A name-value pair of the form ":NAME: value" within
+                a property drawer, or "#+NAME: value" at file level.
+
+   Drawer:      A named region delimited by ":NAME:" and ":END:"
+                lines, or by "#+begin_..." and "#+end_..." lines.
+
+   LOGBOOK:     A specific drawer named LOGBOOK that contains log
+                entries.
+
+   Tag:         A colon-delimited marker following an Entry heading
+                (for entries) or listed in the FILETAGS file
+                property (for files).
+
+   Keyword:     A configured TODO-state word (for example, "TODO",
+                "DONE", "STARTED") that may appear immediately after
+                the stars of a heading.
+
+
+
+
+
+
+Wiegley              org-jw Format Specification             [Page 9]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+5.  File Structure
+
+   A conforming File consists of the following regions, in order:
+
+      1.  Zero or one File-Level Property Drawer (Section 5.2);
+      2.  Zero or more File Property Lines (Section 5.3);
+      3.  A Preamble (Section 5.4);
+      4.  Zero or more top-level Entries (Section 5.5).
+
+   The file MUST terminate at exactly the end of the final Entry's
+   subtree (Section 5.6).
+
+5.1.  File Header
+
+   Regions 1 through 3 above constitute the File Header.  The Header
+   terminates at the first byte that begins a top-level heading,
+   that is, the first occurrence of "*" followed by SP at column 1
+   after the Preamble has consumed all Preamble-compatible content.
+
+   An empty File (zero bytes) is a conforming File with an empty
+   Header and no Entries.
+
+5.2.  File-Level Property Drawer
+
+   A File MAY begin with a property drawer whose syntax is identical
+   to an entry property drawer (Section 6.3).  If present, the
+   drawer MUST occupy the literal first bytes of the file; no
+   leading blank lines or other content MAY precede it.
+
+   The syntax is:
+
+      FilePropertyDrawer = ":PROPERTIES:", LF,
+                           1*( PropertyLine ),
+                           ":END:", LF ;
+
+   At least one property line is REQUIRED between the ":PROPERTIES:"
+   opener and the ":END:" closer.  Empty file-level property drawers
+   are not accepted.
+
+   Example:
+
+      :PROPERTIES:
+      :ID:       a7f1...
+      :CREATED:  [2026-04-01 Wed 10:00]
+      :END:
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 10]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+5.3.  File Property Lines
+
+   File properties are lines of the form:
+
+      FileProperty = "#+", PropertyName, ":", *SP, Value, LF ;
+
+   where PropertyName is an identifier consisting of alphanumerics,
+   underscores, and SP characters (no leading "#" or ":"), and Value
+   is the remainder of the line up to, but not including, LF.
+
+   Any number of SP characters (including zero) MAY appear between
+   the colon and the value.  The Printer emits exactly one SP in the
+   canonical form.  Under the round-trip identity, the Parser
+   preserves the exact spacing encountered in the input.
+
+   Well-known file properties are enumerated in Section 12.1.  File
+   properties with names not listed there are permitted and are
+   preserved verbatim by the round-trip.
+
+   Example:
+
+      #+TITLE: Project Plan
+      #+FILETAGS: :project:active:
+      #+CATEGORY: work
+
+5.4.  Preamble
+
+   After the optional property drawer and the file properties, any
+   Block sequence (Section 9.4) MAY appear as the Preamble.  The
+   Preamble terminates at the first top-level heading.
+
+   Blocks in the Preamble follow the rules of Section 9.4.  A
+   Preamble MAY be empty.
+
+   Example:
+
+      This file contains my current project plan.  It is
+      regenerated weekly from the source tree.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 11]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+5.5.  Entry Tree
+
+   Following the Header, zero or more top-level Entries appear.
+   Each top-level Entry has depth 1 (exactly one leading "*").  Each
+   top-level Entry MAY contain child Entries of depth 2, which in
+   turn MAY contain child Entries of depth 3, and so on.
+
+   An Entry of depth N belongs to the nearest preceding Entry of
+   depth N-1.  Depth MUST increase monotonically by exactly one
+   between a parent and its immediate children; a jump from depth N
+   to depth N+2 is not a valid parent-child relationship, and the
+   deeper Entry becomes a child of the last Entry of depth N+1, if
+   any, or is associated with the last Entry of depth N otherwise
+   (per the parser's recursive descent).
+
+   Entry ordering within a parent is significant and MUST be
+   preserved by the round-trip.
+
+5.6.  File Termination
+
+   A File MUST end with a line terminator following its final
+   content byte.  The Parser reports the diagnostic "Trailing text
+   in Org file" if any unconsumed bytes remain after the last Entry
+   has been parsed, except for trailing whitespace lines, which are
+   absorbed into the body of the final Entry.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 12]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+6.  Entry Syntax
+
+   Each Entry is introduced by a Heading line (Section 6.1), followed
+   in fixed order by:
+
+      1.  An optional Leading Timestamp Line (Section 6.2);
+      2.  An optional Property Drawer (Section 6.3);
+      3.  Zero or more Log Entries (Section 6.4);
+      4.  An optional Active Timestamp Line (Section 6.5);
+      5.  An Entry Body (Section 6.6);
+      6.  Zero or more child Entries (Section 6.7).
+
+   The order above is prescriptive.  A Property Drawer appearing
+   after a Log Entry, or a Leading Timestamp appearing in the Body,
+   is a validity error (Section 14.3).
+
+6.1.  Heading Line
+
+   The Heading has the abstract form:
+
+      Heading = Stars, SP, [ Keyword, SP ],
+                [ Priority, SP ],
+                [ Context, SP ],
+                [ Verb, ":", SP ],
+                Title,
+                [ SP, "{", Locator, "}" ],
+                [ TagSpacer, TagList ],
+                *SP, LF ;
+
+   Each optional element that is present MUST appear in the order
+   shown.  Elements are separated by exactly one SP unless otherwise
+   specified.
+
+   A Heading whose entire content after the stars equals the literal
+   string "END" is reserved as the inline-task terminator
+   (Section 9.3) and MUST NOT be used as a regular heading.
+
+6.1.1.  Stars and Depth
+
+   The Stars component is:
+
+      Stars = 1*"*" ;
+
+   with the semantic constraint:
+
+      1 <= depth <= 14    for regular entries
+      depth == 15         for inline tasks (Section 9.3)
+
+   At least one SP MUST follow the stars.  HTAB is not accepted as
+   a separator.
+
+
+
+Wiegley              org-jw Format Specification            [Page 13]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+6.1.2.  Keyword
+
+   A Keyword, if present, is a byte-exact match against one of the
+   strings configured in the openKeywords or closedKeywords lists of
+   the active Configuration (Section 11.1).  The Parser tries open
+   keywords before closed keywords.
+
+   No literal keyword is hard-coded by the format.  In the default
+   Configuration, both lists are empty and no heading carries a
+   Keyword.  An implementation MUST NOT assume the presence of
+   "TODO", "DONE", or any other specific literal without consulting
+   the Configuration.
+
+   Keywords are case-sensitive.  A Keyword match is followed by at
+   least one SP; the subsequent components of the Heading then
+   apply.
+
+6.1.3.  Priority Cookie
+
+   A Priority Cookie, if present, has the literal form:
+
+      Priority = "[#" ( "A" / "B" / "C" ) "]" ;
+
+   Only the three priorities A, B, and C are accepted by the
+   Parser.  Other letters, lowercase variants, and multi-character
+   priorities are NOT accepted.  The priorities list in the
+   Configuration (Section 11.1) is informative for downstream tools
+   but does not relax the parser's acceptance set.
+
+   A Priority MUST be followed by at least one SP before the next
+   heading component.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 14]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+6.1.4.  Context
+
+   A Context is a parenthesized free-form annotation placed before
+   the Verb and Title.  Its syntax is:
+
+      Context = "(", 1*( print-char / SP ), ")" ;
+
+   where print-char is any printable character other than ")".  A
+   Context MUST contain at least one character inside the
+   parentheses.  A Context MUST be followed by at least one SP
+   before the Verb or Title.
+
+   The Context is an org-jw extension and has no defined semantics
+   beyond the author's use; it is preserved verbatim.
+
+6.1.5.  Verb
+
+   A Verb is an ASCII alphabetic identifier followed by a colon:
+
+      Verb = 1*ALPHA, ":" ;
+
+   Only ASCII letters (A-Z, a-z) are permitted in a Verb.  Digits
+   and underscores are NOT permitted.  A Verb MUST be followed by
+   at least one SP before the Title.
+
+   When the active Configuration (Section 11.1) defines a VERB_ALL
+   file property, every Entry's Verb MUST appear in the configured
+   vocabulary; otherwise the linter emits the VerbInFileUnknown
+   diagnostic (Appendix C).
+
+6.1.6.  Title
+
+   The Title is the free-form core of the heading.  It spans all
+   bytes after the optional Verb and before the Title Suffix
+   (consisting of the optional Locator, Tag Spacer, and Tags).
+
+   A Title MAY be empty.  A Title MUST NOT contain two consecutive
+   SP characters; if it does, the linter emits the
+   TitleWithExcessiveWhitespace diagnostic.
+
+   A Title MUST NOT contain the literal terminator tokens for
+   Locator ("{" immediately preceded by SP) or Tags ("::..." in the
+   column position defined by Section 6.1.9) unless disambiguated
+   by surrounding context; in practice this means authors SHOULD
+   avoid those byte sequences in Title text.
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 15]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+6.1.7.  Locator
+
+   A Locator is a brace-delimited identifier placed after the
+   Title:
+
+      Locator      = "{", LocatorBody, "}" ;
+      LocatorBody  = 1*( ALPHA / DIGIT / "_" / SP ) ;
+
+   The Locator body permits alphanumerics, underscores, and SP
+   characters only.  No other punctuation (including hyphens and
+   dots) is accepted.
+
+   A Locator MUST be preceded by at least one SP separating it from
+   the Title.  If both a Locator and a Tag list are present, at
+   least two SP characters MUST separate the closing "}" from the
+   opening ":" of the Tag list.
+
+6.1.8.  Tags
+
+   A Tag list is a colon-delimited sequence:
+
+      TagList   = ":", 1*( Tag, ":" ) ;
+      Tag       = *( ALPHA / DIGIT / "-" / "_" / "=" / "/" ) ;
+
+   Tags may contain Unicode alphanumerics, hyphens, underscores,
+   equals signs, and forward slashes.  Empty tags (consecutive
+   colons) are syntactically accepted by the Parser but SHOULD NOT
+   appear in conforming files.
+
+   At least one Tag MUST be present in a Tag list for the list to
+   appear on a Heading.
+
+   Tags within a single Entry MUST be distinct (case-sensitively);
+   the linter emits DuplicateTag otherwise.
+
+   A TagList is separated from the preceding Title (or Locator) by
+   a Tag Spacer, defined in Section 6.1.9.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 16]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+6.1.9.  Tag Column Alignment
+
+   When the Printer emits a Heading carrying Tags, it computes a
+   Tag Spacer as follows:
+
+      desired   = tagsColumn - effective-prefix-length - tag-length
+      spacer    = if desired < 2 then "  " else SP * desired
+
+   where tagsColumn is the configured column (Section 11.1),
+   effective-prefix-length is the visual width of the prefix
+   (heading text with Org link markup collapsed), and tag-length is
+   the number of bytes in the TagList including its enclosing
+   colons.
+
+   The minimum Tag Spacer is two SP characters.  A Parser MUST
+   accept any number of SP characters (one or more) as the Tag
+   Spacer on input.
+
+   When no Tags are present, no trailing spacing is emitted.
+
+6.2.  Leading Timestamp Line
+
+   An Entry MAY include a single Leading Timestamp Line immediately
+   following the Heading.  Its syntax is:
+
+      StampLine  = StampClause, *( SP, StampClause ), *SP, LF ;
+      StampClause = ( "CLOSED: " / "SCHEDULED: " / "DEADLINE: " ),
+                    StampInactive ;
+
+   where StampInactive is an inactive timestamp (Section 7.1) --
+   Leading Stamps MUST use the inactive (bracket) form for CLOSED
+   and MUST use a single-time form (no "--" ranges) for all three
+   variants.
+
+   The three labels -- "CLOSED: ", "SCHEDULED: ", and "DEADLINE: "
+   -- MUST appear verbatim, each followed by exactly one SP before
+   the timestamp.  Multiple clauses on the same line are separated
+   by exactly one SP.
+
+   Leading Stamps MUST appear only on Entries carrying a Keyword
+   recognized as an open or closed TODO state
+   (Section 11.2); otherwise the linter emits the TimestampsOnNonTodo
+   diagnostic.
+
+   Timestamps MUST NOT appear within the body of an Entry; the
+   linter emits MisplacedTimestamp when SCHEDULED:, DEADLINE:, or
+   CLOSED: patterns are detected in paragraph text.
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 17]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+6.3.  Property Drawer
+
+   A Property Drawer, if present, occupies a region bracketed by
+   literal delimiter lines:
+
+      PropertyDrawer = ":PROPERTIES:", *SP, LF,
+                       1*PropertyLine,
+                       ":END:", *SP, LF ;
+
+   At least one PropertyLine MUST appear between the opener and the
+   closer.  Empty drawers are rejected by the Parser.
+
+      PropertyLine = ":", PropertyName, ":", *SP, Value, LF ;
+      PropertyName = 1*( ALPHA / DIGIT / "_" / SP ) ;
+
+   The PropertyName is an identifier permitting alphanumerics,
+   underscores, and SP characters.  The PropertyName "END" is
+   reserved and MUST NOT be used.
+
+   The Value is the remainder of the line up to, but not including,
+   the line terminator.  The Value MAY be empty.  The Value
+   preserves trailing whitespace verbatim.
+
+   The Printer aligns PropertyLines using the propertyColumn value
+   from the Configuration (Section 11.1) as follows:
+
+      prefix    = ":" PropertyName ":"
+      spacer    = if (propertyColumn - length(prefix)) < 1
+                    then SP
+                    else SP * (propertyColumn - length(prefix))
+      line      = prefix, spacer, Value
+
+   The minimum spacer is one SP.  If Value is empty, no spacer is
+   emitted and the line is exactly the prefix.
+
+   Property names MUST be unique within a given drawer
+   (case-insensitive); the linter emits DuplicateProperty
+   otherwise.  The file-level property drawer MUST NOT duplicate
+   any given name (case-insensitive) except for the names "LINK"
+   and "TAGS", which are permitted to recur; the linter emits
+   DuplicateFileProperty for other duplicates.
+
+   The :PROPERTIES: drawer MUST NOT appear inside an Entry's Body
+   or inside a log entry's body; the linter emits
+   MisplacedProperty when such occurrences are detected.
+
+   Well-known property names and their semantics are enumerated in
+   Section 12.2.
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 18]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+6.4.  Log Entries Region
+
+   Following the optional Property Drawer, an Entry MAY contain any
+   number of Log Entries.  Each Log Entry is one of the types
+   defined in Section 8.  Log Entries MAY appear either as list
+   items interspersed at this position, or inside a single LOGBOOK
+   drawer (Section 8.1), or both subject to the constraints below.
+
+   An Entry MUST contain at most one LOGBOOK drawer; the linter
+   emits MultipleLogbooks otherwise.
+
+   If a LOGBOOK drawer is present and contains any non-Clock log
+   entry, no log entries MAY appear outside the LOGBOOK; the linter
+   emits MixedLogbooks otherwise.  Clock entries MAY appear inside
+   a LOGBOOK while other log-entry types appear outside it, or vice
+   versa, but a single category (state changes, notes, etc.) MUST
+   NOT be split across the two regions.
+
+   Log Entries of any kind are forbidden inside an Entry's Body;
+   the linter emits MisplacedLogEntry when the pattern "- CLOSING
+   NOTE", "- State \"", "- Note taken on", "- Rescheduled from", "-
+   Not scheduled, was", "- New deadline from", "- Removed deadline,
+   was", "- Refiled on", ":LOGBOOK:", or ":logbook:" is detected in
+   paragraph text.
+
+6.5.  Active Timestamp Line
+
+   An Entry MAY contain at most one Active Timestamp Line.  If
+   present, it appears after the Log Entries region and before the
+   Body:
+
+      ActiveStampLine = ActiveStamp, *SP, LF ;
+
+   where ActiveStamp is an active timestamp (Section 7.1) which MAY
+   include a range form ("--").
+
+   Only the first ActiveStamp found by the Parser is placed on this
+   line; additional active stamps in the source will be treated as
+   Body content.  The Printer emits at most one Active Timestamp
+   Line per Entry.
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 19]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+6.6.  Entry Body
+
+   The Entry Body follows the fixed prelude (Heading through Active
+   Timestamp Line) and precedes the child Entries.  The Body is a
+   Block sequence:
+
+      Body  = *Block ;
+      Block = Whitespace | Paragraph | Drawer | InlineTask ;
+
+   Block types are defined in Section 9.4.  Adjacent Whitespace
+   blocks are canonicalized into a single block whose content is
+   the concatenation of the individual contents; adjacent Paragraph
+   blocks are similarly joined.  Adjacent Drawer or InlineTask
+   blocks remain distinct.
+
+   A Body block terminates when either the next top-level or
+   sibling Heading is encountered, or end-of-file is reached.  A
+   heading whose depth equals the child depth of the current Entry
+   begins the first child Entry (Section 6.7).
+
+   The first line of the first Paragraph block in a Body MUST NOT
+   begin with SP; the linter emits UnnecessaryWhitespace otherwise.
+
+   A Body that consists solely of a Whitespace block is forbidden
+   on Entries that have a Keyword or whose Title matches one of the
+   reserved template Titles ("Attending", "Agenda", "Minutes",
+   "Notes", "Transcript") without child Entries; the linter emits
+   EmptyBodyWhitespace in such cases.
+
+   No Block in a Body MAY contain more than one consecutive blank
+   line; the linter emits MultipleBlankLines otherwise.
+
+6.7.  Child Entries
+
+   Following the Body, zero or more child Entries appear.  Each
+   child Entry has depth exactly one greater than its parent.
+   Child Entries are recursively parsed using the same grammar as
+   the parent.
+
+   The sequence of children within a parent is ordered and MUST be
+   preserved by the round-trip.
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 20]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+7.  Timestamps
+
+7.1.  Active and Inactive Forms
+
+   A timestamp has two forms distinguished by delimiter:
+
+      ActiveStamp   = "<", StampBody, ">" ;
+      InactiveStamp = "[", StampBody, "]" ;
+
+   Active stamps (angle brackets) denote agenda-visible times.
+   Inactive stamps (square brackets) denote records that are not
+   surfaced in the agenda.
+
+   Leading Stamps (Section 6.2) MUST use the inactive form.
+   Active Stamp Lines (Section 6.5) use the active form.  Log
+   entry embedded times (Section 8) use the form written literally
+   in the source and are preserved verbatim.
+
+   The StampBody grammar is common to both forms:
+
+      StampBody = Date, " ", DayOfWeek,
+                  [ " ", TimeOfDay, [ "-", TimeOfDay ] ],
+                  [ " ", Suffix ] ;
+
+7.2.  Date
+
+   A Date is exactly ten bytes in the form:
+
+      Date = 4DIGIT, "-", 2DIGIT, "-", 2DIGIT ;
+
+   with the semantic constraints:
+
+      1970 <= year <= 2200
+      1    <= month <= 12
+      1    <= day; day MUST be valid for the given month and year
+               (per the proleptic Gregorian calendar).
+
+   The Parser rejects dates outside these bounds with diagnostic
+   messages "Year out of range", "Month out of range", or "Could
+   not parse gregorian date: YYYY-M-D".
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 21]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+7.3.  Day of Week
+
+   The Day of Week follows the Date with exactly one SP separator:
+
+      DayOfWeek = "Sun" / "Mon" / "Tue" / "Wed" /
+                  "Thu" / "Fri" / "Sat" ;
+
+   Only the three-letter abbreviations with the capitalization
+   shown are accepted.  No other locale variants, full weekday
+   names, or alternate abbreviations are recognized.
+
+   The Day of Week is parsed but NOT stored in the AST.  The
+   Printer regenerates it from the Date under the
+   defaultTimeLocale; writers need not supply an accurate Day of
+   Week, but any mismatch on input is silently discarded.  Authors
+   are advised to write correct Day of Week values for the benefit
+   of human readers.
+
+7.4.  Time of Day
+
+   A Time of Day, if present, follows the Day of Week with one SP:
+
+      TimeOfDay = 2DIGIT, ":", 2DIGIT ;
+
+   with the semantic constraints:
+
+      0 <= HH <= 23
+      0 <= MM <= 59
+
+   The Parser rejects out-of-range values with diagnostic messages
+   "Hour out of range" or "Minute out of range".
+
+   A same-day time range MAY follow the start Time of Day,
+   separated by "-":
+
+      TimeRange = TimeOfDay, "-", TimeOfDay ;
+
+   A time range MUST have a start Time of Day present (an end-only
+   range is not permitted).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 22]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+7.5.  Time Ranges
+
+   Three range forms are defined:
+
+   Same-day range:    Written as a single stamp with "HH:MM-HH:MM"
+                      inside the same pair of brackets or angle
+                      brackets.  See Section 7.4.
+
+   Multi-day range:   Written as two complete stamps joined by
+                      "--":
+
+                         StampBody, ( "--" ), StampBody
+
+                      Only the starting stamp may contain a
+                      TimeRange, DayOfWeek, or Suffix; the ending
+                      stamp MUST contain only Date, DayOfWeek, and
+                      optional TimeOfDay (not a TimeRange, not a
+                      Suffix, and not an extra day-end marker).
+                      The Parser rejects violations with
+                      diagnostics "Invalid ending time (has day
+                      end)", "Invalid ending time (has end)", or
+                      "Invalid ending time (has suffix)".
+
+   Clock range:       Only within CLOCK log entries (Section 8.5),
+                      the two endpoints of a clock interval are
+                      joined by "--" between inactive stamps,
+                      followed by " => " and a duration
+                      (Section 7.7).
+
+7.6.  Repeater and Warning Suffix
+
+   A single Suffix MAY follow the Date/TimeOfDay inside a stamp,
+   separated by one SP:
+
+      Suffix     = SuffixKind, Number, Span,
+                   [ "/", Number, Span ] ;
+      SuffixKind = "+" / "++" / ".+" / "-" ;
+      Number     = 1*DIGIT ;     -- subject to -100 < N < 100
+      Span       = "d" / "w" / "m" / "y" ;
+
+   The four SuffixKind values correspond to repeat modes:
+
+      +    simple repeater
+      ++   repeat-plus-increment
+      .+   dotted (post-completion) repeater
+      -    warning (within-N lead time)
+
+   Combinations such as ".-" or multiple leading dots are rejected
+
+
+
+Wiegley              org-jw Format Specification            [Page 23]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+   with the diagnostic "Uenxpected period".
+
+   The Number MUST satisfy -100 < N < 100 (strictly).  The optional
+   larger-span suffix "/N<Span>" permits dual-period repeaters such
+   as "+1d/2w" (repeat every day, but not more often than every
+   two weeks).
+
+   The Span letters have the fixed meanings: d = day, w = week,
+   m = month, y = year.
+
+7.7.  Duration
+
+   A Duration appears only within CLOCK log entries and is written:
+
+      Duration = 1*DIGIT, ":", 1*DIGIT ;
+
+   where the first component is hours and the second is minutes.
+   The Parser accepts any number of digits on either side and does
+   not clamp minutes to the range [0, 60).
+
+   The Printer renders Duration with the following padding:
+
+      Hours:    single-digit hours are prefixed with one SP
+                (producing " H:MM"); multi-digit hours appear
+                unpadded.
+      Minutes:  single-digit minutes are prefixed with one "0"
+                (producing "H:0M" or "HH:0M").
+
+   Example:  Duration 1 hour 5 minutes  ->  " 1:05"
+             Duration 12 hours 30 min   ->  "12:30"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 24]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+8.  Log Entries
+
+   Log Entries record the history of state changes, notes, and
+   time-tracking events associated with an Entry.  Each Log Entry
+   occupies one or more lines.
+
+   Non-clock Log Entries begin with the literal prefix "- "
+   (dash-space) on their first line; they are rendered as
+   unordered list items.  Clock entries are exceptional: they
+   begin with "CLOCK:" (no leading dash).
+
+   Where a Log Entry includes a note body (multi-line continuation),
+   the first line ends with " \\" (SP followed by two backslash
+   characters) and subsequent body lines are indented by exactly two
+   SP characters.  Empty body lines MAY occur; their two-SP leader
+   is omitted (empty lines remain empty).
+
+8.1.  LOGBOOK Drawer
+
+   A LOGBOOK drawer contains a sequence of Log Entries wrapped in
+   delimiter lines:
+
+      LogBook = ":LOGBOOK:", *SP, LF,
+                *LogEntry,
+                ":END:", *SP, LF ;
+
+   Within a LOGBOOK, any Log Entry type defined in Sections 8.2
+   through 8.5 MAY appear.  LOGBOOK drawers SHOULD contain only
+   Clock entries when Log Entries of other types appear at the same
+   Entry's log-entry region outside the drawer; otherwise the
+   MixedLogbooks diagnostic applies (Section 6.4).
+
+   An Entry MUST NOT contain more than one LOGBOOK drawer.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 25]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+8.2.  State Change Entries
+
+   A State Change entry records a keyword transition:
+
+      State = "- State \"", Keyword, "\"",
+              [ *SP, "from \"", Keyword, "\"" ],
+              *SP, InactiveStamp,
+              [ " \\" ], LF,
+              [ NoteBody ] ;
+
+   The first keyword is the new state; the optional "from \"...\""
+   clause names the previous state.  Both keywords MUST be values
+   recognized by the active Configuration (Section 11.1); the
+   parser uses the same keyword-matching procedure as for heading
+   keywords (Section 6.1.2).
+
+   The Printer pads the first keyword clause ("NEW") to 13 bytes
+   and the optional "from" clause to 18 bytes.  Inputs with
+   different padding are accepted and normalized on output.
+
+   Idempotent transitions (new state equal to previous state) are
+   rejected by the linter with the InvalidStateChangeIdempotent
+   diagnostic.
+
+   The sequence of State Change entries within an Entry MUST form a
+   consistent chain (Section 11.3).
+
+8.3.  Note Entries
+
+   Two note forms are defined:
+
+      Closing = "- CLOSING NOTE", InactiveStamp,
+                [ " \\" ], LF, [ NoteBody ] ;
+
+      Note    = "- Note taken on ", InactiveStamp,
+                [ " \\" ], LF, [ NoteBody ] ;
+
+   Note the absence of a space between "CLOSING NOTE" and the
+   following timestamp; the opening bracket of the timestamp
+   provides the visual separation.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 26]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+8.4.  Scheduling Entries
+
+   Scheduling-related log entries record changes to SCHEDULED or
+   DEADLINE stamps and refiling events.  Each takes two timestamps:
+   the previous value (quoted) and the time of the change:
+
+      Rescheduled    = "- Rescheduled from \"",    InactiveStamp,
+                       "\" on ",                    InactiveStamp,
+                       [ " \\" ], LF, [ NoteBody ] ;
+
+      NotScheduled   = "- Not scheduled, was \"",   InactiveStamp,
+                       "\" on ",                    InactiveStamp,
+                       [ " \\" ], LF, [ NoteBody ] ;
+
+      NewDeadline    = "- New deadline from \"",    InactiveStamp,
+                       "\" on ",                    InactiveStamp,
+                       [ " \\" ], LF, [ NoteBody ] ;
+
+      RemovedDeadline = "- Removed deadline, was \"",InactiveStamp,
+                       "\" on ",                    InactiveStamp,
+                       [ " \\" ], LF, [ NoteBody ] ;
+
+      Refiling       = "- Refiled on ",            InactiveStamp,
+                       [ " \\" ], LF, [ NoteBody ] ;
+
+   The literal text of each entry MUST appear exactly as shown
+   (case-sensitive, punctuation included).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 27]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+8.5.  Clock Entries
+
+   A Clock entry records a time-tracking interval.  Its syntax is:
+
+      Clock     = "CLOCK:", 1*SP, InactiveStamp,
+                  [ "--", InactiveStamp,
+                    *SP, "=>", *SP, Duration ],
+                  *SP, LF ;
+
+   An open Clock entry (no second stamp, no duration) records a
+   currently running clock.  A closed Clock entry includes the
+   second stamp, the literal "=>" separator, and the Duration
+   (Section 7.7).
+
+   Clock entries MUST NOT carry a NoteBody (they are always
+   single-line).
+
+   Both stamps in a closed Clock entry use the inactive form.  The
+   ending stamp MUST NOT carry a Suffix.
+
+8.6.  Log Entry Body
+
+   Each non-clock Log Entry MAY carry a multi-line body attached to
+   the header line by the continuation marker " \\" (SP, backslash,
+   backslash).  The body is parsed as:
+
+      NoteBody  = 1*( NoteLine ) ;
+      NoteLine  = ( "  ", LineContent, LF ) / LF ;
+
+   Body lines MUST begin with exactly two SP characters, or be
+   entirely blank (LF only).
+
+   The linter emits WhitespaceAtStartOfLogEntry if a log entry body
+   begins with a Whitespace block -- log entries SHOULD begin with
+   meaningful content.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 28]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+9.  Drawers and Blocks
+
+9.1.  Plain Drawers
+
+   A plain Drawer delimits a named region by matching ":NAME:" and
+   ":END:" lines:
+
+      PlainDrawer = [ prefix ], ":", Name, ":", *SP, LF,
+                    *( ContentLine ),
+                    [ prefix ], ":END:", *SP, LF ;
+      Name        = 1*( ALPHA / DIGIT / "_" / SP ) ;
+
+   The Parser accepts ":end:" (lowercase) and ":END:" (uppercase)
+   interchangeably as the drawer terminator.  The linter requires
+   that the opening Name consist entirely of UPPERCASE (and ":")
+   characters; otherwise the InvalidDrawerCase diagnostic is
+   emitted.
+
+   The two reserved plain drawer names are:
+
+      PROPERTIES     The property drawer (Sections 5.2 and 6.3).
+      LOGBOOK        The log-entry drawer (Section 8.1).
+
+   Other Name values are permitted and are treated as generic
+   drawer blocks.  The content of a generic drawer is preserved
+   verbatim and is not assigned further structure by the Parser.
+
+   The prefix is a run of SP characters that precedes the opener
+   when the drawer appears nested inside an indented context (for
+   example, inside a log entry body).  The same prefix is required
+   on all content lines and the closer.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 29]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+9.2.  BEGIN/END Blocks
+
+   A BEGIN/END block delimits a region introduced by "#+begin" or
+   "#+BEGIN":
+
+      BeginBlock = [ prefix ], BeginOpen, Rest, LF,
+                   *( ContentLine ),
+                   [ prefix ], EndClose, LF ;
+      BeginOpen  = "#+begin" / "#+BEGIN" ;
+      EndClose   = "#+end..." / "#+END..." ;
+
+   The opener prefix is case-sensitive (either exactly "#+begin" or
+   exactly "#+BEGIN"), and the corresponding terminator MUST use
+   the same case convention matching either "#+end" or "#+END".
+   The linter requires that the opener's identifying word consist
+   entirely of "#", "+", "_", ":", or lowercase characters;
+   otherwise the InvalidDrawerCase diagnostic is emitted.
+
+   Well-known block names include begin_src, begin_example,
+   begin_quote, and begin_export, but any identifier is accepted.
+   The content between the delimiters is preserved verbatim and is
+   not further structured.
+
+9.3.  Inline Tasks
+
+   An Inline Task is a nested Entry-like structure embedded in the
+   body of a regular Entry.  Its depth is exactly 15:
+
+      InlineTask = "***************", SP, TitleLine, LF,
+                   { Entry content as in Section 6 },
+                   "***************", SP, "END", RestOfLine ;
+
+   The opening line has 15 consecutive "*" characters, followed by
+   SP and a Heading in the usual form (Section 6.1).  The closing
+   line has 15 consecutive "*" characters, followed by SP, followed
+   by the literal "END", followed by any trailing text.
+
+   Inline Tasks MAY contain any of the Entry components
+   (leading stamps, property drawer, log entries, active stamp,
+   body) but MAY NOT contain child Entries.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 30]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+9.4.  Paragraphs and Whitespace
+
+   Within a Body, the Parser produces one of four Block types for
+   each line-level construct:
+
+   Whitespace:  A line consisting solely of zero or more SP
+                characters followed by LF.  The exact SP count is
+                captured in the block's content.
+
+   Paragraph:   A sequence of one or more non-blank, non-drawer,
+                non-inline-task lines.  Each line of a Paragraph is
+                stored individually; adjacent Paragraph blocks are
+                merged into a single block containing the
+                concatenated line list.
+
+   Drawer:      A plain drawer (Section 9.1) or BEGIN/END block
+                (Section 9.2), with its delimiter lines included in
+                the block's content.
+
+   InlineTask:  An inline task (Section 9.3).
+
+   Block merging is performed on construction; writers MUST NOT
+   assume that adjacent Paragraph or Whitespace blocks remain
+   distinct after a parse-print round-trip.
+
+   Paragraph lines MUST NOT begin with SP in the first line of the
+   first Paragraph of an Entry Body; the linter emits
+   UnnecessaryWhitespace otherwise.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 31]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+10.  Tags
+
+10.1.  Syntax
+
+   Tag syntax is defined in Section 6.1.8.  Within a Heading, a Tag
+   list is colon-delimited and follows the optional Locator.
+
+   At the file level, Tags are declared via the FILETAGS file
+   property (Section 12.1), whose value has the same ":tag:tag:"
+   form as on a Heading but is expressed inside the property value.
+
+10.2.  Tag Vocabulary
+
+   A file MAY declare an explicit vocabulary via the TAGS_ALL file
+   property:
+
+      #+TAGS_ALL: tag1 tag2 tag3 ...
+
+   The value is a space-separated list of tag names.  When this
+   property is present, every Tag appearing on any Entry in the
+   file MUST be a member of the declared list; otherwise the linter
+   emits TagInFileUnknown for each non-member tag.
+
+   When TAGS_ALL is absent, any tag conforming to the syntax of
+   Section 6.1.8 is permitted.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 32]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+10.3.  Reserved Semantic Tags
+
+   The following tag names have reserved meanings enforced by the
+   linter:
+
+   :TODO:     Indicates an Entry that is a to-do item.  When
+              present in the file-level FILETAGS, signals that the
+              file contains open to-do Entries.  The linter enforces
+              that this tag's presence in FILETAGS matches the
+              presence of open-keyword Entries in the file (see
+              FileTagsTodoMismatch, Appendix C).
+
+   :LINK:     Indicates that an Entry's primary purpose is a URL
+              reference.  Presence of the :LINK: tag requires the
+              presence of a URL property, and vice versa; otherwise
+              the TodoLinkDoesNotMatchUrl diagnostic applies.  If
+              the Entry's keyword is literally "LINK", the :LINK:
+              tag is redundant and MUST NOT be written
+              (TodoLinkKeywordImpliesLinkTag diagnostic).
+
+   :FILE:    Indicates that an Entry has attached files in the
+              attachmentsDir.  Presence of :FILE: requires an ID
+              property (Section 12.2) and an existing attachment
+              directory at:
+
+                 <attachmentsDir>/<first 2 chars of ID>/<rest>
+
+              Otherwise the TodoFileDoesNotMatchAttachment
+              diagnostic applies.
+
+   Authors MAY define additional tag conventions; this
+   specification does not reserve other tag names.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 33]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+11.  Keywords and State Transitions
+
+11.1.  Configuration
+
+   Keyword handling is driven entirely by an external Configuration
+   object, typically loaded from a YAML file.  The Configuration
+   comprises:
+
+      startKeywords:        List of keywords permitted as the
+                            initial state of a state-change chain.
+
+      openKeywords:         List of keywords denoting in-progress
+                            states.
+
+      closedKeywords:       List of keywords denoting terminal
+                            states.
+
+      keywordTransitions:   Association list mapping each source
+                            keyword to the list of target keywords
+                            to which it MAY transition.
+
+      priorities:           List of priority letters (informative;
+                            the parser accepts only A, B, C).
+
+      propertyColumn:       Non-negative integer controlling the
+                            column at which property values are
+                            aligned in drawer lines (Section 6.3).
+
+      tagsColumn:           Non-negative integer controlling the
+                            column at which tag lists are aligned
+                            on Heading lines (Section 6.1.9).
+
+      attachmentsDir:       Filesystem path prefix for attachment
+                            directories (Section 10.3, :FILE: tag).
+
+      homeDirectory:        Optional filesystem path used to
+                            resolve "~/" in file references during
+                            linting.
+
+      checkFiles:           Boolean flag enabling or disabling
+                            filesystem-existence checks during
+                            linting.
+
+   The Parser, Printer, and Linter all consult the same
+   Configuration.  A file is valid only with respect to a specific
+   Configuration; the same bytes MAY be valid under one
+   Configuration and invalid under another.
+
+11.2.  Open and Closed Classes
+
+   A keyword classified as open denotes an in-progress state; a
+
+
+
+Wiegley              org-jw Format Specification            [Page 34]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+   keyword classified as closed denotes a terminal state.  The
+   classification is carried through the AST (as OpenKeyword or
+   ClosedKeyword constructors) and affects certain linting rules
+   such as FileTagsTodoMismatch.
+
+   A keyword MUST appear in at most one of openKeywords or
+   closedKeywords in a given Configuration.
+
+11.3.  Transition Graph
+
+   The keywordTransitions map defines the legal transitions between
+   keywords.  A state-change chain (Section 8.2) for a given Entry
+   MUST satisfy:
+
+      First transition:
+         The source keyword of the earliest state-change entry
+         MUST be a member of startKeywords (unless the Entry is
+         part of an archive file).  Otherwise the linter emits
+         InvalidStateChangeInvalidTransition with kind
+         FirstTransition.
+
+      Intermediate transitions:
+         For every pair of consecutive state-change entries, the
+         source keyword of the later entry MUST equal the target
+         keyword of the earlier entry.  Otherwise the linter emits
+         InvalidStateChangeInvalidTransition with kind
+         IntermediateTransition.  Entries carrying a LAST_REPEAT
+         property (Section 12.2) are exempt.
+
+      Transition legality:
+         For every state-change entry, the target keyword MUST
+         appear in the list associated with the source keyword in
+         keywordTransitions.  Otherwise the linter emits
+         InvalidStateChangeTransitionNotAllowed.
+
+      Final transition:
+         The current Entry's keyword MUST equal the target keyword
+         of the latest state-change entry.  Otherwise the linter
+         emits InvalidStateChangeInvalidTransition with kind
+         LastTransition.  Archive files and Entries with a
+         LAST_REPEAT property are exempt.
+
+      Chronological order:
+         The timestamps of state-change entries MUST be in
+         chronological order (most recent first, as written).
+         Otherwise the linter emits
+         InvalidStateChangeWrongTimeOrder.
+
+   Idempotent transitions (source equal to target) are rejected by
+   the linter.
+
+
+
+Wiegley              org-jw Format Specification            [Page 35]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+12.  Well-Known Properties
+
+   This section enumerates property names with defined semantics
+   under this specification.  Property names not listed here are
+   permitted and are preserved verbatim, but carry no
+   specification-level meaning.
+
+12.1.  File-Level Properties
+
+   The following properties MAY appear as "#+NAME: value" lines in
+   the file header (Section 5.3):
+
+   TITLE          A human-readable title for the file.  Every file
+                  SHOULD carry a TITLE.  If present, it MUST be
+                  the last file property (the
+                  TitlePropertyNotLast rule).
+
+   ID             A stable identifier for the file.
+
+   CREATED        The file's creation timestamp (Section 7).  If
+                  the filename encodes a parseable date, the
+                  CREATED value MUST agree with it
+                  (FileCreatedTimeMismatch rule).
+
+   FILETAGS       A colon-delimited tag list applied file-wide
+                  (Section 10.1).  Consistency with the :TODO:
+                  semantic tag is enforced
+                  (FileTagsTodoMismatch, Section 10.3).
+
+   CATEGORY       A short category label.
+
+   ARCHIVE        A file path reference for the file's archive
+                  target.  The path (up to the first ":") MUST
+                  refer to an existing file; ~/ is expanded
+                  against homeDirectory.
+
+   AUDIO          A file path to an associated audio recording.
+                  The referenced file MUST exist.
+
+   TAGS_ALL       Space-separated vocabulary of permitted tags
+                  (Section 10.2).
+
+   VERB_ALL       Space-separated vocabulary of permitted verbs
+                  (Section 6.1.5).
+
+   NOSLUG         Any non-empty value disables the
+                  filename-vs-title slug check
+                  (FileSlugMismatch rule).
+
+   HAS_TODO       Any non-empty value disables the FILETAGS :todo:
+
+
+
+Wiegley              org-jw Format Specification            [Page 36]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+                  consistency check (FileTagsTodoMismatch rule).
+
+   IGNORE_LINKS   Any non-empty value disables broken-link checks
+                  for the entire file (BrokenLink rule).
+
+   WHITESPACE     Value "ignore" disables whitespace consistency
+                  checks for every Entry in the file
+                  (InconsistentWhitespace rule).
+
+   LINK           May appear multiple times as file properties.
+                  Duplicate detection of file properties exempts
+                  this name.
+
+   TAGS           May appear multiple times.  Same exemption as
+                  LINK.
+
+12.2.  Entry-Level Properties
+
+   The following properties MAY appear within an Entry's property
+   drawer (Section 6.3):
+
+   ID             A globally unique identifier for the Entry.  MUST
+                  be unique across every file parsed in a single
+                  collection run (DuplicatedIdentifier rule).
+
+   CREATED        The Entry's creation timestamp.
+
+   CATEGORY       A short category label, at most 10 bytes long
+                  (CategoryTooLong rule).
+
+   URL            A link URL.  Presence ties to the :LINK: semantic
+                  tag (Section 10.3).
+
+   Attachments    Flag property indicating that attachments exist
+                  for this Entry.  Ties to the :FILE: semantic
+                  tag.
+
+   LOCATION       A latitude,longitude pair.  The literal value
+                  "0.0,0.0" is rejected (InvalidLocation rule).
+
+   LAST_REVIEW    Timestamp of the most recent review.  Permitted
+                  only on TODO-keyword Entries
+                  (NonTodoWithReviewProperties rule).
+
+   NEXT_REVIEW    Timestamp of the next scheduled review.  Same
+                  constraint as LAST_REVIEW.
+
+   REVIEWS        Review metadata.  Same constraint.
+
+   Effort         An estimate of effort required.  Same constraint.
+
+
+
+Wiegley              org-jw Format Specification            [Page 37]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+   HASH_sha512    A hexadecimal SHA-512 digest, truncated to 64
+                  characters, of the Entry's canonical
+                  serialization with the HASH_sha512 property
+                  itself removed.  If present, MUST match the
+                  computed hash (HashesDoNotMatch rule).
+
+   LAST_REPEAT    Timestamp recording a repeat event.  Exempts the
+                  Entry from certain state-change chain checks
+                  (Section 11.3).
+
+   ARCHIVE        As for file-level ARCHIVE, but scoped to this
+                  Entry.
+
+   NOTER_DOCUMENT A filesystem path to a document opened by an
+                  external "noter" tool.  MUST exist, unless the
+                  path contains the substring "devonthink" (which
+                  is opaque to this specification).
+
+12.3.  Property Inheritance
+
+   The following property names are inherited by default from an
+   Entry's nearest ancestor (including the file-level properties):
+
+      COLUMNS, CATEGORY, ARCHIVE, LOGGING
+
+   An inherited property is materialized in the AST with the
+   inherited flag set.  Inherited properties are NOT written back
+   by the Printer; they exist only as a query-time view.
+
+   An implementation MAY extend the inheritance set via the
+   Configuration; doing so does not change the canonical form.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 38]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+13.  Round-Trip Preservation
+
+13.1.  The Round-Trip Property
+
+   A conforming implementation of both the Parser and Printer
+   classes MUST satisfy the following identity for every valid
+   input file F and every valid Configuration C:
+
+      Printer(C, Parser(C, F)) == F     (byte-exact equality)
+
+   This is the primary correctness criterion of this
+   specification.  It is verified by the org-jw test harness
+   against the entire body of Org-mode files in the author's
+   personal archive, and is a blocking check for all changes to
+   the Parser or Printer.
+
+   Violations are reported with the FileFailsToRoundTrip
+   diagnostic.
+
+13.2.  Canonical Form
+
+   The canonical form of an AST is the byte sequence produced by
+   the Printer as specified in Sections 6 through 9 under a given
+   Configuration.  It is characterized by:
+
+   o  Exactly one SP between each pair of consecutive Heading
+      components that are both present.
+   o  Exactly one SP between the opening ":NAME:" of a property
+      line and its value when propertyColumn is 0 or the computed
+      spacer width is less than 1.
+   o  Exactly two SP between the Heading prefix and the Tag list
+      when tagsColumn is 0 or the computed spacer width is less
+      than 2.
+   o  Exactly one SP after the literal labels "CLOSED: ",
+      "SCHEDULED: ", and "DEADLINE: ".
+   o  Exactly one SP between "#+NAME:" and the value on a file
+      property line.
+   o  No trailing whitespace on lines produced by the Printer
+      beyond what was explicitly retained from the AST's
+      preserved strings (property values, paragraph lines, drawer
+      content).
+
+   Files that conform to the canonical form are round-trip stable
+   by construction.
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 39]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+13.3.  Preserved Features
+
+   The round-trip identity preserves, among others:
+
+   o  The exact count of SP characters in Whitespace blocks.
+   o  The trailing SP characters on property values and paragraph
+      lines.
+   o  The ordering of properties within a drawer.
+   o  The ordering of file-level properties.
+   o  The ordering of Tags on a Heading.
+   o  The ordering of log entries within and outside a LOGBOOK.
+   o  Unknown property names and their values (as generic
+      Property records).
+   o  Unknown drawer names and their content (as generic Drawer
+      blocks).
+   o  The exact byte content of BEGIN/END block content.
+
+   The round-trip identity does NOT preserve:
+
+   o  The Day of Week component of a timestamp (regenerated by
+      the Printer from the Date under defaultTimeLocale).
+   o  The case of ":END:" in plain drawers (the Parser accepts
+      both ":end:" and ":END:"; the Printer emits ":END:").
+   o  The case of "#+end..." in BEGIN/END blocks when the case of
+      the opener differs from the case of the closer (the
+      Printer restores consistent case).
+   o  Extra SP between the colon and the value in a file property
+      line (the Printer emits exactly one SP); this is only true
+      when the Parser round-trip is tested against the *canonical
+      form*; input files that exceed canonical form in this
+      respect will not round-trip to themselves.
+   o  A Byte Order Mark or CR character at the start of a file or
+      line.
+
+   Authors are advised that writing files in canonical form (for
+   example, via "cabal run org-jw -- trip --change-in-place") is
+   the surest way to maintain round-trip stability.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 40]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+14.  Validity Rules
+
+14.1.  Lint Severity Classes
+
+   The Validator classifies diagnostics into five severity levels,
+   in increasing order of priority:
+
+      LintDebug   Diagnostic only; not used for rule emission.
+      LintAll     Filter level; activates network-dependent rules
+                  such as HTTP link checking.
+      LintInfo    Informational; the file is valid but may benefit
+                  from cleanup.
+      LintWarn    Warning; the file violates a recommended
+                  practice.
+      LintError   Error; the file violates a hard constraint.
+
+   Only LintInfo, LintWarn, and LintError are assigned by rule
+   emissions.  LintDebug and LintAll are filter levels used by the
+   command-line interface to select which diagnostics are reported.
+
+   A conforming Validator MUST emit each diagnostic at the severity
+   level defined in Appendix C.
+
+14.2.  File Validity
+
+   A File is valid when:
+
+   o  The file parses successfully according to Sections 5 through
+      9.
+   o  No file-level rule (Appendix C, rules F-1 through F-12)
+      emits a LintError diagnostic under the active Configuration.
+
+   File-level rules enforced include:
+
+   o  Presence of TITLE (Info if absent).
+   o  Presence of ID and CREATED file properties (Info/Warn).
+   o  Agreement between filename-encoded timestamp and CREATED
+      (Warn).
+   o  Filename-to-title slug match (Info; suppressed by NOSLUG).
+   o  TITLE appearing as the last file property (Warn).
+   o  Existence of ARCHIVE and AUDIO referenced files (Warn/Error).
+   o  FILETAGS :todo: consistency with open-keyword Entries
+      (Warn; suppressed by HAS_TODO).
+   o  TAGS_ALL and VERB_ALL vocabulary adherence (Warn).
+   o  Review properties on TODO entries only (Warn).
+   o  Link reachability (Error; suppressed by IGNORE_LINKS).
+   o  Absence of duplicate file properties except LINK and TAGS
+      (Error).
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 41]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+14.3.  Entry Validity
+
+   An Entry is valid when:
+
+   o  It parses successfully according to Section 6.
+   o  No entry-level rule (Appendix C, rules E-1 through E-28)
+      emits a LintError diagnostic under the active Configuration.
+
+   Key entry-level rules include:
+
+   o  TODO and category entries carry ID and CREATED properties
+      (Warn).
+   o  TASK-keyword entries carry at least one tag (Warn).
+   o  :LINK: tag / LINK keyword / URL property consistency
+      (Warn).
+   o  :FILE: tag corresponds to an existing attachment directory
+      (Warn).
+   o  CATEGORY values are at most 10 bytes (Warn).
+   o  :PROPERTIES:, timestamps, log entries, and drawer
+      terminators appear only in their designated positions
+      (Error).
+   o  No duplicate tags (Error), no duplicate properties (Error).
+   o  State-change chains satisfy Section 11.3 (Warn).
+   o  Leading stamps appear only on TODO entries (Warn).
+   o  LOCATION is not "0.0,0.0" (Error).
+   o  HASH_sha512, if present, matches the computed hash (Warn).
+   o  No more than one LOGBOOK per entry (Error); no mixing of
+      log-entry kinds across LOGBOOK boundary (Error).
+   o  Whitespace conventions: no leading space on first paragraph
+      line (Info); no log-entry body starting with whitespace
+      (Warn); no multiple blank lines (Warn); consistent
+      whitespace surrounding log entries (Warn).
+   o  No title with excessive whitespace (double SP) (Warn).
+   o  Plain drawer names in uppercase, BEGIN-block tokens in
+      lowercase (Info).
+
+   Complete enumeration appears in Appendix C.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 42]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+14.4.  Collection Validity
+
+   A Collection of files is valid when:
+
+   o  Each file is valid (Section 14.2) under the same
+      Configuration.
+   o  Every ID property value is globally unique across all
+      Entries in the collection (Error; DuplicatedIdentifier
+      diagnostic).
+
+14.5.  Opt-Out Mechanisms
+
+   Several rules admit per-file opt-out via file properties:
+
+      NOSLUG           -> FileSlugMismatch suppressed.
+      HAS_TODO         -> FileTagsTodoMismatch suppressed.
+      IGNORE_LINKS     -> BrokenLink suppressed (file and entry).
+      WHITESPACE=ignore -> InconsistentWhitespace suppressed.
+
+   Several rules admit per-entry opt-out via entry properties:
+
+      LAST_REPEAT      -> Intermediate and Final state-change
+                          transition checks relaxed for repeating
+                          tasks.
+
+   Archive files (detected by the isArchive predicate on the AST)
+   exempt all Entries in the file from FirstTransition,
+   IntermediateTransition, and LastTransition checks.
+
+   A Validator MAY offer additional opt-out mechanisms via its
+   Configuration but MUST NOT weaken the constraints defined here
+   in their absence.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 43]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+15.  Implementation Requirements
+
+15.1.  Parser Requirements
+
+   A conforming Parser:
+
+   o  MUST accept UTF-8 input with LF line terminators
+      (Sections 4.2, 4.3).
+   o  MUST reject CRLF and CR-only line terminators.
+   o  MUST produce an AST whose shape conforms to Section 4.1.
+   o  MUST preserve Whitespace and trailing-SP content verbatim.
+   o  MUST enforce hard syntactic bounds (year, month, day, hour,
+      minute, repeater magnitude, Section 7).
+   o  MUST NOT perform keyword substitution or case normalization
+      outside the narrow exceptions noted in Section 13.3.
+   o  SHOULD emit specific, byte-offset-accurate diagnostics for
+      parse failures.
+   o  SHOULD support the Error reporting conventions of
+      FlatParse or equivalent.
+
+15.2.  Printer Requirements
+
+   A conforming Printer:
+
+   o  MUST emit canonical form per Section 13.2 under the given
+      Configuration.
+   o  MUST honor propertyColumn and tagsColumn (Section 11.1).
+   o  MUST NOT emit content that is not present in the input AST.
+   o  MUST NOT omit content that is preserved in the input AST,
+      with the sole exception of inherited properties
+      (Section 12.3).
+   o  MUST emit exactly one Active Timestamp Line per Entry, even
+      if multiple ActiveStamp nodes appear in the AST, selecting
+      the first such node.
+   o  SHOULD produce output that is byte-exactly equal to the
+      input from which the AST was parsed (Section 13.1).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 44]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+15.3.  Linter Requirements
+
+   A conforming Linter:
+
+   o  MUST emit each diagnostic at the severity level enumerated
+      in Appendix C.
+   o  MUST position each diagnostic at the precise Loc (file path
+      and byte offset) of the offending construct where one is
+      identifiable, and at the file's first byte otherwise.
+   o  MUST honor the opt-out mechanisms of Section 14.5.
+   o  MUST run every rule in Sections 14.2 through 14.4 under the
+      active Configuration.
+   o  MUST NOT emit diagnostics for constructs that parse but
+      are not constrained by any rule in this specification.
+   o  SHOULD allow diagnostic severity filtering via a
+      command-line flag (--level) and, for network-dependent
+      rules, gate emission behind the LintAll filter level.
+   o  MAY implement additional diagnostics not enumerated here
+      provided they are distinguishable from the codes in
+      Appendix C.
+
+   The command-line flag --level accepts the values "debug",
+   "all", "info", "warn", and "error".  Only diagnostics at or
+   above the selected level are reported.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 45]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+16.  Security Considerations
+
+   Org-mode files are plain-text documents and therefore present
+   lower risk than binary formats; however, several concerns
+   warrant attention when processing untrusted input.
+
+   Parser resource exhaustion.  The Parser is implemented with
+   FlatParse and performs no automatic backtracking.  Pathological
+   inputs nonetheless may produce large ASTs, for example through
+   extremely long files, deeply nested drawer structures, or
+   extremely long property values.  Implementations SHOULD impose
+   practical bounds on input size when processing untrusted files.
+
+   Embedded external references.  Org-mode files may contain
+   links of the form [[file:...]], [[http(s)://...]], and
+   properties such as NOTER_DOCUMENT pointing at filesystem paths.
+   The Linter's link-checking rules RESOLVE such references
+   against the local filesystem and the network.  Implementations
+   MUST NOT resolve external references during ordinary parsing;
+   resolution MUST be an opt-in Linter operation, and the default
+   Configuration of any user-facing tool SHOULD require explicit
+   authorization before resolving http(s) URLs.
+
+   Path traversal.  ARCHIVE, AUDIO, NOTER_DOCUMENT, and
+   attachment paths MAY contain ".." or absolute prefixes.
+   Implementations that open files based on these values MUST
+   canonicalize paths and enforce policy constraints (for
+   example, that paths reside within an allow-listed root).
+
+   Attachment identifiers.  The :FILE: tag resolution scheme
+   (Section 10.3) uses the Entry's ID property as a directory
+   key.  An untrusted ID value could direct the Linter to probe
+   for directories outside the intended tree.  Implementations
+   SHOULD validate that ID values consist of filesystem-safe
+   characters before using them in path construction.
+
+   Embedded code execution.  BEGIN/END blocks (Section 9.2) may
+   contain source code intended for external tools (for example,
+   babel in Emacs Org-mode).  This specification assigns no
+   execution semantics to such blocks.  Implementations MUST NOT
+   execute content from a block as a side effect of parsing or
+   linting.
+
+   HASH_sha512 property.  The property records a hash of the
+   Entry's canonical form.  Its presence indicates author intent
+   that the Entry not be modified without hash update.  Consumers
+   SHOULD verify HASH_sha512 before acting on the Entry's
+   content, and SHOULD treat a mismatch as a signal that the file
+   may have been tampered with (or that the Entry was edited
+   without hash refresh).
+
+
+
+Wiegley              org-jw Format Specification            [Page 46]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+17.  IANA Considerations
+
+   This specification is a project-internal document and imposes
+   no registration actions on the Internet Assigned Numbers
+   Authority (IANA).
+
+   Should this specification be submitted for Independent
+   Submission publication, the following registration actions
+   would be recommended:
+
+   o  Registration of the media type "text/x-org" or
+      "application/vnd.org-mode" per [RFC6838], with this document
+      as the canonical reference.
+
+   o  Registration of the file extension ".org" as associated
+      with the Org-mode media type.
+
+   Until such submission, this section is retained as
+   informative.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 47]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+18.  References
+
+18.1.  Normative References
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC3629]  Yergeau, F., "UTF-8, a transformation format of
+              ISO 10646", STD 63, RFC 3629,
+              DOI 10.17487/RFC3629, November 2003,
+              <https://www.rfc-editor.org/info/rfc3629>.
+
+   [RFC5234]  Crocker, D., Ed. and P. Overell, "Augmented BNF for
+              Syntax Specifications: ABNF", STD 68, RFC 5234,
+              DOI 10.17487/RFC5234, January 2008,
+              <https://www.rfc-editor.org/info/rfc5234>.
+
+   [RFC7405]  Kyzivat, P., "Case-Sensitive String Support in
+              ABNF", RFC 7405, DOI 10.17487/RFC7405,
+              December 2014,
+              <https://www.rfc-editor.org/info/rfc7405>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in
+              RFC 2119 Key Words", BCP 14, RFC 8174,
+              DOI 10.17487/RFC8174, May 2017,
+              <https://www.rfc-editor.org/info/rfc8174>.
+
+18.2.  Informative References
+
+   [ORGMODE]  Dominik, C. et al., "The Org Manual",
+              <https://orgmode.org/manual/>.
+
+   [RFC6838]  Freed, N., Klensin, J., and T. Hansen, "Media Type
+              Specifications and Registration Procedures",
+              BCP 13, RFC 6838, DOI 10.17487/RFC6838,
+              January 2013,
+              <https://www.rfc-editor.org/info/rfc6838>.
+
+   [RFC7322]  Flanagan, H. and S. Ginoza, "RFC Style Guide",
+              RFC 7322, DOI 10.17487/RFC7322,
+              September 2014,
+              <https://www.rfc-editor.org/info/rfc7322>.
+
+   [ORGJW]    Wiegley, J., "org-jw Source Repository",
+              <https://github.com/jwiegley/org-jw>.
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 48]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+Appendix A.  Collected ABNF
+
+   The following is the consolidated ABNF grammar described
+   piecemeal throughout this document.  ABNF is defined in
+   [RFC5234] and extended by [RFC7405].
+
+   ; File structure
+   OrgFile       = FileHeader *Entry
+   FileHeader    = [FilePropertyDrawer] *FileProperty Preamble
+   FilePropertyDrawer = ":PROPERTIES:" *SP LF
+                        1*PropertyLine
+                        ":END:" *SP LF
+   FileProperty  = "#+" PropertyName ":" *SP Value LF
+   Preamble      = *Block
+
+   ; Entries
+   Entry         = Heading
+                   [StampLine]
+                   [PropertyDrawer]
+                   *LogEntry
+                   [ActiveStampLine]
+                   *Block
+                   *Entry            ; children, depth = parent+1
+
+   ; Heading line
+   Heading       = Stars SP
+                   [Keyword SP]
+                   [Priority SP]
+                   [Context SP]
+                   [Verb ":" SP]
+                   Title
+                   [SP "{" Locator "}"]
+                   [TagSpacer TagList]
+                   *SP LF
+   Stars         = 1*"*"
+   Keyword       = ConfiguredKeyword   ; external lookup
+   Priority      = "[#" ("A" / "B" / "C") "]"
+   Context       = "(" 1*( %x20-28 / %x2A-10FFFF ) ")"
+                                       ; any printable not ')'
+   Verb          = 1*ALPHA
+   Title         = *( CHAR-except-structural )
+   Locator       = 1*( ALPHA / DIGIT / "_" / SP )
+   TagSpacer     = 2*SP                ; minimum two SP
+   TagList       = ":" 1*( Tag ":" )
+   Tag           = *( ALPHA / DIGIT / "-" / "_" / "=" / "/" )
+
+   ; Leading stamp line
+   StampLine     = StampClause *( SP StampClause ) *SP LF
+   StampClause   = ( "CLOSED: " / "SCHEDULED: " / "DEADLINE: " )
+                   InactiveStamp
+
+
+
+Wiegley              org-jw Format Specification            [Page 49]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+   ; Property drawer
+   PropertyDrawer = ":PROPERTIES:" *SP LF
+                    1*PropertyLine
+                    ":END:" *SP LF
+   PropertyLine  = ":" PropertyName ":" *SP Value LF
+   PropertyName  = 1*( ALPHA / DIGIT / "_" / SP ) ; not "END"
+
+   ; Active stamp line
+   ActiveStampLine = ActiveStamp *SP LF
+
+   ; Timestamps
+   ActiveStamp   = "<" StampBody ">"
+   InactiveStamp = "[" StampBody "]"
+   StampBody     = Date SP DayOfWeek
+                   [ SP TimeOfDay [ "-" TimeOfDay ] ]
+                   [ SP Suffix ]
+   Date          = 4DIGIT "-" 2DIGIT "-" 2DIGIT
+   DayOfWeek     = "Sun" / "Mon" / "Tue" / "Wed" /
+                   "Thu" / "Fri" / "Sat"
+   TimeOfDay     = 2DIGIT ":" 2DIGIT
+   Suffix        = SuffixKind 1*DIGIT Span
+                   [ "/" 1*DIGIT Span ]
+   SuffixKind    = ".+" / "++" / "+" / "-"
+   Span          = "d" / "w" / "m" / "y"
+   Duration      = 1*DIGIT ":" 1*DIGIT
+
+   ; Log entries
+   LogEntry      = Closing / State / Note /
+                   Rescheduled / NotScheduled /
+                   NewDeadline / RemovedDeadline /
+                   Refiling / Clock / LogBook
+   Closing       = "- CLOSING NOTE" InactiveStamp Cont LF
+                   [ NoteBody ]
+   State         = "- State " DQUOTE Keyword DQUOTE
+                   *SP [ "from " DQUOTE Keyword DQUOTE *SP ]
+                   InactiveStamp Cont LF [ NoteBody ]
+   Note          = "- Note taken on " InactiveStamp Cont LF
+                   [ NoteBody ]
+   Rescheduled   = "- Rescheduled from " DQUOTE InactiveStamp DQUOTE
+                   " on " InactiveStamp Cont LF [ NoteBody ]
+   NotScheduled  = "- Not scheduled, was " DQUOTE InactiveStamp DQUOTE
+                   " on " InactiveStamp Cont LF [ NoteBody ]
+   NewDeadline   = "- New deadline from " DQUOTE InactiveStamp DQUOTE
+                   " on " InactiveStamp Cont LF [ NoteBody ]
+   RemovedDeadline
+                 = "- Removed deadline, was "
+                   DQUOTE InactiveStamp DQUOTE
+                   " on " InactiveStamp Cont LF [ NoteBody ]
+   Refiling      = "- Refiled on " InactiveStamp Cont LF
+                   [ NoteBody ]
+
+
+
+Wiegley              org-jw Format Specification            [Page 50]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+   Clock         = "CLOCK:" 1*SP InactiveStamp
+                   [ "--" InactiveStamp *SP "=>" *SP Duration ]
+                   *SP LF
+   Cont          = [ " \\" ]           ; continuation marker
+   NoteBody      = 1*( NoteLine )
+   NoteLine      = ( "  " LineContent LF ) / LF
+
+   ; Drawers and blocks
+   LogBook       = ":LOGBOOK:" *SP LF *LogEntry ":END:" *SP LF
+   PlainDrawer   = ":" DrawerName ":" *SP LF
+                   *ContentLine
+                   ":END:" *SP LF      ; also ":end:"
+   DrawerName    = 1*( ALPHA / DIGIT / "_" / SP )
+   BeginBlock    = BeginOpener LineTail LF
+                   *ContentLine
+                   BeginCloser LF
+   BeginOpener   = "#+begin" / "#+BEGIN"
+   BeginCloser   = "#+end" LineTail / "#+END" LineTail
+   InlineTask    = "***************" SP Heading-tail LF
+                   *InlineContent
+                   "***************" SP "END" LineTail LF
+
+   ; Body blocks
+   Block         = Whitespace / Paragraph / Drawer / InlineTask
+   Whitespace    = *SP LF
+   Paragraph     = 1*( ParaLine )
+   ParaLine      = NonBlankLine LF
+   Drawer        = PlainDrawer / BeginBlock
+
+   ; Core rules (imported from RFC 5234 Appendix B.1)
+   ALPHA         = %x41-5A / %x61-7A   ; A-Z / a-z
+   DIGIT         = %x30-39              ; 0-9
+   SP            = %x20
+   LF            = %x0A
+   DQUOTE        = %x22
+
+   ; Semantic constraints (cannot be expressed in ABNF)
+   ;   * 1970 <= year <= 2200
+   ;   * 1 <= month <= 12
+   ;   * 0 <= hour <= 23, 0 <= minute <= 59
+   ;   * -100 < SuffixNumber < 100
+   ;   * Stars count in [1..14] or exactly 15 (inline task)
+   ;   * Keyword MUST match the active Configuration's
+   ;     openKeywords or closedKeywords list
+   ;   * Priority MUST be one of A, B, C
+   ;   * Locator body MUST NOT contain characters outside
+   ;     [A-Za-z0-9_ ]
+   ;   * Tag body MUST NOT be empty in conforming files
+   ;   * PropertyName "END" is forbidden
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 51]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+   ;   * At least one PropertyLine between ":PROPERTIES:" and
+   ;     ":END:"
+   ;   * File MUST end with LF
+   ;   * Ending stamp in multi-day range MUST NOT include
+   ;     TimeRange, Suffix, or day-end
+   ;   * State transitions MUST follow Section 11.3
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 52]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+Appendix B.  Examples
+
+B.1.  Minimal Conforming File
+
+      #+TITLE: Example
+
+      Hello, world.
+      * First Entry
+      Content of the first entry.
+
+B.2.  Entry with Full Heading Components
+
+      * TODO [#A] (home) write: my thesis introduction {thesis-intro} :writing:project:
+      SCHEDULED: [2026-04-20 Mon] DEADLINE: [2026-05-01 Fri]
+      :PROPERTIES:
+      :ID:       5d3e4b2c
+      :CREATED:  [2026-04-01 Wed 10:00]
+      :CATEGORY: research
+      :END:
+      :LOGBOOK:
+      CLOCK: [2026-04-18 Sat 09:00]--[2026-04-18 Sat 10:30] =>  1:30
+      :END:
+      <2026-04-19 Sun 14:00>
+
+      The body begins here.  It is preserved verbatim, including
+      any trailing whitespace.
+
+B.3.  State Change History
+
+      * DONE Ship the release
+      CLOSED: [2026-04-15 Wed 17:00]
+      :PROPERTIES:
+      :ID:       f83b-ee1c
+      :CREATED:  [2026-04-01 Wed 09:00]
+      :END:
+      - State "DONE"      from "STARTED"    [2026-04-15 Wed 17:00]
+      - State "STARTED"   from "TODO"       [2026-04-10 Fri 09:15]
+
+B.4.  Clock History with Mixed Logbook
+
+      * STARTED Long-running task
+      :PROPERTIES:
+      :ID:       cbf1-0a22
+      :END:
+      :LOGBOOK:
+      CLOCK: [2026-04-18 Sat 09:00]--[2026-04-18 Sat 11:30] =>  2:30
+      CLOCK: [2026-04-17 Fri 14:00]--[2026-04-17 Fri 17:00] =>  3:00
+      :END:
+      - State "STARTED"   from "TODO"       [2026-04-17 Fri 13:55]
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 53]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+B.5.  Timestamp Forms
+
+   Active, date only:
+      <2026-04-20 Mon>
+
+   Active, with time:
+      <2026-04-20 Mon 09:00>
+
+   Active, with time range (same day):
+      <2026-04-20 Mon 09:00-10:30>
+
+   Active, multi-day range:
+      <2026-04-20 Mon 09:00>--<2026-04-22 Wed 17:00>
+
+   Active, weekly repeater:
+      <2026-04-20 Mon 09:00 +1w>
+
+   Active, dotted repeater with larger span:
+      <2026-04-20 Mon .+1d/3d>
+
+   Inactive, with warning offset:
+      [2026-04-20 Mon 09:00 -2d]
+
+B.6.  Inline Task
+
+      * Parent heading
+      Some preamble text.
+
+      *************** TODO Small nested task
+      *************** END
+
+      The outer entry continues here.
+
+B.7.  BEGIN/END Block
+
+      * Code example
+      #+begin_src haskell
+      main :: IO ()
+      main = putStrLn "hello"
+      #+end_src
+
+B.8.  Custom Plain Drawer
+
+      * With a drawer
+      :NOTES:
+      These notes are preserved verbatim.
+      :END:
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 54]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+B.9.  Reference Configuration (YAML)
+
+      startKeywords: [TODO]
+      openKeywords:  [TODO, STARTED, WAITING]
+      closedKeywords: [DONE, CANCELED]
+      keywordTransitions:
+        - [TODO,    [STARTED, CANCELED]]
+        - [STARTED, [WAITING, DONE, CANCELED]]
+        - [WAITING, [STARTED, CANCELED]]
+      priorities: [A, B, C]
+      propertyColumn: 11
+      tagsColumn: 97
+      attachmentsDir: /Users/example/org/data
+      homeDirectory:  /Users/example
+      checkFiles: true
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 55]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+Appendix C.  Linter Diagnostic Codes
+
+   This appendix enumerates every diagnostic code produced by the
+   reference Linter.  Each row lists the code name, the severity
+   assigned at emission, and a short description.  The authoritative
+   emission sites are in the org-lint package.
+
+   File-Level Rules (F-series)
+
+   F-1   FileTitleMissing                       Info
+         File lacks a #+TITLE property.
+   F-2   FileMissingProperty "ID"               Info
+         File lacks a #+ID property.
+   F-3   FileMissingProperty "CREATED"          Info or Warn
+         File lacks a #+CREATED; Warn if filename has no date.
+   F-4   FileSlugMismatch                       Info
+         Filename's slug does not match #+TITLE's slug.
+   F-5   FileCreatedTimeMismatch                Warn
+         Filename date and #+CREATED disagree.
+   F-6   TitlePropertyNotLast                   Warn
+         #+TITLE is not the last file property.
+   F-7   ArchiveTagFileDoesNotExist (file)      Warn
+         #+ARCHIVE references a non-existent file.
+   F-8   FileTagsTodoMismatch                   Warn
+         FILETAGS :todo: is inconsistent with file contents.
+   F-9   NonTodoWithReviewProperties (file)     Warn
+         File declares review properties (only allowed on TODO
+         entries).
+   F-10  TagInFileUnknown                       Warn
+         Entry tag is not in the file's TAGS_ALL vocabulary.
+   F-11  VerbInFileUnknown                      Warn
+         Entry verb is not in the file's VERB_ALL vocabulary.
+   F-12  AudioFileNotFound                      Error
+         #+AUDIO references a non-existent file.
+   F-13  BrokenLink (preamble)                  Error
+         Preamble paragraph contains an unresolvable link.
+   F-14  DuplicateFileProperty                  Error
+         File property declared twice (except LINK, TAGS).
+
+   Entry-Level Rules (E-series)
+
+   E-1   TodoMissingProperty "ID"               Warn
+         TODO or category entry lacks :ID: property.
+   E-2   TodoMissingProperty "CREATED"          Warn
+         TODO or category entry lacks :CREATED: property.
+   E-3   TaskMissingAssignment                  Warn
+         TASK-keyword entry has no tags.
+   E-4   TodoLinkDoesNotMatchUrl                Warn
+         :LINK: tag and URL property presence disagree.
+   E-5   TodoLinkKeywordImpliesLinkTag          Warn
+
+
+
+Wiegley              org-jw Format Specification            [Page 56]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+         Entry has both LINK keyword and :LINK: tag (redundant).
+   E-6   ArchiveTagFileDoesNotExist (entry)     Warn
+         Entry's :ARCHIVE: property does not resolve.
+   E-7   TodoFileDoesNotMatchAttachment         Warn
+         :FILE: tag or Attachments property disagrees with disk.
+   E-8   CategoryTooLong                        Warn
+         :CATEGORY: value exceeds 10 bytes.
+   E-9   MisplacedProperty                      Error
+         :PROPERTIES: appears inside Body.
+   E-10  MisplacedTimestamp                     Error
+         SCHEDULED/DEADLINE/CLOSED appears inside Body.
+   E-11  MisplacedLogEntry                      Error
+         Log-entry pattern appears inside Body.
+   E-12  MisplacedDrawerEnd                     Error
+         Drawer or block terminator appears inside Body.
+   E-13  BrokenLink (entry)                     Error
+         Entry body or URL property has unresolvable link.
+   E-14  WhitespaceAtStartOfLogEntry            Warn
+         Log entry body begins with Whitespace.
+   E-15  TitleWithExcessiveWhitespace           Warn
+         Entry title contains "  " (double SP).
+   E-16  DuplicateTag                           Error
+         Same tag appears twice on the same Entry.
+   E-17  DuplicateProperty                      Error
+         Same property name appears twice in same drawer.
+   E-18  InvalidStateChangeTransitionNotAllowed Warn
+         State transition not in keywordTransitions.
+   E-19  InvalidStateChangeInvalidTransition    Warn
+         First/intermediate/last transition is inconsistent.
+   E-20  InvalidStateChangeWrongTimeOrder       Warn
+         State-change timestamps not in chronological order.
+   E-21  InvalidStateChangeIdempotent           Warn
+         State change lists source equal to target.
+   E-22  TimestampsOnNonTodo                    Warn
+         Leading stamps on an entry without a TODO keyword.
+   E-23  NonTodoWithReviewProperties            Warn
+         Review properties on non-TODO entry.
+   E-24  InconsistentWhitespace                 Info or Warn
+         Surrounding whitespace not uniform (see Section 14.3).
+   E-25  EmptyBodyWhitespace                    Info
+         Entry body is whitespace-only (TODO or template entry).
+   E-26  UnnecessaryWhitespace                  Info
+         First paragraph line begins with SP.
+   E-27  MultipleBlankLines                     Warn
+         More than one consecutive blank line in Body.
+   E-28  MultipleLogbooks                       Error
+         More than one :LOGBOOK: drawer in one Entry.
+   E-29  MixedLogbooks                          Error
+         Mixed log-entry kinds across LOGBOOK boundary.
+   E-30  InvalidLocation                        Error
+
+
+
+Wiegley              org-jw Format Specification            [Page 57]
+
+ORG-JW-FMT/1         org-jw Canonical Format              April 2026
+
+
+         :LOCATION: property value is "0.0,0.0".
+   E-31  InvalidDrawerCase                      Info
+         Drawer or BEGIN/END name has wrong case convention.
+   E-32  HashesDoNotMatch                       Warn
+         HASH_sha512 disagrees with computed hash.
+
+   Collection-Level Rules (C-series)
+
+   C-1   DuplicatedIdentifier                   Error
+         Same :ID: value appears in more than one Entry.
+
+   Declared But Not Currently Emitted
+
+   The following codes appear in the AST of LintMessageCode but
+   have no active emission site in the reference Linter at the
+   time of writing.  Implementations MAY emit them; the intent is
+   preserved:
+
+      OverlyLongHeadline                 Warn
+      InconsistentFilePreambleWhitespace Warn
+      TodoMissingReviewProperties        Warn
+      FileFailsToRoundTrip               Warn
+         (emitted by the round-trip test harness, not Lint.hs)
+
+
+Acknowledgments
+
+   This specification records the behavior of the org-jw project as
+   of April 2026.  It could not have been written without the Emacs
+   Org-mode project [ORGMODE], from which the syntactic conventions
+   ultimately derive.  Thanks to contributors to the org-jw test
+   corpus, whose real-world Org files drive the round-trip identity.
+
+
+Author's Address
+
+   John Wiegley
+
+   Email: johnw@newartisans.com
+   URI:   https://github.com/jwiegley/org-jw
+
+
+
+
+
+
+
+
+
+
+
+
+Wiegley              org-jw Format Specification            [Page 58]

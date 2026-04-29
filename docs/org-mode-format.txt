@@ -1,0 +1,2883 @@
+
+
+
+org-jw Project                                              J. Wiegley
+Specification: ORG-FMT/1                                    April 2026
+Category: Project Specification
+Status: Draft
+
+
+            The Org-Mode Plain-Text Markup Format
+        As Documented in the Emacs Org-Mode Reference Manual
+
+
+Abstract
+
+   This document records the Org-mode plain-text markup format as
+   documented in the Emacs Org-mode manual [ORGMODE].  It defines
+   the syntactic constructs recognized by conforming Org-mode
+   implementations: headings, keywords, priorities, tags, timestamps,
+   property drawers, log entries, generic drawers, BEGIN/END blocks,
+   plain lists, tables, inline markup, hyperlinks, footnotes, LaTeX
+   and math notation, comments, horizontal rules, and export
+   keywords.
+
+   This specification is a descriptive complement to the Emacs
+   Org-mode manual.  It is not a replacement for that manual.
+   Where ambiguity arises between this document and the Emacs Org-mode
+   implementation, the Emacs implementation is authoritative.
+
+   A companion document, [ORG-JW-EXT], specifies the extensions and
+   restrictions imposed by the org-jw toolchain on the format described
+   here.
+
+
+Status of This Document
+
+   This document is the first of two related specifications maintained
+   alongside the org-jw source tree:
+
+     [ORG-FMT]     The present document, describing the stock
+                   Org-mode plain-text format as documented by the
+                   Emacs Org-mode manual.
+
+     [ORG-JW-EXT]  A companion document describing the extensions
+                   and restrictions applied by the org-jw toolchain.
+
+   The Emacs Org-mode manual [ORGMODE] is the historical reference
+   for the Org-mode format.  This document is informational, is
+   project-scoped, and is not an IETF document.  The style of this
+   document is modelled on the conventions of the IETF [RFC7322]
+   for ease of reading.
+
+
+Copyright Notice
+
+   Copyright (c) 2026 John Wiegley.  All rights reserved.  This
+   document is distributed under the project's BSD license.  Code
+   components extracted from this document are licensed under the
+   same terms.
+
+
+
+
+
+Wiegley              Org-Mode Format Specification           [Page 1]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . .  4
+   2.  Conventions Used in This Document . . . . . . . . . . . . .  5
+   3.  Document Model  . . . . . . . . . . . . . . . . . . . . . .  6
+     3.1.  Abstract Syntax Tree  . . . . . . . . . . . . . . . . .  6
+     3.2.  Character Encoding  . . . . . . . . . . . . . . . . . .  7
+     3.3.  Line Terminators and Whitespace . . . . . . . . . . . .  7
+     3.4.  Terminology . . . . . . . . . . . . . . . . . . . . . .  8
+   4.  File Structure  . . . . . . . . . . . . . . . . . . . . . .  9
+     4.1.  File Header . . . . . . . . . . . . . . . . . . . . . .  9
+     4.2.  File-Level Property Drawer  . . . . . . . . . . . . . .  9
+     4.3.  File Property Lines . . . . . . . . . . . . . . . . . . 10
+     4.4.  Preamble  . . . . . . . . . . . . . . . . . . . . . . . 10
+     4.5.  Entry Tree  . . . . . . . . . . . . . . . . . . . . . . 11
+   5.  Entry Syntax  . . . . . . . . . . . . . . . . . . . . . . . 12
+     5.1.  Heading Line  . . . . . . . . . . . . . . . . . . . . . 12
+       5.1.1.  Stars and Depth . . . . . . . . . . . . . . . . . . 12
+       5.1.2.  Keyword . . . . . . . . . . . . . . . . . . . . . . 13
+       5.1.3.  Priority Cookie . . . . . . . . . . . . . . . . . . 13
+       5.1.4.  Title . . . . . . . . . . . . . . . . . . . . . . . 13
+       5.1.5.  Tags  . . . . . . . . . . . . . . . . . . . . . . . 14
+     5.2.  Leading Timestamp Line  . . . . . . . . . . . . . . . . 14
+     5.3.  Property Drawer . . . . . . . . . . . . . . . . . . . . 15
+     5.4.  Log Entries Region  . . . . . . . . . . . . . . . . . . 16
+     5.5.  Active Timestamp Line . . . . . . . . . . . . . . . . . 16
+     5.6.  Entry Body  . . . . . . . . . . . . . . . . . . . . . . 17
+     5.7.  Child Entries . . . . . . . . . . . . . . . . . . . . . 17
+   6.  Timestamps  . . . . . . . . . . . . . . . . . . . . . . . . 18
+     6.1.  Active and Inactive Forms . . . . . . . . . . . . . . . 18
+     6.2.  Date  . . . . . . . . . . . . . . . . . . . . . . . . . 18
+     6.3.  Day of Week . . . . . . . . . . . . . . . . . . . . . . 19
+     6.4.  Time of Day . . . . . . . . . . . . . . . . . . . . . . 19
+     6.5.  Time Ranges . . . . . . . . . . . . . . . . . . . . . . 19
+     6.6.  Repeater and Warning Suffix . . . . . . . . . . . . . . 20
+     6.7.  Duration  . . . . . . . . . . . . . . . . . . . . . . . 21
+   7.  Log Entries . . . . . . . . . . . . . . . . . . . . . . . . 22
+     7.1.  LOGBOOK Drawer  . . . . . . . . . . . . . . . . . . . . 22
+     7.2.  State Change Entries  . . . . . . . . . . . . . . . . . 23
+     7.3.  Note Entries  . . . . . . . . . . . . . . . . . . . . . 23
+     7.4.  Scheduling Entries  . . . . . . . . . . . . . . . . . . 24
+     7.5.  Clock Entries . . . . . . . . . . . . . . . . . . . . . 25
+     7.6.  Log Entry Body  . . . . . . . . . . . . . . . . . . . . 25
+   8.  Drawers and Blocks  . . . . . . . . . . . . . . . . . . . . 26
+     8.1.  Plain Drawers . . . . . . . . . . . . . . . . . . . . . 26
+
+
+
+Wiegley              Org-Mode Format Specification           [Page 2]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+     8.2.  BEGIN/END Blocks  . . . . . . . . . . . . . . . . . . . 27
+     8.3.  Inline Tasks  . . . . . . . . . . . . . . . . . . . . . 29
+     8.4.  Paragraphs and Whitespace . . . . . . . . . . . . . . . 29
+   9.  Plain Lists . . . . . . . . . . . . . . . . . . . . . . . . 30
+     9.1.  Unordered Lists . . . . . . . . . . . . . . . . . . . . 30
+     9.2.  Ordered Lists . . . . . . . . . . . . . . . . . . . . . 30
+     9.3.  Descriptive Lists . . . . . . . . . . . . . . . . . . . 31
+     9.4.  Check-Boxes . . . . . . . . . . . . . . . . . . . . . . 31
+     9.5.  Nesting and Continuation  . . . . . . . . . . . . . . . 32
+   10. Tables  . . . . . . . . . . . . . . . . . . . . . . . . . . 33
+     10.1. Table Rows and Cells  . . . . . . . . . . . . . . . . . 33
+     10.2. Separator Rows  . . . . . . . . . . . . . . . . . . . . 33
+     10.3. Alignment Cookies . . . . . . . . . . . . . . . . . . . 34
+     10.4. Table Formulas  . . . . . . . . . . . . . . . . . . . . 34
+   11. Inline Markup . . . . . . . . . . . . . . . . . . . . . . . 35
+     11.1. Emphasis Markers  . . . . . . . . . . . . . . . . . . . 35
+     11.2. Subscript and Superscript . . . . . . . . . . . . . . . 36
+     11.3. Entities  . . . . . . . . . . . . . . . . . . . . . . . 36
+     11.4. Line Break  . . . . . . . . . . . . . . . . . . . . . . 37
+   12. Hyperlinks  . . . . . . . . . . . . . . . . . . . . . . . . 38
+     12.1. Link Syntax . . . . . . . . . . . . . . . . . . . . . . 38
+     12.2. Link Types  . . . . . . . . . . . . . . . . . . . . . . 39
+     12.3. Radio Targets . . . . . . . . . . . . . . . . . . . . . 40
+     12.4. Link Abbreviations  . . . . . . . . . . . . . . . . . . 40
+   13. Footnotes . . . . . . . . . . . . . . . . . . . . . . . . . 41
+     13.1. Reference Forms . . . . . . . . . . . . . . . . . . . . 41
+     13.2. Definitions . . . . . . . . . . . . . . . . . . . . . . 42
+   14. LaTeX Fragments and Math  . . . . . . . . . . . . . . . . . 43
+     14.1. Inline Math . . . . . . . . . . . . . . . . . . . . . . 43
+     14.2. Display Math  . . . . . . . . . . . . . . . . . . . . . 43
+     14.3. LaTeX Environments  . . . . . . . . . . . . . . . . . . 44
+   15. Comments and Horizontal Rules . . . . . . . . . . . . . . . 45
+     15.1. Comment Lines . . . . . . . . . . . . . . . . . . . . . 45
+     15.2. Comment Blocks  . . . . . . . . . . . . . . . . . . . . 45
+     15.3. Horizontal Rules  . . . . . . . . . . . . . . . . . . . 46
+   16. Export and Meta Keywords  . . . . . . . . . . . . . . . . . 47
+     16.1. Document-Level Keywords . . . . . . . . . . . . . . . . 47
+     16.2. OPTIONS Keyword . . . . . . . . . . . . . . . . . . . . 48
+     16.3. Affiliated Keywords . . . . . . . . . . . . . . . . . . 49
+     16.4. Includes and Macros . . . . . . . . . . . . . . . . . . 49
+   17. Tags  . . . . . . . . . . . . . . . . . . . . . . . . . . . 51
+     17.1. Tag Syntax  . . . . . . . . . . . . . . . . . . . . . . 51
+     17.2. File-Level Tags . . . . . . . . . . . . . . . . . . . . 51
+     17.3. Tag Inheritance . . . . . . . . . . . . . . . . . . . . 52
+   18. Keywords and State Transitions  . . . . . . . . . . . . . . 53
+
+
+
+Wiegley              Org-Mode Format Specification           [Page 3]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+     18.1. Keyword Configuration . . . . . . . . . . . . . . . . . 53
+     18.2. Fast-Selection Characters . . . . . . . . . . . . . . . 53
+     18.3. Logging Directives  . . . . . . . . . . . . . . . . . . 54
+   19. Well-Known Properties . . . . . . . . . . . . . . . . . . . 55
+     19.1. File-Level Properties . . . . . . . . . . . . . . . . . 55
+     19.2. Entry-Level Properties  . . . . . . . . . . . . . . . . 56
+     19.3. Property Inheritance  . . . . . . . . . . . . . . . . . 57
+   20. Security Considerations . . . . . . . . . . . . . . . . . . 58
+   21. IANA Considerations . . . . . . . . . . . . . . . . . . . . 59
+   22. References  . . . . . . . . . . . . . . . . . . . . . . . . 60
+     22.1. Normative References  . . . . . . . . . . . . . . . . . 60
+     22.2. Informative References  . . . . . . . . . . . . . . . . 60
+   Appendix A.  Collected ABNF . . . . . . . . . . . . . . . . . . 61
+   Appendix B.  Examples . . . . . . . . . . . . . . . . . . . . . 66
+   Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . 69
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . 69
+
+
+1.  Introduction
+
+   Org-mode is a plain-text outlining, note-taking, and notation
+   system originally developed for the Emacs editor.  The format is
+   line-oriented and designed to be both human-readable and amenable
+   to programmatic processing.  Its primary characteristics are a
+   hierarchical outline structure of "headings" and "entries", a
+   lightweight syntax for annotating entries with metadata, and a
+   small set of block-level constructs for code, quotations, tables,
+   and mathematical notation.
+
+   This document specifies the canonical syntax of Org-mode files as
+   that syntax is commonly understood to be defined by the Emacs
+   Org-mode implementation [ORGMODE].  It is intended to:
+
+   o  Allow independent implementations to recognize and manipulate
+      Org-mode files with fidelity to the historical behavior.
+
+   o  Serve as the reference surface on which project-scoped
+      extensions, such as those of the org-jw toolchain
+      [ORG-JW-EXT], are defined.
+
+   o  Provide a single document in which the line-level and
+      paragraph-level constructs of the language are collected.
+
+   Readers seeking guidance on the interactive behavior of the Emacs
+   editor (key bindings, the agenda, capture, export back-ends) are
+   referred to the Emacs Org-mode manual [ORGMODE], which is the
+   normative reference for such matters.
+
+
+
+
+Wiegley              Org-Mode Format Specification           [Page 4]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+2.  Conventions Used in This Document
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY",
+   and "OPTIONAL" in this document are to be interpreted as described
+   in BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in
+   all capitals, as shown here.
+
+   Grammar productions are expressed in Augmented Backus-Naur Form
+   (ABNF) as defined in [RFC5234] and [RFC7405].  Where semantic
+   constraints exceed the expressive power of ABNF, prose takes
+   precedence.  The complete grammar is collected in Appendix A.
+
+   The following notational conventions are used throughout:
+
+     SP          A single U+0020 SPACE character.
+     LF          A single U+000A LINE FEED character.
+     HTAB        A single U+0009 CHARACTER TABULATION character.
+     <char>      The byte or character literally shown.
+     [ ... ]     An optional element.
+     *ELEMENT    Zero or more repetitions of ELEMENT.
+     1*ELEMENT   One or more repetitions of ELEMENT.
+     N*MELEMENT  Between N and M repetitions of ELEMENT, inclusive.
+
+   Code points are expressed in ISO 10646 notation (U+NNNN).  Byte
+   values are expressed in hexadecimal prefixed with "0x".
+
+   The term "stock Org-mode" refers to the format accepted and
+   produced by the Emacs Org-mode implementation in a default
+   configuration.  Where this document describes syntactic variation
+   that is controlled by Emacs configuration variables, the relevant
+   variable name is given in parentheses for cross-reference with the
+   Org manual.
+
+   This document is descriptive.  It records the syntactic form of
+   Org-mode constructs but leaves their interpretive semantics (for
+   example, the behavior of the agenda, capture, or export back-ends)
+   to the Emacs Org-mode manual.  Where this document uses "MUST" or
+   "MUST NOT" to describe syntactic rules, the intention is that a
+   well-formed Org-mode document -- one that Emacs accepts without
+   diagnostic -- will conform to those rules.  Implementations that
+   accept weaker inputs are permitted; implementations that produce
+   stronger outputs SHOULD do so only when they are preserving
+   content rather than normalizing it.
+
+
+
+
+
+
+
+
+Wiegley              Org-Mode Format Specification           [Page 5]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+3.  Document Model
+
+3.1.  Abstract Syntax Tree
+
+   An Org-mode document is a tree whose root is a File.  Each File
+   comprises an optional Header and zero or more top-level Entries.
+   Each Entry comprises a Heading line, an optional prelude of
+   structured metadata, a Body, and zero or more child Entries.  The
+   abstract structure is:
+
+      File       = Header, { Entry } ;
+      Header     = [ PropertyDrawer ], { FileProperty }, Preamble ;
+      Entry      = Heading,
+                   [ StampLine ],
+                   [ PropertyDrawer ],
+                   { LogEntry },
+                   [ ActiveStampLine ],
+                   Body,
+                   { Entry (child) } ;
+      Heading    = Stars, [ Keyword ], [ Priority ], Title,
+                   [ TagList ] ;
+      Body       = { Block } ;
+      Block      = Whitespace | Paragraph | List | Table |
+                   Drawer | InlineTask | Block-level construct ;
+      LogEntry   = Closing | State | Note | Rescheduled |
+                   NotScheduled | NewDeadline | RemovedDeadline |
+                   Refiling | Clock | LogBook ;
+
+   The block-level constructs listed above include plain lists
+   (Section 9), tables (Section 10), plain drawers (Section 8.1),
+   BEGIN/END blocks (Section 8.2), inline tasks (Section 8.3),
+   footnote definitions (Section 13.2), LaTeX environments
+   (Section 14.3), comment blocks (Section 15.2), and horizontal
+   rules (Section 15.3).  Paragraphs are the residual category:
+   any non-blank, non-structured line is part of a Paragraph block.
+
+   A child Entry's depth is exactly one greater than its parent's
+   depth.  Emacs Org-mode places no explicit upper bound on depth,
+   but by convention depth 15 is reserved for inline tasks
+   (Section 8.3).  Headings at depths 1 through 14 may host child
+   Entries; inline tasks may not.
+
+   The abstract tree model described here is a reference structure.
+   Implementations are free to represent Org-mode documents using
+   any data model that preserves the equivalent information, but the
+   ordering of siblings, the ordering of log entries, the ordering of
+   properties within a drawer, and the byte content of paragraphs,
+   drawer bodies, and block contents are significant.
+
+
+
+Wiegley              Org-Mode Format Specification           [Page 6]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+3.2.  Character Encoding
+
+   Stock Org-mode files are plain-text documents.  Emacs determines
+   the encoding of a buffer according to its configured
+   coding-system.  UTF-8 [RFC3629] is the most common encoding in
+   current practice; many files created before UTF-8 became dominant
+   use Latin-1 or similar 8-bit encodings.
+
+   A conforming Parser:
+
+   o  MUST accept UTF-8 encoded input.
+
+   o  MAY accept other encodings provided it transcodes them to a
+      common internal representation before analysis.
+
+   Multi-byte encodings are compared byte-wise where length-sensitive
+   operations (for example, column alignment) are defined in terms of
+   byte count.  In stock Org-mode, alignment operations use the
+   displayed column width, which on many terminals corresponds
+   approximately to the Unicode East Asian Width property.  Precise
+   column-width handling is implementation-specific.
+
+   A Byte Order Mark (U+FEFF) at the start of a file has no defined
+   meaning in the Org-mode format.  Emacs typically consumes the BOM
+   when decoding UTF-8 input; independent implementations SHOULD do
+   likewise.
+
+3.3.  Line Terminators and Whitespace
+
+   Emacs Org-mode accepts files with any of the three common
+   line-terminator conventions:
+
+      LF    (U+000A)      Common on Unix-derived systems
+      CRLF  (U+000D U+000A) Common on Windows systems
+      CR    (U+000D)      Historical; rarely encountered
+
+   Emacs normalizes the line terminator to the buffer's configured
+   end-of-line type when saving.  Independent implementations SHOULD
+   accept all three conventions on input, and SHOULD preserve the
+   file's existing convention on output.
+
+   Within a line, both SP (U+0020) and HTAB (U+0009) are recognized
+   as whitespace.  Structural constructs (heading element separation,
+   list-item indentation, table cell delimitation) tolerate either.
+   Emacs uses tab-width conversion when aligning tables and lists;
+   the conversion is governed by the buffer's tab-width setting.
+
+   Blank lines and lines consisting solely of whitespace are
+
+
+
+Wiegley              Org-Mode Format Specification           [Page 7]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   significant in some contexts: they terminate plain-list items
+   (Section 9) and separate paragraph blocks (Section 8.4).  In the
+   heading prelude region (Sections 5.2 through 5.5), blank lines are
+   tolerated and are absorbed into the Entry Body when they appear
+   after the structural prelude.
+
+   Trailing whitespace on lines carries no semantic meaning and is
+   typically eliminated by the save-time handling of the Emacs
+   editor.  Implementations that preserve trailing whitespace do so
+   by choice; those that normalize it do so without loss of meaning
+   at the Org-mode level.
+
+3.4.  Terminology
+
+   The following terms are used throughout this document:
+
+   Depth:       The integer N such that a heading begins with N
+                consecutive '*' characters.  Depth 1 is the outermost
+                heading.
+
+   Entry:       The structural unit introduced by a heading.
+                Comprises the heading, an optional leading stamp
+                line, an optional property drawer, zero or more log
+                entries, an optional active-stamp line, a body, and
+                zero or more child entries.
+
+   Heading:     The single line introducing an Entry, consisting of
+                stars, an optional keyword, an optional priority, a
+                title, and an optional tag list.
+
+   Preamble:    The body region of the File Header occurring before
+                the first top-level Entry.
+
+   Stamp:       A timestamp of the form <YYYY-MM-DD ...> (active) or
+                [YYYY-MM-DD ...] (inactive).
+
+   Leading Stamp:  A stamp introduced by the literal label "CLOSED: ",
+                "SCHEDULED: ", or "DEADLINE: ", appearing on the line
+                immediately following a heading.
+
+   Active Stamp:  An active stamp appearing on its own line within an
+                Entry's body.
+
+   Property:    A name-value pair of the form ":NAME: value" within a
+                property drawer, or "#+NAME: value" at file level.
+
+   Drawer:      A named region delimited by ":NAME:" and ":END:"
+                lines, or by "#+begin_..." and "#+end_..." lines.
+
+
+
+Wiegley              Org-Mode Format Specification           [Page 8]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   LOGBOOK:     A drawer named LOGBOOK that contains log entries.
+
+   Tag:         A colon-delimited marker following an Entry heading or
+                listed in a file-level FILETAGS property.
+
+   Keyword:     A configured TODO-state word (for example, "TODO",
+                "DONE") that may appear immediately after the stars of
+                a heading.
+
+
+4.  File Structure
+
+   A conforming File consists of the following regions, in order:
+
+      1.  Zero or one File-Level Property Drawer (Section 4.2);
+      2.  Zero or more File Property Lines (Section 4.3);
+      3.  A Preamble (Section 4.4);
+      4.  Zero or more top-level Entries (Section 4.5).
+
+   Emacs Org-mode imposes no explicit upper bound on file size.  In
+   practice, performance begins to degrade on files larger than a few
+   megabytes; see the Org manual for discussion of archive strategies.
+
+4.1.  File Header
+
+   Regions 1 through 3 above constitute the File Header.  The Header
+   terminates at the first byte that begins a top-level heading, that
+   is, the first occurrence of "*" followed by whitespace at column 1
+   after the Preamble has consumed all Preamble-compatible content.
+
+   An empty File (zero bytes) is a conforming File with an empty
+   Header and no Entries.
+
+4.2.  File-Level Property Drawer
+
+   A File MAY begin with a property drawer whose syntax is identical
+   to an entry property drawer (Section 5.3).  If present, the
+   drawer occupies the literal first bytes of the file; no leading
+   blank lines or other content appear before it.
+
+   The syntax is:
+
+      FilePropertyDrawer = ":PROPERTIES:", LF,
+                           *( PropertyLine ),
+                           ":END:", LF ;
+
+   The file-level drawer commonly declares a file identifier and
+   creation timestamp but may include any entry-level property name.
+
+
+
+Wiegley              Org-Mode Format Specification           [Page 9]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   Example:
+
+      :PROPERTIES:
+      :ID:       a7f1-abcdef012345
+      :CREATED:  [2026-04-01 Wed 10:00]
+      :END:
+
+4.3.  File Property Lines
+
+   File properties are lines of the form:
+
+      FileProperty = "#+", PropertyName, ":", [ SP, Value ], LF ;
+
+   where PropertyName is an identifier consisting of alphanumerics,
+   underscores, and occasional inner SP characters (no leading "#"
+   or ":"), and Value is the remainder of the line up to, but not
+   including, LF.
+
+   PropertyName matching is case-insensitive; Emacs normalizes names
+   to uppercase for common keywords such as #+TITLE and #+AUTHOR but
+   preserves the author's chosen capitalization for other names.
+
+   Well-known file properties are enumerated in Section 19.1.  File
+   properties with names not listed there are permitted; their
+   interpretation is left to the export back-end or consumer tool.
+
+   Example:
+
+      #+TITLE: Project Plan
+      #+AUTHOR: Jane Doe
+      #+DATE: 2026-04-01
+      #+FILETAGS: :project:active:
+      #+CATEGORY: work
+      #+OPTIONS: toc:nil num:t
+
+4.4.  Preamble
+
+   After the optional property drawer and any file property lines,
+   any Block sequence (Section 8.4) MAY appear as the Preamble.  The
+   Preamble terminates at the first top-level heading.
+
+   Blocks in the Preamble follow the rules of Section 8.4 and may
+   include paragraphs, lists, tables, generic drawers, BEGIN/END
+   blocks, inline tasks, comment lines and comment blocks, horizontal
+   rules, and affiliated-keyword lines attached to the blocks that
+   follow them.  A Preamble MAY be empty.
+
+   Example:
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 10]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      This file contains my current project plan.  It is regenerated
+      weekly from the source tree.
+
+      - Status: in progress
+      - Owner: Jane
+
+4.5.  Entry Tree
+
+   Following the Header, zero or more top-level Entries appear.
+   Each top-level Entry has depth 1 (exactly one leading "*").  Each
+   top-level Entry MAY contain child Entries of depth 2, which in
+   turn MAY contain child Entries of depth 3, and so on.
+
+   An Entry of depth N belongs to the nearest preceding Entry of
+   depth N-1.  Depth ordinarily increases monotonically by exactly
+   one between a parent and its immediate children.  A jump from
+   depth N to depth N+2 is tolerated by Emacs: the deeper Entry is
+   parsed as a child of the last Entry at depth N+1 if any exists,
+   or as a grandchild of the last Entry of depth N otherwise.  Such
+   jumps are unusual in well-structured files and SHOULD be avoided.
+
+   Entry ordering within a parent is significant: export back-ends,
+   agenda generation, and most consumer tools preserve the order of
+   sibling Entries.
+
+
+5.  Entry Syntax
+
+   Each Entry is introduced by a Heading line (Section 5.1),
+   followed in fixed order by:
+
+      1.  An optional Leading Timestamp Line (Section 5.2);
+      2.  An optional Property Drawer (Section 5.3);
+      3.  Zero or more Log Entries (Section 5.4);
+      4.  An optional Active Timestamp Line (Section 5.5);
+      5.  An Entry Body (Section 5.6);
+      6.  Zero or more child Entries (Section 5.7).
+
+   Emacs tolerates some reordering of the prelude elements during
+   editing -- for example, a property drawer may be placed after a
+   log entry if an editing operation so leaves it -- but the order
+   above is the canonical form emitted by Emacs when it refiles,
+   promotes, or archives entries.
+
+5.1.  Heading Line
+
+   The Heading has the abstract form:
+
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 11]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      Heading = Stars, SP, [ Keyword, SP ],
+                [ Priority, SP ],
+                Title,
+                [ Whitespace, TagList ],
+                *SP, LF ;
+
+   Each optional element that is present appears in the order shown.
+   Elements are separated by at least one whitespace character.
+
+   A Heading whose entire content after the stars equals the literal
+   string "END" is reserved as the inline-task terminator
+   (Section 8.3) and SHOULD NOT be used as the text of a regular
+   heading.
+
+5.1.1.  Stars and Depth
+
+   The Stars component is:
+
+      Stars = 1*"*" ;
+
+   Stock Org-mode imposes no hard upper bound on the number of stars,
+   though the convention that depth 15 is reserved for inline tasks
+   is widely observed.
+
+   At least one SP or HTAB MUST follow the stars on a Heading line
+   that bears any further content.  A line consisting solely of one
+   or more stars followed by a line terminator is parsed as a Heading
+   with an empty Title.
+
+5.1.2.  Keyword
+
+   A Keyword, if present, is a match against one of the strings
+   declared by the #+TODO or #+SEQ_TODO file properties
+   (Section 18.1) or by the Emacs variable org-todo-keywords.  In the
+   default configuration, the recognized keywords are "TODO"
+   (open) and "DONE" (closed).
+
+   Keywords are case-sensitive.  A Keyword match is followed by at
+   least one whitespace character; the subsequent components of the
+   Heading then apply.
+
+5.1.3.  Priority Cookie
+
+   A Priority Cookie, if present, has the form:
+
+      Priority = "[#" PriorityChar "]" ;
+
+   where PriorityChar is a single character.  The default recognized
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 12]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   characters are the uppercase letters "A", "B", and "C", with "A"
+   being the highest priority and "C" the lowest.
+
+   The priority range is configurable in Emacs through the
+   org-priority-highest, org-priority-lowest, and
+   org-priority-default variables.  Lowercase letters are accepted
+   when the range is so configured; digits MAY also be accepted.
+
+   A Priority MUST be followed by at least one whitespace character
+   before the next heading component.
+
+5.1.4.  Title
+
+   The Title is the free-form core of the heading.  It spans all
+   bytes after the optional Priority and before the optional Tag
+   list.
+
+   A Title MAY be empty.  Within a Title, inline markup (Section 11)
+   and hyperlinks (Section 12) are recognized.  Timestamps appearing
+   inside a Title are captured by the agenda but do not affect the
+   prelude regions defined in Sections 5.2 and 5.5.
+
+5.1.5.  Tags
+
+   A Tag list is a colon-delimited sequence at the end of a Heading
+   line:
+
+      TagList   = ":", 1*( Tag, ":" ) ;
+      Tag       = 1*( ALPHA / DIGIT / "@" / "_" / "%" / "-" ) ;
+
+   The characters permitted within a Tag name in stock Org-mode are
+   alphanumerics, "@", "_", "%", and "-" (see
+   org-tag-re).  A Tag list is separated from the Title by at least
+   one SP or HTAB; Emacs aligns the list to a configured column (see
+   org-tags-column).
+
+   Tags are inherited by child Entries by default (Section 17.3) and
+   are applied file-wide when declared via the FILETAGS file
+   property (Section 17.2).
+
+5.2.  Leading Timestamp Line
+
+   An Entry MAY include a single Leading Timestamp Line immediately
+   following the Heading.  Its syntax is:
+
+      StampLine    = StampClause, *( SP, StampClause ), *SP, LF ;
+      StampClause  = ( "CLOSED: " / "SCHEDULED: " / "DEADLINE: " ),
+                     Stamp ;
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 13]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   The three labels -- "CLOSED: ", "SCHEDULED: ", and "DEADLINE: " --
+   appear verbatim, each followed by exactly one SP before the
+   timestamp.  Multiple clauses on the same line are separated by one
+   SP.
+
+   CLOSED clauses use the inactive timestamp form.  SCHEDULED and
+   DEADLINE clauses commonly use the active form and MAY include a
+   repeater or warning suffix (Section 6.6).
+
+   Leading stamps are typically attached to Entries carrying a TODO
+   keyword.  Stock Org-mode permits them on any Entry, but the
+   agenda and the closing-log behavior interpret them only for
+   keyword-carrying Entries.
+
+5.3.  Property Drawer
+
+   A Property Drawer, if present, occupies a region bracketed by
+   literal delimiter lines:
+
+      PropertyDrawer = ":PROPERTIES:", *SP, LF,
+                       *PropertyLine,
+                       ":END:", *SP, LF ;
+
+   The drawer MAY be empty of property lines in stock Org-mode,
+   though an empty property drawer is rare and often represents an
+   editing artifact.
+
+      PropertyLine = ":", PropertyName, ":", [ SP, Value ], LF ;
+      PropertyName = 1*( ALPHA / DIGIT / "_" / "-" / "+" ) ;
+
+   In stock Org-mode, a property name may carry a trailing "+" to
+   indicate that the value is appended to a prior definition of the
+   same name; this is the property-append syntax.
+
+   The Value is the remainder of the line up to, but not including,
+   the line terminator.  The Value MAY be empty.  If a Value is
+   present, it is separated from the closing colon of the name by at
+   least one SP; Emacs aligns property values to the column
+   configured by org-property-format.
+
+   Property names are matched case-insensitively.  Where the Org
+   manual documents a specific well-known name (Section 19.2), that
+   name is commonly rendered in uppercase.
+
+   The :PROPERTIES: drawer is ordinarily located immediately after
+   the Heading and optional Leading Stamp line, before any log
+   entries or body content.  Emacs tolerates a property drawer at
+   other positions within the Entry prelude but normalizes to the
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 14]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   canonical position upon editing operations.
+
+5.4.  Log Entries Region
+
+   Following the optional Property Drawer, an Entry MAY contain any
+   number of Log Entries.  Each Log Entry is one of the types defined
+   in Section 7.  Log Entries MAY appear either as list items in this
+   region of the prelude, or inside a LOGBOOK drawer (Section 7.1),
+   or both.
+
+   Whether an entry's log is written as inline list items or inside
+   the LOGBOOK drawer is controlled by the Emacs variable
+   org-log-into-drawer and the LOGGING property.
+
+5.5.  Active Timestamp Line
+
+   Emacs does not specially mark an "active timestamp" region of the
+   Entry prelude; any active timestamps within an Entry's body
+   (whether in a line of their own or embedded in a paragraph) are
+   indexed by the agenda.
+
+   In common usage, an Entry may carry a single active-stamp line
+   immediately after the log-entries region to declare the primary
+   scheduled or observed time of the Entry.  Such a line is parsed
+   by the agenda as a body-level timestamp:
+
+      ActiveStampLine = ActiveStamp, *SP, LF ;
+
+5.6.  Entry Body
+
+   The Entry Body follows the prelude (Heading through any Active
+   Timestamp Line) and precedes the child Entries.  The Body is a
+   Block sequence:
+
+      Body  = *Block ;
+      Block = Whitespace | Paragraph | List | Table |
+              Drawer | InlineTask | BlockLevelConstruct ;
+
+   Block types are defined in Sections 8.4, 9, 10, 8.1, 8.2, 8.3, 13,
+   14, and 15.
+
+   A Body block terminates when either the next sibling or
+   higher-level Heading is encountered, or end-of-file is reached.
+   A heading whose depth equals the child depth of the current Entry
+   begins the first child Entry (Section 5.7).
+
+5.7.  Child Entries
+
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 15]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   Following the Body, zero or more child Entries appear.  Each child
+   Entry has depth exactly one greater than its parent.  Child
+   Entries are recursively parsed using the same grammar as the
+   parent.
+
+   The sequence of children within a parent is ordered and
+   semantically significant.  Emacs operations that reorder siblings
+   (refile, sort) preserve Entry ordering except where explicitly
+   instructed otherwise.
+
+
+6.  Timestamps
+
+6.1.  Active and Inactive Forms
+
+   A timestamp has two forms distinguished by delimiter:
+
+      ActiveStamp   = "<", StampBody, ">" ;
+      InactiveStamp = "[", StampBody, "]" ;
+
+   Active stamps (angle brackets) denote agenda-visible times.
+   Inactive stamps (square brackets) denote records that are not
+   surfaced in the agenda.
+
+   Leading Stamps (Section 5.2) carrying the CLOSED label use the
+   inactive form.  Leading Stamps carrying SCHEDULED or DEADLINE use
+   the active form by convention but the inactive form is accepted.
+
+   The StampBody grammar is common to both forms:
+
+      StampBody = Date, [ SP, DayOfWeek ],
+                  [ SP, TimeOfDay, [ "-", TimeOfDay ] ],
+                  [ SP, Suffix, [ SP, Suffix ] ] ;
+
+   Emacs accepts timestamps with and without the day-of-week field,
+   and it regenerates the day-of-week on save.  The multiple-suffix
+   form allows a stamp to carry both a repeater and a warning cookie.
+
+6.2.  Date
+
+   A Date is ten bytes in the form:
+
+      Date = 4DIGIT, "-", 2DIGIT, "-", 2DIGIT ;
+
+   The date expresses a proleptic Gregorian calendar date.  Emacs
+   Org-mode accepts dates spanning the entire range of the underlying
+   Emacs time representation; on typical 64-bit systems this range is
+   effectively unbounded for ordinary use.
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 16]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   Implementations SHOULD validate that the month is in [1..12] and
+   that the day is valid for the given month and year.
+
+6.3.  Day of Week
+
+   The Day of Week, when present, follows the Date with exactly one
+   SP separator.  In the default Emacs configuration:
+
+      DayOfWeek = "Sun" / "Mon" / "Tue" / "Wed" /
+                  "Thu" / "Fri" / "Sat" ;
+
+   These three-letter English abbreviations are produced by the
+   default value of the calendar locale.  Emacs regenerates the
+   day-of-week on save and accepts other locales when configured.
+
+   Implementations SHOULD accept stamps both with and without the
+   day-of-week field.  When regenerating, they SHOULD produce the
+   abbreviation appropriate for the configured locale.
+
+6.4.  Time of Day
+
+   A Time of Day, if present, follows the Date (or Day of Week) with
+   one SP:
+
+      TimeOfDay = 1*2DIGIT, ":", 2DIGIT ;
+
+   Emacs accepts one- or two-digit hour values.  The range of valid
+   hours is [0..23] and the range of valid minutes is [0..59];
+   implementations SHOULD validate these bounds.
+
+   A same-day time range MAY follow the start Time of Day, separated
+   by "-":
+
+      TimeRange = TimeOfDay, "-", TimeOfDay ;
+
+6.5.  Time Ranges
+
+   Three range forms are defined:
+
+   Same-day range:    Written as a single stamp containing
+                      "HH:MM-HH:MM" within a single pair of
+                      brackets or angle brackets.  See Section 6.4.
+
+   Multi-day range:   Written as two complete stamps joined by "--":
+
+                         StampBody, "--", StampBody
+
+                      The two stamps use the same delimiter form
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 17]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+                      (both active or both inactive).  Either stamp
+                      MAY include a TimeOfDay or TimeRange.
+
+   Clock range:       Inside CLOCK log entries (Section 7.5), the
+                      two endpoints of a clock interval are joined
+                      by "--" between inactive stamps, followed by
+                      " => " and a Duration (Section 6.7).
+
+6.6.  Repeater and Warning Suffix
+
+   One or more Suffixes MAY follow the Date/TimeOfDay inside a stamp,
+   each separated by one SP:
+
+      Suffix     = SuffixKind, Number, Span,
+                   [ "/", Number, Span ] ;
+      SuffixKind = "+" / "++" / ".+" / "-" / "--" ;
+      Number     = 1*DIGIT ;
+      Span       = "h" / "d" / "w" / "m" / "y" ;
+
+   The SuffixKind values correspond to repeat modes:
+
+      +    Simple repeater.  Advances the stamp by the specified
+           interval on each repetition, maintaining the original
+           date modulo the interval.
+
+      ++   Repeat-plus-increment.  Advances the stamp by the smallest
+           number of intervals that places it in the future relative
+           to the current date.
+
+      .+   Dotted (post-completion) repeater.  Resets the stamp to
+           the current date plus the specified interval on each
+           repetition, regardless of the prior stamp.
+
+      -    Warning cookie.  Causes the agenda to surface the stamp N
+           spans in advance of its actual date.  Not a repeater.
+
+      --   Extended warning.  Variant syntax accepted by some
+           configurations.
+
+   The optional "/N<Span>" clause on a repeater specifies an outer
+   bound: for example, "+1d/2w" means "repeat daily, but not more
+   often than every two weeks" under Emacs habit tracking.
+
+   The Span letters have the meanings:
+
+      h   hour        (available on clock-related stamps)
+      d   day
+      w   week
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 18]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      m   month
+      y   year
+
+   An active or inactive stamp MAY carry at most one repeater and at
+   most one warning cookie, written in either order.
+
+6.7.  Duration
+
+   A Duration appears only within CLOCK log entries and represents
+   the interval between the clock's start and end stamps:
+
+      Duration = 1*DIGIT, ":", 2DIGIT ;
+
+   Emacs pads the hour field such that a single-digit hour is
+   preceded by one SP and a multi-digit hour is unpadded.  The
+   minute field is always two digits, zero-padded as required.
+
+   Examples:
+      1 hour 5 minutes   ->   " 1:05"
+      12 hours 30 min    ->   "12:30"
+
+
+7.  Log Entries
+
+   Log Entries record the history of state changes, notes, and
+   time-tracking events associated with an Entry.  Each Log Entry
+   occupies one or more lines.
+
+   Non-clock Log Entries begin with the literal prefix "- "
+   (dash-space) on their first line; they are rendered as list
+   items.  Clock entries begin with "CLOCK:" (no leading dash).
+
+   Where a Log Entry includes a note body (multi-line continuation),
+   Emacs marks the first line with a trailing " \\" (SP, backslash,
+   backslash) and indents subsequent body lines by two SP.  The
+   continuation marker is an Emacs convention introduced by the
+   org-log-note format and is widely observed by other tools.
+
+   Log Entries that appear directly within an Entry's prelude region
+   (Section 5.4) are rendered as list items.  Log Entries that appear
+   inside a LOGBOOK drawer (Section 7.1) are not presented as a list.
+
+7.1.  LOGBOOK Drawer
+
+   A LOGBOOK drawer contains a sequence of Log Entries wrapped in
+   delimiter lines:
+
+      LogBook = ":LOGBOOK:", *SP, LF,
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 19]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+                *LogEntry,
+                ":END:", *SP, LF ;
+
+   Emacs inserts the LOGBOOK drawer when org-log-into-drawer is
+   non-nil.  Clock entries are redirected into LOGBOOK when
+   org-clock-into-drawer is non-nil and either a boolean or an
+   integer threshold is satisfied.
+
+   Within a LOGBOOK, any Log Entry type defined in Sections 7.2
+   through 7.5 MAY appear.  Emacs does not impose an ordering
+   constraint between the drawer and the inline list-item form other
+   than that both are recognized by the agenda.
+
+7.2.  State Change Entries
+
+   A State Change entry records a keyword transition:
+
+      State = "- State \"", Keyword, "\"",
+              [ SP+, "from \"", Keyword, "\"" ],
+              SP+, InactiveStamp,
+              [ Cont ], LF,
+              [ NoteBody ] ;
+
+   The first keyword is the new state; the optional "from \"...\""
+   clause names the previous state.  Both keywords are drawn from the
+   file's configured TODO keyword vocabulary (Section 18.1).
+
+   The timestamp marks the moment of the transition.  Emacs Org-mode
+   records state changes when the relevant keyword is annotated "@"
+   or "!" in org-todo-keywords.
+
+7.3.  Note Entries
+
+   Two note forms are defined:
+
+      Closing = "- CLOSING NOTE", InactiveStamp,
+                [ Cont ], LF, [ NoteBody ] ;
+
+      Note    = "- Note taken on ", InactiveStamp,
+                [ Cont ], LF, [ NoteBody ] ;
+
+   The Closing form is emitted by Emacs when a task is closed with
+   an accompanying note.  The Note form is emitted by the
+   org-add-note command.
+
+   Emacs uses the absence of a space between "CLOSING NOTE" and the
+   timestamp as the literal form; the opening bracket of the
+   timestamp provides the visual separation.
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 20]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+7.4.  Scheduling Entries
+
+   Scheduling-related log entries record changes to SCHEDULED or
+   DEADLINE stamps and refiling events.  Each takes one or two
+   timestamps:
+
+      Rescheduled    = "- Rescheduled from \"",    InactiveStamp,
+                       "\" on ",                    InactiveStamp,
+                       [ Cont ], LF, [ NoteBody ] ;
+
+      NotScheduled   = "- Not scheduled, was \"",   InactiveStamp,
+                       "\" on ",                    InactiveStamp,
+                       [ Cont ], LF, [ NoteBody ] ;
+
+      NewDeadline    = "- New deadline from \"",    InactiveStamp,
+                       "\" on ",                    InactiveStamp,
+                       [ Cont ], LF, [ NoteBody ] ;
+
+      RemovedDeadline = "- Removed deadline, was \"", InactiveStamp,
+                       "\" on ",                    InactiveStamp,
+                       [ Cont ], LF, [ NoteBody ] ;
+
+      Refiling       = "- Refiled on ",            InactiveStamp,
+                       [ Cont ], LF, [ NoteBody ] ;
+
+   The literal text of each entry appears as shown (case-sensitive,
+   punctuation included).  Emacs emits these entries when the
+   corresponding logging directive is enabled (Section 18.3).
+
+7.5.  Clock Entries
+
+   A Clock entry records a time-tracking interval.  Its syntax is:
+
+      Clock     = "CLOCK:", 1*SP, InactiveStamp,
+                  [ "--", InactiveStamp,
+                    *SP, "=>", *SP, Duration ],
+                  *SP, LF ;
+
+   An open Clock entry (no second stamp, no duration) records a
+   currently running clock.  A closed Clock entry includes the second
+   stamp, the literal "=>" separator, and the Duration (Section 6.7).
+
+   Both stamps in a closed Clock entry use the inactive form.
+
+7.6.  Log Entry Body
+
+   Each non-clock Log Entry MAY carry a multi-line body attached to
+   the header line by the continuation marker " \\" (SP, backslash,
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 21]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   backslash).  The body is parsed as:
+
+      NoteBody  = 1*( NoteLine ) ;
+      NoteLine  = ( "  ", LineContent, LF ) / LF ;
+
+   Body lines begin with two SP characters, or are entirely blank
+   (LF only).
+
+   The continuation marker and two-space indentation convention are
+   introduced by Emacs; independent tools SHOULD accept and produce
+   them as shown.
+
+
+8.  Drawers and Blocks
+
+8.1.  Plain Drawers
+
+   A plain Drawer delimits a named region by matching ":NAME:" and
+   ":END:" lines:
+
+      PlainDrawer = [ prefix ], ":", Name, ":", *SP, LF,
+                    *( ContentLine ),
+                    [ prefix ], ":END:", *SP, LF ;
+      Name        = 1*( ALPHA / DIGIT / "_" / "-" ) ;
+
+   Emacs accepts drawer names consisting of alphanumerics,
+   underscores, and hyphens.  Case is not significant in the match,
+   but Emacs normalizes a drawer's name to uppercase when editing.
+
+   Reserved drawer names include:
+
+      PROPERTIES     The property drawer (Sections 4.2 and 5.3).
+      LOGBOOK        The log-entry drawer (Section 7.1).
+      CLOCK          A legacy drawer sometimes emitted by older
+                     versions of Emacs Org-mode for clock entries.
+
+   Other Name values are permitted and are treated as generic drawer
+   blocks.  The content of a generic drawer is preserved verbatim and
+   is not assigned further structure by the Parser, except that
+   generic drawers MAY participate in visibility cycling.
+
+   The prefix is a run of whitespace preceding the opener when the
+   drawer appears nested inside an indented context (for example,
+   inside a list item or a nested structure).  The same prefix is
+   expected on all content lines and on the closer.
+
+8.2.  BEGIN/END Blocks
+
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 22]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   A BEGIN/END block delimits a region introduced by "#+begin" or
+   "#+BEGIN":
+
+      BeginBlock  = [ prefix ], BeginOpen, LineTail, LF,
+                    *( ContentLine ),
+                    [ prefix ], EndClose, LineTail, LF ;
+      BeginOpen   = "#+begin_" BlockName / "#+BEGIN_" BlockName ;
+      EndClose    = "#+end_"   BlockName / "#+END_"   BlockName ;
+      BlockName   = 1*( ALPHA / DIGIT / "_" ) ;
+
+   The opener and closer SHOULD use matching case: either both
+   lowercase or both uppercase.  The BlockName of the closer MUST
+   match the BlockName of the opener.
+
+   Well-known block names include:
+
+      src        Source code block.  The LineTail of the opener names
+                 a language identifier and MAY carry header arguments
+                 (see below).  Emacs babel interprets the block as
+                 executable source.
+
+      example    Example (non-executable) text.  Content is displayed
+                 verbatim by exporters.
+
+      quote      Block quotation.  Content is exported with semantic
+                 emphasis appropriate to the back-end (e.g., HTML
+                 <blockquote>).
+
+      verse      Verse block.  Preserves line breaks and leading
+                 whitespace in export.
+
+      center     Centered text block.
+
+      export     Back-end-specific content.  The LineTail names the
+                 target back-end(s).  Content is passed through
+                 verbatim to the named back-end(s) and suppressed by
+                 others.
+
+      comment    Comment block.  Content is suppressed by all
+                 export back-ends.
+
+      ascii      ASCII-only export block (legacy).
+
+      html       HTML-only export block (legacy).
+
+      latex      LaTeX-only export block (legacy).
+
+   The LineTail of the opener for a #+BEGIN_SRC block has the form:
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 23]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      Language, [ SP, HeaderArgs ]
+
+   where HeaderArgs is a space-separated sequence of :key value pairs
+   governing the block's execution, export, and formatting.  The
+   complete catalogue of header arguments is documented in the
+   Org manual chapter on Working with Source Code.
+
+   Content lines between the opener and closer are preserved verbatim.
+   Within src and example blocks, lines beginning with a comma followed
+   by "*" (",*") are "protected" heading escapes: Emacs displays them
+   as if the comma were absent, but the comma prevents the line from
+   being parsed as a heading.  The same escape applies to the
+   sequences ",#+".
+
+   Examples:
+
+      #+begin_src haskell
+      main :: IO ()
+      main = putStrLn "hello"
+      #+end_src
+
+      #+BEGIN_QUOTE
+      "What cannot be said, cannot be whistled either."
+          -- Frank Ramsey
+      #+END_QUOTE
+
+      #+begin_export html
+      <p>Raw HTML passed through.</p>
+      #+end_export
+
+8.3.  Inline Tasks
+
+   An Inline Task is a nested Entry-like structure embedded in the
+   body of a regular Entry.  Its depth is exactly 15:
+
+      InlineTask = "***************", SP, HeadingTail, LF,
+                   { Entry-like content as in Section 5 },
+                   "***************", SP, "END", RestOfLine ;
+
+   The opening line has 15 consecutive "*" characters, followed by
+   SP and a heading body in the usual form (Section 5.1).  The
+   closing line has 15 consecutive "*" characters, followed by SP,
+   followed by the literal "END", optionally followed by additional
+   text.
+
+   Inline Tasks MAY contain leading stamps, a property drawer, log
+   entries, an active stamp, and a body, but MAY NOT contain child
+   Entries.  Emacs supports inline tasks via the org-inlinetask
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 24]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   library.
+
+8.4.  Paragraphs and Whitespace
+
+   Within a Body, the following Block types are recognized:
+
+   Whitespace:  A line consisting solely of whitespace characters
+                followed by LF.
+
+   Paragraph:   A sequence of one or more non-blank, non-structured
+                lines.  Paragraphs terminate at a blank line, at a
+                heading, at the start of a list or table, at a drawer
+                or BEGIN/END opener, or at end-of-file.
+
+   List:        A plain-list block (Section 9).
+
+   Table:       A table block (Section 10).
+
+   Drawer:      A plain drawer (Section 8.1) or BEGIN/END block
+                (Section 8.2).
+
+   InlineTask:  An inline task (Section 8.3).
+
+   Adjacent paragraphs, separated only by structural whitespace, are
+   distinct blocks; exporters typically render an empty line between
+   paragraphs.
+
+
+9.  Plain Lists
+
+   A plain list is a sequence of items, each introduced by a bullet
+   token.  Items belonging to the same list share a common indentation
+   column for their bullets and a common item body indentation for
+   their continuation lines.
+
+9.1.  Unordered Lists
+
+   An unordered list uses one of the bullet tokens "-", "+", or "*":
+
+      UnorderedItem = [ prefix ], BulletChar, SP, ItemBody ;
+      BulletChar    = "-" / "+" / "*" ;
+
+   The "*" bullet is recognized only when the bullet does not appear
+   at column 1 (which would be a heading).
+
+   Items belonging to the same list share the same bullet character
+   and indentation column.
+
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 25]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+9.2.  Ordered Lists
+
+   An ordered list uses a counter token:
+
+      OrderedItem  = [ prefix ], Counter, OrderedDelim, SP, ItemBody ;
+      Counter      = 1*DIGIT / 1ALPHA ;
+      OrderedDelim = "." / ")" ;
+
+   Numeric counters are integers.  Single-letter counters are accepted
+   when org-list-allow-alphabetical is non-nil.  A list MAY use a
+   numeric counter on some items and the Counter placeholder "[@N]"
+   to force renumbering at a specific item (for example "1. a /  3. c
+   [@3]").  Emacs renumbers counters visually without editing the
+   stored value unless the list is regenerated.
+
+9.3.  Descriptive Lists
+
+   A descriptive list is an unordered list in which each item's body
+   begins with a term, followed by " :: ", followed by a description:
+
+      DescriptiveItem = UnorderedItem-header, Term, " :: ", Desc ;
+
+   Exporters render each item as a <dt>/<dd> pair in HTML or the
+   analogous construct in other back-ends.
+
+   Example:
+
+      - apple :: a common fruit
+      - orange :: citrus, often juiced
+
+9.4.  Check-Boxes
+
+   A list item MAY carry a check-box marker immediately after the
+   bullet token:
+
+      CheckBox = "[", CheckBoxState, "]" ;
+      CheckBoxState = " " / "-" / "X" ;
+
+   The three states represent:
+
+      [ ]    unchecked
+      [-]    partially checked (intermediate)
+      [X]    checked
+
+   A check-box MAY also carry a progress cookie of the form "[N/M]"
+   or "[K%]" where N/M counts completed sub-items and K% is the
+   equivalent percentage.  Progress cookies are maintained by Emacs
+   automatically when the item has check-box children.
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 26]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   Example:
+
+      - [X] Write draft
+      - [-] Review drafts [1/3]
+        - [X] Introduction
+        - [ ] Body
+        - [ ] Conclusion
+
+9.5.  Nesting and Continuation
+
+   List items may be nested: an item is a child of the preceding
+   item of lesser indentation.  A nested list uses greater
+   indentation for its bullets than the enclosing list; the exact
+   number of columns of additional indentation is preserved by
+   Emacs but is not normatively constrained.
+
+   An item's body MAY span multiple lines.  Continuation lines are
+   indented to at least the column of the first non-bullet character
+   of the item.  Blank lines within an item terminate the item if
+   they are followed by content at a shallower indentation.
+
+   A list terminates at a blank line followed by content at an
+   indentation shallower than the list's bullet column, at the next
+   heading, or at end-of-file.
+
+
+10.  Tables
+
+10.1.  Table Rows and Cells
+
+   A table is a sequence of rows.  Each row begins with a pipe ("|")
+   at or near the start of a line:
+
+      TableRow   = [ prefix ], "|", *( CellContent, "|" ), *SP, LF ;
+      CellContent = 0 or more characters other than "|" and LF ;
+
+   A table terminates at the first non-row line that is not a
+   table-related affiliated keyword.
+
+   Cell content is trimmed of leading and trailing SP before
+   rendering; internal SP is preserved.  Emacs aligns cell widths
+   within a column when the table is realigned, padding cells with SP
+   as needed.
+
+   A row that lacks a trailing "|" is accepted by Emacs and rendered
+   with a trailing "|" on realignment.
+
+10.2.  Separator Rows
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 27]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   A separator row has the form:
+
+      SeparatorRow = [ prefix ], "|", 1*( "-", *"-" / "+", *"-" ),
+                     *SP, LF ;
+
+   The separator row uses "-" for horizontal rule segments and "+"
+   at cell boundaries.  Emacs regenerates the exact separator layout
+   on realignment; the presence of a separator row marks a logical
+   division (typically between header rows and data rows).
+
+   Example:
+
+      | Col A | Col B |
+      |-------+-------|
+      |   1   |   2   |
+      |   3   |   4   |
+
+10.3.  Alignment Cookies
+
+   A column alignment cookie may appear on a dedicated row
+   immediately below a separator.  The cookie has the form:
+
+      Alignment = "<", AlignChar, [ 1*DIGIT ], ">" ;
+      AlignChar = "l" / "c" / "r" ;
+
+   Where:
+
+      l    left-aligned
+      c    centered
+      r    right-aligned
+
+   The optional digit sequence specifies a column-width hint in
+   characters.  Emacs applies the cookie upon realignment and
+   propagates it to export back-ends.
+
+   Example:
+
+      | Name   | Count |
+      |--------+-------|
+      | <l>    | <r>   |
+      | apple  |  12   |
+      | orange |   7   |
+
+10.4.  Table Formulas
+
+   Table formulas are written on a dedicated affiliated line
+   immediately following the table:
+
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 28]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      TableFormulaLine = "#+TBLFM:", *SP, FormulaList, LF ;
+      FormulaList      = Formula, *( "::", Formula ) ;
+
+   The Formula syntax is an Emacs Calc expression or a Lisp form,
+   with field references of the form @ROW$COL (absolute) or
+   $COL (relative, by column).  Summary operators include vsum(),
+   vmean(), vmax(), vmin(), and vlen().
+
+   Formulas are an advanced feature of Org-mode; see the Org manual
+   chapter on Tables for a complete reference.  Independent
+   implementations SHOULD preserve #+TBLFM: lines verbatim and SHOULD
+   NOT alter their content.
+
+
+11.  Inline Markup
+
+   Inline markup applies to runs of text within paragraphs, list
+   item bodies, heading titles, and other free-form contexts.
+
+11.1.  Emphasis Markers
+
+   Six emphasis markers are defined:
+
+      *bold*            Bold text
+      /italic/          Italicized text
+      _underline_       Underlined text
+      =verbatim=        Verbatim text (not re-interpreted)
+      ~code~            Code text (monospaced)
+      +strikethrough+   Struck-through text
+
+   An emphasis marker recognizes a run when the opening marker is
+   preceded by whitespace, a punctuation character, or the start of
+   the line, and the closing marker is followed by whitespace,
+   punctuation, or the end of the line.  The characters immediately
+   inside the markers MUST NOT be whitespace.
+
+   The verbatim and code markers suppress further markup recognition
+   inside the run: brackets, backslashes, and other markup characters
+   are preserved literally.
+
+   The set of recognized markers and their precedence are governed by
+   the Emacs variables org-emphasis-alist and
+   org-emphasis-regexp-components; implementations SHOULD observe
+   the defaults described above.
+
+11.2.  Subscript and Superscript
+
+   Emacs recognizes two subscript/superscript conventions:
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 29]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      Simple:     ^char   or  _char
+      Braced:     ^{...}  or  _{...}
+
+   Simple forms attach to a single character or a run of alphanumerics
+   following the caret or underscore; braced forms include exactly
+   the content inside the braces.
+
+   Recognition is controlled by the org-use-sub-superscripts variable.
+   Values of {} restrict recognition to braced forms only; a value of
+   t accepts both; nil disables both.
+
+11.3.  Entities
+
+   An Org entity is a name drawn from the org-entities table,
+   introduced by a backslash:
+
+      Entity = "\", 1*ALPHA, [ "{}" ] ;
+
+   Common examples:
+
+      \alpha        lowercase Greek alpha
+      \Alpha        uppercase Greek alpha
+      \Rightarrow   right double arrow
+      \pounds       pound sterling
+      \o            scandinavian o
+
+   The optional trailing "{}" prevents the entity from absorbing
+   subsequent alphabetic characters.  Entities are expanded by export
+   back-ends to the appropriate glyph (Unicode, LaTeX, HTML entity,
+   etc.).
+
+11.4.  Line Break
+
+   A hard line break within a paragraph is denoted by two backslashes
+   at the end of a line:
+
+      LineBreak = "\\", *SP, LF ;
+
+   Emacs exporters render this as a <br/> tag or equivalent in the
+   target format.  The backslashes MUST be the last non-whitespace
+   content on the line.
+
+
+12.  Hyperlinks
+
+12.1.  Link Syntax
+
+   A hyperlink has two bracketed forms:
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 30]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      Link          = "[[", LinkTarget, "]]"
+                    / "[[", LinkTarget, "][", LinkDescription, "]]" ;
+      LinkTarget    = 1*( CHAR-except-"]" ) ;
+      LinkDescription = 1*( CHAR-except-"]" ) ;
+
+   The two-part form supplies a human-readable description distinct
+   from the link target.  The single-part form uses the target text
+   itself as the description.
+
+   In addition to the bracketed forms, Emacs recognizes bare URLs
+   appearing in paragraph text when they match the regular expression
+   in org-plain-link-re.  Such plain links are rendered as hyperlinks
+   on export but are not first-class link constructs.
+
+   Examples:
+
+      [[https://orgmode.org/]]
+      [[https://orgmode.org/][Org Mode]]
+      [[file:notes.org]]
+      [[file:notes.org::#section-heading]]
+      [[id:7f3b-abcd]]
+      [[*Section title]]
+      [[fuzzy-match]]
+
+12.2.  Link Types
+
+   The LinkTarget begins with an optional type prefix followed by a
+   colon.  In the absence of a prefix, the target is interpreted as
+   a fuzzy reference within the current file.  Commonly recognized
+   types include:
+
+      http:, https:    Web URL.
+      ftp:             FTP URL.
+      mailto:          Email address.
+      file:            Filesystem path.  May include "::NN" or
+                       "::SEARCHTEXT" suffix to position within the
+                       target file.
+      id:              Target Entry by :ID: property.
+      custom-id:       Target Entry by :CUSTOM_ID: property.
+      info:            Info-manual node.
+      help:            Emacs help topic.
+      doi:             Digital Object Identifier.
+      news:            Usenet newsgroup.
+      elisp:           Inline Emacs Lisp expression.
+      shell:           Shell command.
+
+   Unprefixed targets are treated as one of:
+
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 31]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      "*Heading"       Exact-match heading title.
+      "#custom-id"     Entry by :CUSTOM_ID: property.
+      "Any other text" Fuzzy match against headings, named blocks,
+                       radio targets, or dedicated-anchor text.
+
+   The complete link-type registry is configured via org-link-types
+   and the org-link-set-parameters API; see the Org manual for
+   custom link type definitions.
+
+12.3.  Radio Targets
+
+   A radio target marks text that will automatically become a link
+   target whenever the same text appears elsewhere in the document:
+
+      RadioTarget = "<<<", 1*( CHAR-except-">" ), ">>>" ;
+
+   The triple-angle-bracket notation declares the text between the
+   brackets as a case-insensitive target; any subsequent occurrence
+   of the same text (as a word) is converted into a link to that
+   target.
+
+   A dedicated target (distinguished from a radio target) uses the
+   double-bracket form:
+
+      DedicatedTarget = "<<", 1*( CHAR-except-">" ), ">>" ;
+
+   Dedicated targets are explicit anchor points for links of the
+   form "[[anchor-name]]".
+
+12.4.  Link Abbreviations
+
+   The #+LINK: file-property keyword defines a link abbreviation:
+
+      LinkAbbrev = "#+LINK:", SP, Name, SP, Template, LF ;
+
+   where Template is a URL-like string containing "%s" (replaced with
+   the abbreviation argument) or "%h" (replaced with the argument
+   URL-escaped).  Multiple #+LINK: lines may appear to declare
+   multiple abbreviations.
+
+   Example:
+
+      #+LINK: github https://github.com/%s
+      #+LINK: bug    https://bugs.example/%s
+
+   Subsequent link targets of the form "github:jwiegley/org-jw" are
+   expanded to "https://github.com/jwiegley/org-jw".
+
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 32]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+13.  Footnotes
+
+13.1.  Reference Forms
+
+   Three footnote reference forms are recognized:
+
+      Numbered:        [fn:N]
+      Named:           [fn:NAME]
+      Named with body: [fn:NAME:DEF]
+      Anonymous body:  [fn::DEF]
+
+   where N is a decimal integer, NAME is a label drawn from
+   alphanumerics, hyphens, and underscores, and DEF is inline text.
+
+   Numbered and named references without an inline body refer to a
+   corresponding definition elsewhere in the document (Section 13.2).
+   Named references with an inline body both declare and reference
+   the footnote; the body is written inline once and at each
+   subsequent reference, only "[fn:NAME]" is required.  Anonymous
+   inline bodies are unreferencable definitions whose text appears
+   only at the reference point.
+
+   Examples:
+
+      This is a claim.[fn:1]  And another.[fn:note-on-foo]
+
+      [fn:1] Supporting evidence.
+      [fn:note-on-foo] Longer discussion, spanning one or more
+         paragraphs.
+
+      An inline aside.[fn::A remark that needs no label.]
+
+13.2.  Definitions
+
+   A footnote definition is a block-level construct beginning at
+   column 1 with the reference form:
+
+      FootnoteDef = "[fn:", Label, "]", SP, 1*( ParaLine ) ;
+
+   The definition extends until the next blank line followed by a
+   different block, another footnote definition, a heading, or
+   end-of-file.  The definition body may contain paragraphs, lists,
+   tables, and most other Body-level constructs.
+
+   Emacs exporters collect footnote definitions and emit them in a
+   dedicated section of the exported document.
+
+   When Emacs encounters an inline reference of the form
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 33]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   "[fn:NAME:DEF]" where NAME has not been previously referenced, it
+   treats the inline body as the definition; subsequent bare
+   references to NAME use the previously declared inline body.
+
+
+14.  LaTeX Fragments and Math
+
+14.1.  Inline Math
+
+   Inline mathematical content may be expressed in four forms:
+
+      $...$           Single-dollar delimiters; text between a
+                      $ and the matching $ on the same line, subject
+                      to conditions below.
+
+      \(...\)         LaTeX-style inline math delimiters.
+
+      $$...$$         Legacy Emacs form for inline math.  Displayed
+                      as "inline math" by most back-ends but rendered
+                      as display math in Emacs preview.
+
+      \[...\]         LaTeX-style display math delimiters (not
+                      inline); see Section 14.2.
+
+   The $...$ form is recognized only under additional conditions:
+   the character before the opening $ is not a dollar sign, and the
+   character after the closing $ is a whitespace character or
+   punctuation.  These restrictions are described in
+   org-match-substring-regexp.
+
+14.2.  Display Math
+
+   Display math is written with the LaTeX \[...\] delimiters:
+
+      DisplayMath = "\[", *( CHAR-except-"\]" ), "\]" ;
+
+   Display math appears on its own and is typeset as a centered or
+   numbered equation in export.
+
+   Example:
+
+      The Euler identity states that
+      \[
+         e^{i\pi} + 1 = 0.
+      \]
+
+14.3.  LaTeX Environments
+
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 34]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   A LaTeX environment is a block introduced by a "\begin{...}" line
+   and closed by a matching "\end{...}" line:
+
+      LatexEnvironment = "\begin{", EnvName, "}", *( ParaLine ),
+                         "\end{",   EnvName, "}" ;
+      EnvName          = 1*( ALPHA / DIGIT / "_" / "-" ) ;
+
+   Content between the delimiters is passed to the LaTeX back-end
+   verbatim.  Emacs preview displays the rendered result.
+
+   Example:
+
+      \begin{align*}
+         (a + b)^2 &= a^2 + 2ab + b^2 \\
+                   &= (a + b)(a + b)
+      \end{align*}
+
+
+15.  Comments and Horizontal Rules
+
+15.1.  Comment Lines
+
+   A comment line begins with "# " (hash-space) or a single "#" at
+   column 1:
+
+      CommentLine = [ prefix ], "#", [ SP, LineContent ], LF ;
+
+   Comments are preserved in the source file but are suppressed by
+   export back-ends.  They do not terminate paragraphs in Emacs
+   Org-mode: a paragraph may contain interspersed comment lines
+   provided the hash appears at column 1 (or at the prefix column
+   for nested content).
+
+15.2.  Comment Blocks
+
+   A comment block is a BEGIN/END block (Section 8.2) with the
+   name "comment":
+
+      CommentBlock = "#+begin_comment", LF,
+                     *( ContentLine ),
+                     "#+end_comment", LF ;
+
+   Content between the delimiters is suppressed by all export
+   back-ends.
+
+15.3.  Horizontal Rules
+
+   A horizontal rule is a line consisting of five or more consecutive
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 35]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   hyphens at column 1, terminated by LF:
+
+      HorizontalRule = [ prefix ], 5*"-", *SP, LF ;
+
+   Export back-ends render a horizontal rule as the appropriate
+   divider (an <hr/> tag in HTML, a \hrule in LaTeX, etc.).
+
+
+16.  Export and Meta Keywords
+
+16.1.  Document-Level Keywords
+
+   The following file-property keywords are recognized by exporters
+   as document-level metadata:
+
+      #+TITLE:         Document title.
+      #+SUBTITLE:      Document subtitle.
+      #+AUTHOR:        Author name.
+      #+EMAIL:         Author email.
+      #+DATE:          Document date (may be a timestamp or text).
+      #+LANGUAGE:      Document language (e.g., "en", "de").
+      #+DESCRIPTION:   Document description (for HTML meta).
+      #+KEYWORDS:      Document keywords (for HTML meta).
+      #+COPYRIGHT:     Copyright notice.
+
+   A keyword MAY appear multiple times; exporters typically
+   concatenate or join the values.  The #+DATE: value MAY be a
+   timestamp (active or inactive) or arbitrary text.
+
+16.2.  OPTIONS Keyword
+
+   The #+OPTIONS: keyword carries a space-separated sequence of
+   option tokens:
+
+      OptionsKeyword = "#+OPTIONS:", *( SP, OptionToken ), LF ;
+      OptionToken    = OptionName, ":", OptionValue ;
+
+   Well-known options include:
+
+      toc:       Table of contents (t, nil, or an integer).
+      num:       Section numbering (t, nil, or an integer).
+      H:         Export headline depth.
+      *:         Emphasis recognition.
+      -:         Special strings.
+      ::         Fixed-width sections.
+      <:         Timestamp export.
+      \n:        Preserve line breaks.
+      ^:         Sub/superscript handling (t, nil, {}).
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 36]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      e:         Entity expansion.
+      f:         Footnotes.
+      pri:       Priority export.
+      stat:      Statistics cookie export.
+      tags:      Tag export.
+      tasks:     TODO tag export.
+      todo:      TODO keyword export.
+
+   The complete OPTIONS catalogue is documented in the Org manual
+   chapter on Export Settings.
+
+16.3.  Affiliated Keywords
+
+   Affiliated keywords are file-property-style lines attached to a
+   following block, table, or image.  Common affiliated keywords
+   include:
+
+      #+NAME:          Block or table name (for cross-referencing).
+      #+CAPTION:       Caption text (for tables, figures, blocks).
+      #+ATTR_HTML:     HTML attributes for the associated element.
+      #+ATTR_LATEX:    LaTeX attributes.
+      #+ATTR_ORG:      Org-level rendering attributes.
+      #+RESULTS:       Source block results.
+      #+HEADER:        Additional source block header arguments.
+      #+LABEL:         Cross-reference label (legacy; prefer #+NAME).
+
+   Affiliated keywords immediately precede the block they decorate;
+   blank lines or other lines terminate the association.
+
+   Example:
+
+      #+NAME: tbl-prices
+      #+CAPTION: Price table for fiscal year 2026.
+      | Item  | Price |
+      |-------+-------|
+      | Apple |  $1.00 |
+      | Pear  |  $1.25 |
+
+16.4.  Includes and Macros
+
+   The #+INCLUDE: keyword splices external content at export time:
+
+      IncludeKeyword = "#+INCLUDE:", SP, Spec, LF ;
+      Spec           = "\"" FilePath "\"" [ SP, IncludeType ]
+                       [ SP, IncludeArgs ] ;
+      IncludeType    = "src" / "example" / "export" ;
+
+   The referenced file path is interpreted relative to the including
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 37]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   file.  The optional IncludeType wraps the included content in a
+   corresponding BEGIN/END block; in its absence, the content is
+   treated as Org-mode source.
+
+   Example:
+
+      #+INCLUDE: "./preface.org"
+      #+INCLUDE: "~/projects/foo/src.hs" src haskell
+
+   The #+MACRO: keyword defines a text macro:
+
+      MacroKeyword   = "#+MACRO:", SP, MacroName, SP, MacroBody, LF ;
+
+   A macro is invoked at use-sites with "{{{NAME(ARG1,ARG2,...)}}}";
+   Emacs substitutes the body with arguments bound to $1, $2, etc.
+
+   Example:
+
+      #+MACRO: note *Note:* $1
+      ...
+      {{{note(remember to close your laptops)}}}
+
+   The #+BIND: keyword binds Emacs variable values during export:
+
+      BindKeyword    = "#+BIND:", SP, VariableName, SP, SExp, LF ;
+
+
+17.  Tags
+
+17.1.  Tag Syntax
+
+   Tag syntax is described in Section 5.1.5.  Tags are
+   colon-delimited sequences of names matching org-tag-re.
+
+17.2.  File-Level Tags
+
+   The #+FILETAGS file property declares tags applied to every Entry
+   in the file:
+
+      FileTagsKeyword = "#+FILETAGS:", *SP, TagList, LF ;
+
+   The TagList in a FILETAGS value has the same ":tag1:tag2:" form as
+   on a Heading.  File-level tags are inherited by every Entry in the
+   file; they are not typically rendered on each Entry's heading
+   line but are treated as if present for purposes of tag queries and
+   agenda searches.
+
+17.3.  Tag Inheritance
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 38]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   Emacs inherits tags from an Entry's ancestors by default.  An
+   Entry's effective tag set is the union of its own declared tags,
+   its ancestors' declared tags, and the file-level FILETAGS.  The
+   inheritance behavior is controlled by the org-use-tag-inheritance
+   variable and the org-tags-exclude-from-inheritance variable.
+
+   Specific tag names may be excluded from inheritance: for example,
+   an "archive" tag applied to a parent Entry typically does not
+   propagate to its children.
+
+   Inheritance does NOT affect the stored form of the file: a child
+   Entry does not acquire the text of its parent's tag list.  It
+   affects only the query-time view of the Entry's tag set.
+
+
+18.  Keywords and State Transitions
+
+18.1.  Keyword Configuration
+
+   TODO keyword handling is driven by the file property #+TODO: or
+   equivalent forms, and by the Emacs variable org-todo-keywords:
+
+      TodoKeyword = "#+TODO:", SP, KeywordList, "|", KeywordList, LF ;
+      KeywordList = 1*( SP?, Keyword, [ "(", FastChar, ")" ] ) ;
+
+   Keywords before the "|" are the open (in-progress) states;
+   keywords after the "|" are the closed (terminal) states.  A file
+   MAY declare multiple #+TODO: lines, each introducing an
+   independent keyword sequence.
+
+   Example:
+
+      #+TODO: TODO STARTED WAITING | DONE CANCELED
+      #+TODO: REPORT BUG KNOWNCAUSE | FIXED
+
+   The #+SEQ_TODO: and #+TYP_TODO: forms are synonyms; the historical
+   distinction (sequence vs. type) no longer carries meaning in
+   modern Emacs Org-mode.
+
+18.2.  Fast-Selection Characters
+
+   A keyword MAY carry a parenthesized annotation of the form
+   "(char)", "(char!)", "(char@)", "(char/!)", or "(char@/!)":
+
+      "(x)"     The character x is the fast-select key for this
+                keyword.
+
+      "(x!)"    When transitioning into this keyword, record a
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 39]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+                timestamp automatically (log state).
+
+      "(x@)"    When transitioning into this keyword, prompt for a
+                note and record both the note and a timestamp.
+
+      "(x/!)"   When transitioning *out* of this keyword, record a
+                timestamp (log state).
+
+      "(x@/!)"  When transitioning *out* of this keyword, prompt for
+                a note.
+
+   These annotations affect the automatic recording of Log Entries
+   (Section 7) but do not alter the textual form of the file: they
+   govern only Emacs' behavior when state changes occur interactively.
+
+18.3.  Logging Directives
+
+   The file-level #+STARTUP: keyword and the per-entry :LOGGING:
+   property can enable or disable logging behaviors:
+
+      StartupKeyword = "#+STARTUP:", *( SP, StartupOption ), LF ;
+
+   Relevant options include:
+
+      logdone          Record a timestamp when a task is closed.
+      nologdone        Do not record timestamps for task closure.
+      lognotedone      Prompt for a note when a task is closed.
+      logrepeat        Record a state change for repeating tasks.
+      nologrepeat      Do not record state changes for repeats.
+      logreschedule    Record a Rescheduling note.
+      lognoteredeadline Record a New-deadline note.
+      lognoterefile    Record a Refiling note.
+
+   The :LOGGING: entry-level property accepts the same options.
+   Emacs applies the effective logging configuration when performing
+   state changes, rescheduling, and refiling operations.
+
+
+19.  Well-Known Properties
+
+19.1.  File-Level Properties
+
+   The following property names have conventional meaning when they
+   appear as file-level "#+NAME: value" lines:
+
+   TITLE         A human-readable title for the file.  Used by
+                 export back-ends as the document title.
+
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 40]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   SUBTITLE      A subtitle.
+
+   AUTHOR        The author name.
+
+   EMAIL         The author email.
+
+   DATE          The document date (timestamp or text).
+
+   DESCRIPTION   A short description (used by HTML <meta> tags).
+
+   KEYWORDS      Comma-separated keywords (used by HTML <meta> tags).
+
+   LANGUAGE      The document language (e.g., "en").
+
+   CATEGORY      A short category label associated with every Entry
+                 in the file.  Inherited by Entries.
+
+   FILETAGS      File-wide tags (Section 17.2).
+
+   ARCHIVE       A file-path pattern identifying the archive
+                 destination for entries in this file.  See the Org
+                 manual chapter on Archiving.
+
+   OPTIONS       Document-level export options (Section 16.2).
+
+   STARTUP       Document-level startup directives.
+
+   TODO, SEQ_TODO, TYP_TODO  Keyword sequence declarations
+                 (Section 18.1).
+
+   LINK          Link-abbreviation declarations (Section 12.4).
+
+   TAGS          Declared tag vocabulary (see Org manual).
+
+   PROPERTY      Declarations of default property values, applied as
+                 if they appeared in a file-level property drawer.
+
+   CONSTANTS     Constant bindings for table formula evaluation.
+
+   COLUMNS       Column-view specification applied to every Entry.
+
+   INCLUDE       Include another file's content (Section 16.4).
+
+   MACRO         Macro definitions (Section 16.4).
+
+   BIND          Variable bindings for export.
+
+   File properties with names not listed above are tolerated and
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 41]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   preserved verbatim; their interpretation is determined by the
+   consumer tool.
+
+19.2.  Entry-Level Properties
+
+   The following property names have conventional meaning when they
+   appear in an Entry's property drawer:
+
+   ID             A stable identifier for the Entry.  Used by id:
+                  links and by org-id operations.
+
+   CUSTOM_ID      A user-chosen stable identifier.  Used by
+                  custom-id: links.
+
+   CATEGORY       A short category label (inherited).
+
+   ARCHIVE        An archive-destination pattern for this subtree.
+
+   COOKIE_DATA    Controls how progress cookies are computed for
+                  this subtree (values: "todo", "checkbox", "recursive",
+                  "all", "auto").
+
+   ORDERED        When set to "t", children of this Entry must be
+                  completed in order (Emacs enforces on toggle).
+
+   BLOCKER        A dependency specification; see the Org manual
+                  chapter on TODO Dependencies.
+
+   TRIGGER        An on-completion action specification.
+
+   EFFORT         A time estimate (e.g., "2:00" or "30min").
+
+   COLUMNS        Column-view specification for this subtree.
+
+   LOGGING        Per-entry logging directives (Section 18.3).
+
+   CLOCK_MODELINE_TOTAL   Control for clock-table generation.
+
+   LAST_REPEAT    Timestamp recording a repeat event.  Inserted by
+                  Emacs when a task with a repeater is completed.
+
+   STYLE          Layout-style hint (e.g., "habit").
+
+   BEAMER_*       Beamer export-specific attributes.
+
+   HTML_*         HTML export-specific attributes.
+
+   LATEX_*        LaTeX export-specific attributes.
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 42]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   Entries MAY carry arbitrary additional property names; these are
+   preserved verbatim and available to consumer tools.
+
+19.3.  Property Inheritance
+
+   A subset of property names is inherited from ancestor Entries by
+   default.  The default inherited set is governed by the Emacs
+   variable org-use-property-inheritance and, historically, by a
+   hard-coded list including:
+
+      COLUMNS, CATEGORY, ARCHIVE, LOGGING
+
+   Additional names may be inherited when configured.  Some exporters
+   treat specific names (e.g., EXPORT_FILE_NAME, EXPORT_TITLE) as
+   inherited from the nearest ancestor subtree.
+
+   Property inheritance produces a query-time view of the Entry's
+   effective property set; it does not modify the stored form of
+   the file.
+
+
+20.  Security Considerations
+
+   Org-mode files are plain-text documents.  They carry lower risk
+   than binary formats, but several concerns warrant attention when
+   processing untrusted input:
+
+   Parser resource exhaustion.  Pathological inputs may produce large
+   ASTs, for example through extremely long files, deeply nested
+   list structures, or tables with many columns.  Implementations
+   SHOULD impose practical bounds on input size when processing
+   untrusted files.
+
+   Embedded external references.  Org-mode links may reference
+   arbitrary URLs and filesystem paths; #+INCLUDE: directives may
+   reference arbitrary files.  Implementations MUST NOT resolve
+   external references as a side effect of parsing.  Resolution
+   SHOULD be an opt-in operation subject to user-configured
+   allow-lists.
+
+   Embedded source code.  The #+begin_src block (Section 8.2) may
+   contain executable source code intended for Emacs' babel system.
+   Implementations MUST NOT execute source blocks as a side effect
+   of parsing or exporting.  Emacs itself prompts for user
+   confirmation before evaluating source blocks unless
+   org-confirm-babel-evaluate is set otherwise.
+
+   Path traversal.  File-path link targets, ARCHIVE property values,
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 43]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   and #+INCLUDE: paths MAY contain ".." or absolute prefixes.
+   Implementations that open files based on these values MUST
+   canonicalize paths and enforce policy constraints (for example,
+   that paths reside within an allow-listed root).
+
+   Macro expansion.  #+MACRO: directives and {{{...}}} invocations
+   are expanded at export time.  Macro bodies containing unbalanced
+   delimiters or recursive references SHOULD be detected and
+   handled without unbounded expansion.
+
+   Entity expansion.  The org-entities table may be extended by user
+   configuration or by the file's own directives.  Expansion in
+   untrusted input SHOULD be bounded in depth and total output size.
+
+
+21.  IANA Considerations
+
+   This specification is informational and imposes no registration
+   actions on the Internet Assigned Numbers Authority (IANA).
+
+   Should the Org-mode format be submitted for Independent Submission
+   publication, the following registration actions would be
+   recommended:
+
+   o  Registration of the media type "text/x-org" or
+      "application/vnd.org-mode" per [RFC6838].
+
+   o  Registration of the file extension ".org" as associated with
+      the Org-mode media type.
+
+   Until such submission, this section is retained as informative.
+
+
+22.  References
+
+22.1.  Normative References
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC3629]  Yergeau, F., "UTF-8, a transformation format of
+              ISO 10646", STD 63, RFC 3629,
+              DOI 10.17487/RFC3629, November 2003,
+              <https://www.rfc-editor.org/info/rfc3629>.
+
+   [RFC5234]  Crocker, D., Ed. and P. Overell, "Augmented BNF for
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 44]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+              Syntax Specifications: ABNF", STD 68, RFC 5234,
+              DOI 10.17487/RFC5234, January 2008,
+              <https://www.rfc-editor.org/info/rfc5234>.
+
+   [RFC7405]  Kyzivat, P., "Case-Sensitive String Support in
+              ABNF", RFC 7405, DOI 10.17487/RFC7405,
+              December 2014,
+              <https://www.rfc-editor.org/info/rfc7405>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in
+              RFC 2119 Key Words", BCP 14, RFC 8174,
+              DOI 10.17487/RFC8174, May 2017,
+              <https://www.rfc-editor.org/info/rfc8174>.
+
+22.2.  Informative References
+
+   [ORGMODE]  Dominik, C. et al., "The Org Manual",
+              <https://orgmode.org/manual/>.
+
+   [ORG-JW-EXT]
+              Wiegley, J., "The Org-jw Extensions to Org-Mode",
+              ORG-JW-EXT/1, April 2026.
+
+   [RFC6838]  Freed, N., Klensin, J., and T. Hansen, "Media Type
+              Specifications and Registration Procedures",
+              BCP 13, RFC 6838, DOI 10.17487/RFC6838,
+              January 2013,
+              <https://www.rfc-editor.org/info/rfc6838>.
+
+   [RFC7322]  Flanagan, H. and S. Ginoza, "RFC Style Guide",
+              RFC 7322, DOI 10.17487/RFC7322,
+              September 2014,
+              <https://www.rfc-editor.org/info/rfc7322>.
+
+
+Appendix A.  Collected ABNF
+
+   The following is the consolidated ABNF grammar described piecemeal
+   throughout this document.  ABNF is defined in [RFC5234] and
+   extended by [RFC7405].
+
+   ; File structure
+   OrgFile       = FileHeader *Entry
+   FileHeader    = [FilePropertyDrawer] *FileProperty Preamble
+   FilePropertyDrawer = ":PROPERTIES:" *SP LF
+                        *PropertyLine
+                        ":END:" *SP LF
+   FileProperty  = "#+" PropertyName ":" [ SP Value ] LF
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 45]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   Preamble      = *Block
+
+   ; Entries
+   Entry         = Heading
+                   [StampLine]
+                   [PropertyDrawer]
+                   *LogEntry
+                   [ActiveStampLine]
+                   *Block
+                   *Entry            ; children, depth = parent+1
+
+   ; Heading line
+   Heading       = Stars WSP
+                   [Keyword WSP]
+                   [Priority WSP]
+                   Title
+                   [WSP TagList]
+                   *WSP LF
+   Stars         = 1*"*"
+   Keyword       = ConfiguredKeyword
+   Priority      = "[#" PriorityChar "]"
+   PriorityChar  = ALPHA / DIGIT
+   Title         = *( CHAR-except-structural )
+   TagList       = ":" 1*( Tag ":" )
+   Tag           = 1*( ALPHA / DIGIT / "@" / "_" / "%" / "-" )
+   WSP           = 1*( SP / HTAB )
+
+   ; Leading stamp line
+   StampLine     = StampClause *( SP StampClause ) *SP LF
+   StampClause   = ( "CLOSED: " / "SCHEDULED: " / "DEADLINE: " )
+                   Stamp
+
+   ; Property drawer
+   PropertyDrawer = ":PROPERTIES:" *SP LF
+                    *PropertyLine
+                    ":END:" *SP LF
+   PropertyLine  = ":" PropertyName ":" [ SP Value ] LF
+   PropertyName  = 1*( ALPHA / DIGIT / "_" / "-" / "+" )
+
+   ; Active stamp line
+   ActiveStampLine = ActiveStamp *SP LF
+
+   ; Timestamps
+   ActiveStamp   = "<" StampBody ">"
+   InactiveStamp = "[" StampBody "]"
+   Stamp         = ActiveStamp / InactiveStamp
+   StampBody     = Date [ SP DayOfWeek ]
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 46]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+                   [ SP TimeOfDay [ "-" TimeOfDay ] ]
+                   *( SP Suffix )
+   Date          = 4DIGIT "-" 2DIGIT "-" 2DIGIT
+   DayOfWeek     = 3ALPHA
+   TimeOfDay     = 1*2DIGIT ":" 2DIGIT
+   Suffix        = SuffixKind 1*DIGIT Span
+                   [ "/" 1*DIGIT Span ]
+   SuffixKind    = ".+" / "++" / "+" / "--" / "-"
+   Span          = "h" / "d" / "w" / "m" / "y"
+   Duration      = 1*DIGIT ":" 2DIGIT
+
+   ; Log entries
+   LogEntry      = Closing / State / Note /
+                   Rescheduled / NotScheduled /
+                   NewDeadline / RemovedDeadline /
+                   Refiling / Clock / LogBook
+   Closing       = "- CLOSING NOTE" InactiveStamp Cont LF
+                   [ NoteBody ]
+   State         = "- State " DQUOTE Keyword DQUOTE
+                   *SP [ "from " DQUOTE Keyword DQUOTE *SP ]
+                   InactiveStamp Cont LF [ NoteBody ]
+   Note          = "- Note taken on " InactiveStamp Cont LF
+                   [ NoteBody ]
+   Rescheduled   = "- Rescheduled from " DQUOTE InactiveStamp DQUOTE
+                   " on " InactiveStamp Cont LF [ NoteBody ]
+   NotScheduled  = "- Not scheduled, was " DQUOTE InactiveStamp DQUOTE
+                   " on " InactiveStamp Cont LF [ NoteBody ]
+   NewDeadline   = "- New deadline from " DQUOTE InactiveStamp DQUOTE
+                   " on " InactiveStamp Cont LF [ NoteBody ]
+   RemovedDeadline
+                 = "- Removed deadline, was "
+                   DQUOTE InactiveStamp DQUOTE
+                   " on " InactiveStamp Cont LF [ NoteBody ]
+   Refiling      = "- Refiled on " InactiveStamp Cont LF
+                   [ NoteBody ]
+   Clock         = "CLOCK:" 1*SP InactiveStamp
+                   [ "--" InactiveStamp *SP "=>" *SP Duration ]
+                   *SP LF
+   Cont          = [ " \\" ]
+   NoteBody      = 1*( NoteLine )
+   NoteLine      = ( "  " LineContent LF ) / LF
+
+   ; Drawers and blocks
+   LogBook       = ":LOGBOOK:" *SP LF *LogEntry ":END:" *SP LF
+   PlainDrawer   = ":" DrawerName ":" *SP LF
+                   *ContentLine
+                   ":END:" *SP LF
+   DrawerName    = 1*( ALPHA / DIGIT / "_" / "-" )
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 47]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   BeginBlock    = BeginOpener LineTail LF
+                   *ContentLine
+                   BeginCloser LineTail LF
+   BeginOpener   = "#+begin_" BlockName / "#+BEGIN_" BlockName
+   BeginCloser   = "#+end_"   BlockName / "#+END_"   BlockName
+   BlockName     = 1*( ALPHA / DIGIT / "_" )
+   InlineTask    = "***************" SP HeadingTail LF
+                   *InlineContent
+                   "***************" SP "END" LineTail LF
+
+   ; Body blocks
+   Block         = Whitespace / Paragraph / List / Table /
+                   Drawer / InlineTask / FootnoteDef /
+                   LatexEnvironment / HorizontalRule
+   Whitespace    = *WSP LF
+   Paragraph     = 1*( ParaLine )
+   ParaLine      = NonStructuredLine LF
+   Drawer        = PlainDrawer / BeginBlock
+
+   ; Plain lists
+   List          = 1*ListItem
+   ListItem      = UnorderedItem / OrderedItem
+   UnorderedItem = *WSP BulletChar WSP [ CheckBox WSP ] ItemBody
+   OrderedItem   = *WSP Counter OrderedDelim WSP
+                   [ CheckBox WSP ] ItemBody
+   BulletChar    = "-" / "+" / "*"
+   Counter       = 1*DIGIT / 1ALPHA
+   OrderedDelim  = "." / ")"
+   CheckBox      = "[" ( SP / "-" / "X" ) "]"
+   ItemBody      = LineContent LF *ContinuationLine
+
+   ; Tables
+   TableRow      = *WSP "|" *( CellContent "|" ) *SP LF
+   SeparatorRow  = *WSP "|" 1*( "-" / "+" ) *SP LF
+
+   ; Inline markup (informative summary)
+   Emphasis      = Bold / Italic / Underline /
+                   Verbatim / Code / Strikethrough
+   Bold          = "*" InlineRun "*"
+   Italic        = "/" InlineRun "/"
+   Underline     = "_" InlineRun "_"
+   Verbatim      = "=" InlineRun "="
+   Code          = "~" InlineRun "~"
+   Strikethrough = "+" InlineRun "+"
+   Subscript     = "_" ( AlphaNumRun / "{" BracedRun "}" )
+   Superscript   = "^" ( AlphaNumRun / "{" BracedRun "}" )
+   Entity        = "\" 1*ALPHA [ "{}" ]
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 48]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+   LineBreak     = "\\" *SP LF
+
+   ; Links
+   Link          = "[[" LinkTarget "]]"
+                 / "[[" LinkTarget "][" LinkDescription "]]"
+   RadioTarget   = "<<<" 1*(CHAR-except-">") ">>>"
+   DedicatedTgt  = "<<"  1*(CHAR-except-">") ">>"
+
+   ; Footnotes
+   FootnoteRef   = "[fn:" Label "]"
+                 / "[fn:" Label ":" InlineText "]"
+                 / "[fn::" InlineText "]"
+   FootnoteDef   = "[fn:" Label "]" SP 1*ParaLine
+   Label         = 1*DIGIT / 1*( ALPHA / DIGIT / "-" / "_" )
+
+   ; LaTeX and math
+   InlineMath    = "$" MathText "$"
+                 / "\(" MathText "\)"
+   DisplayMath   = "\[" MathText "\]"
+                 / "$$" MathText "$$"
+   LatexEnvironment = "\begin{" EnvName "}" ... "\end{" EnvName "}"
+
+   ; Comments and horizontal rule
+   CommentLine   = *WSP "#" [ SP LineContent ] LF
+   CommentBlock  = "#+begin_comment" LF *ContentLine
+                   "#+end_comment" LF
+   HorizontalRule = *WSP 5*"-" *SP LF
+
+   ; Affiliated keywords
+   AffKeyword    = "#+" AffName ":" [ SP Value ] LF
+   AffName       = "NAME" / "CAPTION" / "ATTR_HTML" / "ATTR_LATEX" /
+                   "ATTR_ORG" / "RESULTS" / "HEADER" / "LABEL"
+
+   ; Core rules (imported from RFC 5234 Appendix B.1)
+   ALPHA         = %x41-5A / %x61-7A   ; A-Z / a-z
+   DIGIT         = %x30-39              ; 0-9
+   SP            = %x20
+   HTAB          = %x09
+   LF            = %x0A
+   DQUOTE        = %x22
+
+
+Appendix B.  Examples
+
+B.1.  Minimal Conforming File
+
+      #+TITLE: Example
+
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 49]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      Hello, world.
+      * First Entry
+      Content of the first entry.
+
+B.2.  Entry with Common Heading Components
+
+      * TODO [#A] write the introduction                   :writing:
+      SCHEDULED: <2026-04-20 Mon> DEADLINE: <2026-05-01 Fri>
+      :PROPERTIES:
+      :ID:       5d3e4b2c
+      :CREATED:  [2026-04-01 Wed 10:00]
+      :CATEGORY: research
+      :END:
+      :LOGBOOK:
+      CLOCK: [2026-04-18 Sat 09:00]--[2026-04-18 Sat 10:30] =>  1:30
+      :END:
+
+      The body begins here.
+
+B.3.  Plain List with Check-Boxes
+
+      * Todo list for the week
+      - [X] Ship the release
+      - [-] Update documentation
+        - [X] Installation notes
+        - [ ] Tutorial
+      - [ ] Write blog post
+
+B.4.  Table with Separator and Alignment
+
+      * Budget
+      #+NAME: tbl-budget
+      | Item   | Cost |
+      |--------+------|
+      | <l>    | <r>  |
+      | apple  |   12 |
+      | orange |    7 |
+      #+TBLFM: @>$>=vsum(@2..@-1)
+
+B.5.  Inline Markup
+
+      * A note
+      This sentence contains *bold*, /italic/, _underline_,
+      =verbatim=, ~code~, and +strikethrough+ text.  Here is an
+      entity: \alpha.  Here is a line break:\\
+      and here is a new line in the same paragraph.
+
+B.6.  Hyperlinks
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 50]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      * Hyperlink examples
+      See [[https://orgmode.org/][the Org Mode site]] for details.
+      Refer to the [[file:notes.org::#conclusion][conclusion]]
+      section of my notes.  Entry [[id:7f3b-abcd][about foo]] has
+      more background.  Consider the phrase <<<radio-target>>> as a
+      radio target that will be picked up wherever it appears.
+
+B.7.  Footnotes
+
+      * Writing with footnotes
+      This claim has support[fn:1] and further discussion[fn:foo].
+
+      [fn:1] Supporting evidence with citations.
+
+      [fn:foo] A longer discussion that can span multiple
+         paragraphs.  The second paragraph continues the
+         definition because it is indented beneath the label.
+
+B.8.  LaTeX Math
+
+      * Mathematical notation
+      The Euler identity is $e^{i\pi} + 1 = 0$, often considered the
+      most beautiful equation in mathematics.
+
+      \begin{align*}
+         (a + b)^2 &= a^2 + 2ab + b^2 \\
+                   &= (a + b)(a + b)
+      \end{align*}
+
+B.9.  Source Block
+
+      * Code example
+      #+NAME: example-haskell
+      #+begin_src haskell :exports code
+      main :: IO ()
+      main = putStrLn "hello"
+      #+end_src
+
+B.10.  Comment Block and Horizontal Rule
+
+      * A section of the document
+      # This comment is ignored by all exporters.
+
+      Here is a paragraph of the document.
+
+      -----
+
+      Here is another paragraph, separated from the first by a
+
+
+
+Wiegley              Org-Mode Format Specification          [Page 51]
+
+ORG-FMT/1            Org-Mode Plain-Text Format           April 2026
+
+
+      horizontal rule.
+
+      #+begin_comment
+      This entire block is hidden from all export back-ends.
+      #+end_comment
+
+
+Acknowledgments
+
+   This specification records the syntactic conventions of the Emacs
+   Org-mode implementation [ORGMODE] as commonly understood in early
+   2026.  It could not have been written without the many contributors
+   to Org-mode over the two decades of its development.
+
+
+Author's Address
+
+   John Wiegley
+
+   Email: johnw@newartisans.com
+   URI:   https://github.com/jwiegley/org-jw
