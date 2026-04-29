@@ -15,16 +15,24 @@ import Control.Exception (SomeException, try)
 import Data.Aeson (FromJSON (..), ToJSON (..), eitherDecode, encode, object, withObject, (.:), (.=))
 import Data.Bifunctor (second)
 import Data.ByteString.Lazy qualified as LBS
+import Data.Default.Class (def)
 import Data.List (sortBy)
+import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
+import Data.X509.CertificateStore (CertificateStore, readCertificateStore)
+import Network.Connection (TLSSettings (..))
 import Network.HTTP.Client
-import Network.HTTP.Client.TLS (tlsManagerSettings)
+import Network.HTTP.Client.TLS (mkManagerSettings)
 import Network.HTTP.Types.Status (statusCode)
+import Network.TLS (ClientParams (..), Shared (..), Supported (..), defaultParamsClient)
+import Network.TLS.Extra.Cipher (ciphersuite_default)
 import Numeric (showFFloat)
 import Org.DB.Types
+import System.Environment (lookupEnv)
+import System.X509 (getSystemCertificateStore)
 
 -- | Configuration for the embedding API (OpenAI-compatible).
 data EmbedConfig = EmbedConfig
@@ -156,6 +164,41 @@ hardSplit maxChars txt
        in chunk : hardSplit maxChars rest
 
 ------------------------------------------------------------------------
+-- HTTP manager with custom CA store
+------------------------------------------------------------------------
+
+{- | Build an HTTP 'Manager' whose TLS validation trusts the macOS system
+roots merged with any extra certificates pointed to by the @SSL_CERT_FILE@
+environment variable.
+
+Why: Haskell's @crypton-x509-system@ on macOS only reads
+@/System/Library/Keychains/SystemRootCertificates.keychain@ and ignores
+@SSL_CERT_FILE@ as well as user/admin keychains. This helper restores the
+expected @SSL_CERT_FILE@ behavior so private CAs can be trusted without
+relying on Apple-managed roots.
+-}
+mkHttpManager :: IO Manager
+mkHttpManager = do
+  sysStore <- getSystemCertificateStore
+  extraStore <- loadExtraCAStore
+  let store = extraStore <> sysStore
+      params =
+        (defaultParamsClient "" "")
+          { clientShared = def{sharedCAStore = store}
+          , clientSupported = def{supportedCiphers = ciphersuite_default}
+          }
+  newManager (mkManagerSettings (TLSSettings params) Nothing)
+
+loadExtraCAStore :: IO CertificateStore
+loadExtraCAStore = do
+  mPath <- lookupEnv "SSL_CERT_FILE"
+  case mPath of
+    Just p
+      | not (null p) ->
+          fromMaybe mempty <$> readCertificateStore p
+    _ -> pure mempty
+
+------------------------------------------------------------------------
 -- Main embedding function
 ------------------------------------------------------------------------
 
@@ -164,7 +207,7 @@ The progress callback receives (chunks processed so far, total chunks).
 -}
 embedEntries :: DBHandle -> EmbedConfig -> (Int -> Int -> IO ()) -> IO EmbedResult
 embedEntries db cfg progress = do
-  manager <- newManager tlsManagerSettings
+  manager <- mkHttpManager
   candidateIds <- fetchCandidateIds db
   if null candidateIds
     then pure (EmbedResult 0 0 [])
@@ -554,7 +597,7 @@ callEmbeddingAPI cfg manager texts = do
 -- | Embed a single query text and return its vector.
 embedQuery :: EmbedConfig -> Text -> IO [Double]
 embedQuery cfg queryText = do
-  manager <- newManager tlsManagerSettings
+  manager <- mkHttpManager
   eds <- callEmbeddingAPI cfg manager [queryText]
   case eds of
     [ed] -> pure (_edEmbedding ed)
@@ -570,7 +613,7 @@ directly in the entries.title_embedding column.
 -}
 embedTitles :: DBHandle -> EmbedConfig -> (Int -> Int -> IO ()) -> IO EmbedResult
 embedTitles db cfg progress = do
-  manager <- newManager tlsManagerSettings
+  manager <- mkHttpManager
   candidates <- fetchTitleCandidates db
   if null candidates
     then pure (EmbedResult 0 0 [])
