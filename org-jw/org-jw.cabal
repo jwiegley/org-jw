@@ -63,6 +63,7 @@ executable org
     , parallel-io
     , pretty-show
     , process
+    , resource-pool >=0.4
     , temporary
     , text
     , time

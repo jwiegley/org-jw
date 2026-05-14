@@ -31,13 +31,14 @@ library
   ghc-options: -Wall -Wno-missing-home-modules -fprof-auto
   build-depends:
       aeson
+    , async
     , base >=4.5
     , bytestring
     , containers
+    , cryptohash-md5
     , crypton-connection
     , crypton-x509-store
     , crypton-x509-system
-    , cryptohash-md5
     , data-default-class
     , deepseq
     , directory

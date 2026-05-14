@@ -10,15 +10,20 @@ module Org.DB.Embed (
   embedQuery,
 ) where
 
-import Control.Exception (SomeException, try)
+import Control.Concurrent.Async (mapConcurrently)
+import Control.Concurrent.QSem (newQSem, signalQSem, waitQSem)
+import Control.Exception (SomeException, bracket_, try)
+import Control.Monad (void)
 
 import Data.Aeson (FromJSON (..), ToJSON (..), eitherDecode, encode, object, withObject, (.:), (.=))
 import Data.Bifunctor (second)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Default.Class (def)
+import Data.IORef (atomicModifyIORef', newIORef, readIORef)
 import Data.List (sortBy)
 import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
+import Data.Pool (Pool)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -30,6 +35,7 @@ import Network.HTTP.Types.Status (statusCode)
 import Network.TLS (ClientParams (..), Shared (..), Supported (..), defaultParamsClient)
 import Network.TLS.Extra.Cipher (ciphersuite_default)
 import Numeric (showFFloat)
+import Org.DB.Connection (withPooledDB)
 import Org.DB.Types
 import System.Environment (lookupEnv)
 import System.X509 (getSystemCertificateStore)
@@ -42,6 +48,11 @@ data EmbedConfig = EmbedConfig
   , embedBatchSize :: !Int
   , embedDimensions :: !Int
   , embedChunkSize :: !Int
+  , embedConcurrency :: !Int
+  {- ^ Maximum number of in-flight embedding API calls at once. Each
+  in-flight call also briefly checks out a 'DBHandle' from the pool
+  to write its results, so the pool should be sized accordingly.
+  -}
   }
 
 -- | Result of an embedding run.
@@ -204,39 +215,60 @@ loadExtraCAStore = do
 
 {- | Embed all entries that need embedding (new or changed).
 The progress callback receives (chunks processed so far, total chunks).
+Concurrency is bounded by 'embedConcurrency'; callers should size the
+'Pool' to match (see 'Org.DB.Connection.createDBPool').
 -}
-embedEntries :: DBHandle -> EmbedConfig -> (Int -> Int -> IO ()) -> IO EmbedResult
-embedEntries db cfg progress = do
+embedEntries :: Pool DBHandle -> EmbedConfig -> (Int -> Int -> IO ()) -> IO EmbedResult
+embedEntries pool cfg progress = do
   manager <- mkHttpManager
-  candidateIds <- fetchCandidateIds db
+  candidateIds <- withPooledDB pool fetchCandidateIds
   if null candidateIds
     then pure (EmbedResult 0 0 [])
     else do
+      let n = max 1 (embedConcurrency cfg)
       -- Delete stale chunks for entries that will be re-embedded
-      dbTransaction db $
-        mapM_
-          (\eid -> dbExecute_ db "DELETE FROM entry_embeddings WHERE entry_id = ?" [SqlText eid])
-          candidateIds
-      -- Build labeled chunks from structured segments
-      allChunks <- concatMapM (buildEntryChunks db cfg) candidateIds
+      withPooledDB pool $ \db ->
+        dbTransaction db $
+          mapM_
+            (\eid -> dbExecute_ db "DELETE FROM entry_embeddings WHERE entry_id = ?" [SqlText eid])
+            candidateIds
+      -- Build labeled chunks from structured segments (parallel across entries)
+      allChunks <-
+        concat
+          <$> mapConcurrentlyBounded
+            n
+            (\eid -> withPooledDB pool $ \db -> buildEntryChunks db cfg eid)
+            candidateIds
       let total = length allChunks
           batches = chunksOf (max 1 (embedBatchSize cfg)) allChunks
-      go manager batches 0 [] total
+      counter <- newIORef 0
+      errsRef <- newIORef []
+      void $
+        mapConcurrentlyBounded
+          n
+          (processOne counter errsRef manager total)
+          batches
+      processed <- readIORef counter
+      errs <- readIORef errsRef
+      pure (EmbedResult processed (length errs) (reverse errs))
  where
-  go _ [] processed errs _ =
-    pure (EmbedResult processed (length errs) (reverse errs))
-  go manager (batch : rest) processed errs total = do
-    result <- processChunkBatch db cfg manager batch
+  processOne counter errsRef manager total batch = do
+    result <- processChunkBatch pool cfg manager batch
     case result of
-      Right n -> do
-        let processed' = processed + n
-        progress processed' total
-        go manager rest processed' errs total
+      Right cnt -> do
+        done <- atomicModifyIORef' counter (\x -> let y = x + cnt in (y, y))
+        progress done total
       Left err ->
-        go manager rest processed (err : errs) total
+        atomicModifyIORef' errsRef (\es -> (err : es, ()))
 
-concatMapM :: (Monad m) => (a -> m [b]) -> [a] -> m [b]
-concatMapM f xs = concat <$> mapM f xs
+{- | Bounded concurrent traversal: at most @n@ actions run in parallel.
+Uses a 'QSem' as a counting semaphore around the standard
+'mapConcurrently'.
+-}
+mapConcurrentlyBounded :: Int -> (a -> IO b) -> [a] -> IO [b]
+mapConcurrentlyBounded n f xs = do
+  sem <- newQSem n
+  mapConcurrently (bracket_ (waitQSem sem) (signalQSem sem) . f) xs
 
 ------------------------------------------------------------------------
 -- Fetch entries needing embedding
@@ -475,12 +507,12 @@ buildEntryChunks db cfg entryId = do
 ------------------------------------------------------------------------
 
 processChunkBatch ::
-  DBHandle ->
+  Pool DBHandle ->
   EmbedConfig ->
   Manager ->
   [(Text, Int, Text, Text)] ->
   IO (Either Text Int)
-processChunkBatch db cfg manager batch = do
+processChunkBatch pool cfg manager batch = do
   let texts = map (\(_, _, t, _) -> t) batch
   result <-
     try (callEmbeddingAPI cfg manager texts) ::
@@ -501,15 +533,16 @@ processChunkBatch db cfg manager batch = do
                 )
             )
         else do
-          dbTransaction db $ do
-            mapM_
-              ( \((entryId, chunkPos, chunkTxt, chunkSrc), vec) ->
-                  storeChunkEmbedding db entryId chunkPos chunkSrc chunkTxt vec
-              )
-              (zip batch vecs)
-            -- Update embedding_hash for all entries in this batch
-            let entryIds = map (\(eid, _, _, _) -> eid) batch
-            mapM_ (updateEmbeddingHash db) (unique entryIds)
+          withPooledDB pool $ \db ->
+            dbTransaction db $ do
+              mapM_
+                ( \((entryId, chunkPos, chunkTxt, chunkSrc), vec) ->
+                    storeChunkEmbedding db entryId chunkPos chunkSrc chunkTxt vec
+                )
+                (zip batch vecs)
+              -- Update embedding_hash for all entries in this batch
+              let entryIds = map (\(eid, _, _, _) -> eid) batch
+              mapM_ (updateEmbeddingHash db) (unique entryIds)
           pure (Right (length batch))
 
 storeChunkEmbedding :: DBHandle -> Text -> Int -> Text -> Text -> [Double] -> IO ()
@@ -609,30 +642,38 @@ embedQuery cfg queryText = do
 
 {- | Embed titles for entries that have content embeddings but are missing
 title embeddings. Titles are embedded as-is (no chunking) and stored
-directly in the entries.title_embedding column.
+directly in the entries.title_embedding column. Concurrency is bounded
+by 'embedConcurrency'.
 -}
-embedTitles :: DBHandle -> EmbedConfig -> (Int -> Int -> IO ()) -> IO EmbedResult
-embedTitles db cfg progress = do
+embedTitles :: Pool DBHandle -> EmbedConfig -> (Int -> Int -> IO ()) -> IO EmbedResult
+embedTitles pool cfg progress = do
   manager <- mkHttpManager
-  candidates <- fetchTitleCandidates db
+  candidates <- withPooledDB pool fetchTitleCandidates
   if null candidates
     then pure (EmbedResult 0 0 [])
     else do
       let total = length candidates
           batches = chunksOf (max 1 (embedBatchSize cfg)) candidates
-      goTitles manager batches 0 [] total
+          n = max 1 (embedConcurrency cfg)
+      counter <- newIORef 0
+      errsRef <- newIORef []
+      void $
+        mapConcurrentlyBounded
+          n
+          (processOne counter errsRef manager total)
+          batches
+      processed <- readIORef counter
+      errs <- readIORef errsRef
+      pure (EmbedResult processed (length errs) (reverse errs))
  where
-  goTitles _ [] processed errs _ =
-    pure (EmbedResult processed (length errs) (reverse errs))
-  goTitles manager (batch : rest) processed errs total = do
-    result <- processTitleBatch db cfg manager batch
+  processOne counter errsRef manager total batch = do
+    result <- processTitleBatch pool cfg manager batch
     case result of
-      Right n -> do
-        let processed' = processed + n
-        progress processed' total
-        goTitles manager rest processed' errs total
+      Right cnt -> do
+        done <- atomicModifyIORef' counter (\x -> let y = x + cnt in (y, y))
+        progress done total
       Left err ->
-        goTitles manager rest processed (err : errs) total
+        atomicModifyIORef' errsRef (\es -> (err : es, ()))
 
 {- | Find entries that are missing title embeddings.
 Returns (entry_id, title) pairs for all entries with non-empty titles.
@@ -650,12 +691,12 @@ fetchTitleCandidates db = do
   pure [(eid, title) | [SqlText eid, SqlText title] <- rows]
 
 processTitleBatch ::
-  DBHandle ->
+  Pool DBHandle ->
   EmbedConfig ->
   Manager ->
   [(Text, Text)] ->
   IO (Either Text Int)
-processTitleBatch db cfg manager batch = do
+processTitleBatch pool cfg manager batch = do
   let titles = map snd batch
   result <-
     try (callEmbeddingAPI cfg manager titles) ::
@@ -676,12 +717,13 @@ processTitleBatch db cfg manager batch = do
                 )
             )
         else do
-          dbTransaction db $
-            mapM_
-              ( \((entryId, _), vec) ->
-                  storeTitleEmbedding db entryId vec
-              )
-              (zip batch vecs)
+          withPooledDB pool $ \db ->
+            dbTransaction db $
+              mapM_
+                ( \((entryId, _), vec) ->
+                    storeTitleEmbedding db entryId vec
+                )
+                (zip batch vecs)
           pure (Right (length batch))
 
 storeTitleEmbedding :: DBHandle -> Text -> [Double] -> IO ()

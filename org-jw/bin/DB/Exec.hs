@@ -3,6 +3,7 @@
 
 module DB.Exec where
 
+import Control.Exception (bracket)
 import Control.Lens
 import Control.Monad (when)
 import DB.Options
@@ -11,6 +12,7 @@ import Data.List (sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
+import Data.Pool (Pool)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Text.Lazy.IO qualified as TLIO
@@ -38,55 +40,51 @@ execDb _cfg opts coll = do
     DBUnstore -> withDB dbCfg $ \db -> do
       unstoreDB db
       putStrLn "All data tables dropped. Run 'org db init --dimensions <N>' to reinitialize."
-    DBStore sopts -> withDB dbCfg $ \db -> do
-      dims <- requireEmbeddingDimensions db
-      _ <- runMigrations db
-      sr <- storeCollection db coll
-      putStrLn $
-        "Stored: "
-          ++ show (storeFilesProcessed sr)
-          ++ " file(s) processed, "
-          ++ show (storeFilesInserted sr)
-          ++ " inserted, "
-          ++ show (storeFilesUpdated sr)
-          ++ " updated, "
-          ++ show (storeFilesSkipped sr)
-          ++ " skipped"
-      putStrLn $
-        "Entries: "
-          ++ show (storeEntriesCreated sr)
-          ++ " created, "
-          ++ show (storeEntriesUpdated sr)
-          ++ " updated, "
-          ++ show (storeEntriesDeleted sr)
-          ++ " deleted"
-      mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (storeErrors sr)
-      if sopts ^. storeNoEmbed
-        then pure ()
-        else do
-          let eopts = sopts ^. storeEmbedOpts
-          when (eopts ^. embedForce) $ do
-            putStrLn "Clearing all embedding hashes (--force)..."
-            dbExecute_ db "UPDATE entries SET embedding_hash = NULL, title_embedding = NULL" []
-          let ecfg =
-                EmbedConfig
-                  { embedBaseUrl = T.pack (eopts ^. embedBaseUrlOpt)
-                  , embedModel = T.pack (eopts ^. embedModelOpt)
-                  , embedApiKey = T.pack (eopts ^. embedApiKeyOpt)
-                  , embedBatchSize = eopts ^. embedBatchSizeOpt
-                  , embedDimensions = dims
-                  , embedChunkSize = eopts ^. embedChunkSizeOpt
-                  }
-              progress done total =
-                putStrLn $
-                  "Embedded " ++ show done ++ " / " ++ show total ++ " chunks"
-          result <- embedEntries db ecfg progress
-          printEmbedResult "Embedding" result
-          let titleProgress done total =
-                putStrLn $
-                  "Title embeddings: " ++ show done ++ " / " ++ show total
-          titleResult <- embedTitles db ecfg titleProgress
-          printEmbedResult "Title embedding" titleResult
+    DBStore sopts ->
+      let eopts = sopts ^. storeEmbedOpts
+       in withEmbedPool dbCfg (eopts ^. embedConcurrencyOpt) $ \pool -> do
+            (sr, dims) <- withPooledDB pool $ \db -> do
+              d <- requireEmbeddingDimensions db
+              _ <- runMigrations db
+              r <- storeCollection db coll
+              pure (r, d)
+            putStrLn $
+              "Stored: "
+                ++ show (storeFilesProcessed sr)
+                ++ " file(s) processed, "
+                ++ show (storeFilesInserted sr)
+                ++ " inserted, "
+                ++ show (storeFilesUpdated sr)
+                ++ " updated, "
+                ++ show (storeFilesSkipped sr)
+                ++ " skipped"
+            putStrLn $
+              "Entries: "
+                ++ show (storeEntriesCreated sr)
+                ++ " created, "
+                ++ show (storeEntriesUpdated sr)
+                ++ " updated, "
+                ++ show (storeEntriesDeleted sr)
+                ++ " deleted"
+            mapM_ (\e -> putStrLn $ "Error: " ++ T.unpack e) (storeErrors sr)
+            if sopts ^. storeNoEmbed
+              then pure ()
+              else do
+                when (eopts ^. embedForce) $ do
+                  putStrLn "Clearing all embedding hashes (--force)..."
+                  withPooledDB pool $ \db ->
+                    dbExecute_ db "UPDATE entries SET embedding_hash = NULL, title_embedding = NULL" []
+                let ecfg = embedConfigFrom eopts dims
+                    progress done total =
+                      putStrLn $
+                        "Embedded " ++ show done ++ " / " ++ show total ++ " chunks"
+                result <- embedEntries pool ecfg progress
+                printEmbedResult "Embedding" result
+                let titleProgress done total =
+                      putStrLn $
+                        "Title embeddings: " ++ show done ++ " / " ++ show total
+                titleResult <- embedTitles pool ecfg titleProgress
+                printEmbedResult "Title embedding" titleResult
     DBQuery qopts -> withDB dbCfg $ \db -> do
       rows <- case qopts ^. queryOrgQl of
         Just ql -> do
@@ -125,31 +123,27 @@ execDb _cfg opts coll = do
             Nothing -> ""
       rows <- dbQuery db ("SELECT * FROM " <> table <> " ORDER BY 1" <> limitClause) [] :: IO [[SqlValue]]
       mapM_ (putStrLn . showSqlRow) rows
-    DBEmbed eopts -> withDB dbCfg $ \db -> do
-      dims <- requireEmbeddingDimensions db
-      _ <- runMigrations db
-      when (eopts ^. embedForce) $ do
-        putStrLn "Clearing all embedding hashes (--force)..."
-        dbExecute_ db "UPDATE entries SET embedding_hash = NULL, title_embedding = NULL" []
-      let ecfg =
-            EmbedConfig
-              { embedBaseUrl = T.pack (eopts ^. embedBaseUrlOpt)
-              , embedModel = T.pack (eopts ^. embedModelOpt)
-              , embedApiKey = T.pack (eopts ^. embedApiKeyOpt)
-              , embedBatchSize = eopts ^. embedBatchSizeOpt
-              , embedDimensions = dims
-              , embedChunkSize = eopts ^. embedChunkSizeOpt
-              }
-          progress done total =
-            putStrLn $
-              "Embedded " ++ show done ++ " / " ++ show total ++ " chunks"
-      result <- embedEntries db ecfg progress
-      printEmbedResult "Embedding" result
-      let titleProgress done total =
-            putStrLn $
-              "Title embeddings: " ++ show done ++ " / " ++ show total
-      titleResult <- embedTitles db ecfg titleProgress
-      printEmbedResult "Title embedding" titleResult
+    DBEmbed eopts ->
+      withEmbedPool dbCfg (eopts ^. embedConcurrencyOpt) $ \pool -> do
+        dims <- withPooledDB pool $ \db -> do
+          d <- requireEmbeddingDimensions db
+          _ <- runMigrations db
+          pure d
+        when (eopts ^. embedForce) $ do
+          putStrLn "Clearing all embedding hashes (--force)..."
+          withPooledDB pool $ \db ->
+            dbExecute_ db "UPDATE entries SET embedding_hash = NULL, title_embedding = NULL" []
+        let ecfg = embedConfigFrom eopts dims
+            progress done total =
+              putStrLn $
+                "Embedded " ++ show done ++ " / " ++ show total ++ " chunks"
+        result <- embedEntries pool ecfg progress
+        printEmbedResult "Embedding" result
+        let titleProgress done total =
+              putStrLn $
+                "Title embeddings: " ++ show done ++ " / " ++ show total
+        titleResult <- embedTitles pool ecfg titleProgress
+        printEmbedResult "Title embedding" titleResult
     DBDot dopts -> withDB dbCfg $ \db -> do
       rels <- dbQuery db "SELECT * FROM entry_relationships" [] :: IO [RelationshipRow]
       entryRows <- queryEntries db
@@ -183,6 +177,7 @@ execDb _cfg opts coll = do
               , embedBatchSize = 1
               , embedDimensions = dims
               , embedChunkSize = 8000
+              , embedConcurrency = 1
               }
       vec <- embedQuery ecfg (T.pack (sopts ^. searchQuery))
       results <- querySimilar db vec (sopts ^. searchLimit)
@@ -480,6 +475,30 @@ printReviewGroupsCsv groups = do
 
 showDist :: Double -> String
 showDist d = show (fromIntegral (round (d * 1000) :: Int) / 1000 :: Double)
+
+{- | Open a 'Pool' sized to the requested concurrency, run an action with
+it, and tear the pool down on exit. Used by the embed-related commands
+(store, embed) so concurrent embedding workers each get their own
+connection.
+-}
+withEmbedPool :: DBConfig -> Int -> (Pool DBHandle -> IO a) -> IO a
+withEmbedPool dbCfg concurrency =
+  bracket
+    (createDBPool defaultPoolConfig{poolMaxResources = max 1 concurrency} dbCfg)
+    destroyPool
+
+-- | Build an 'EmbedConfig' from CLI options, given the resolved vector dims.
+embedConfigFrom :: DBEmbedOpts -> Int -> EmbedConfig
+embedConfigFrom eopts dims =
+  EmbedConfig
+    { embedBaseUrl = T.pack (eopts ^. embedBaseUrlOpt)
+    , embedModel = T.pack (eopts ^. embedModelOpt)
+    , embedApiKey = T.pack (eopts ^. embedApiKeyOpt)
+    , embedBatchSize = eopts ^. embedBatchSizeOpt
+    , embedDimensions = dims
+    , embedChunkSize = eopts ^. embedChunkSizeOpt
+    , embedConcurrency = eopts ^. embedConcurrencyOpt
+    }
 
 -- | Read embedding dimensions from db_settings or fail with guidance.
 requireEmbeddingDimensions :: DBHandle -> IO Int

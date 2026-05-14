@@ -12,6 +12,7 @@ ghc-options:
 
 dependencies:
   - aeson
+  - async
   - base >= 4.5
   - bytestring
   - containers

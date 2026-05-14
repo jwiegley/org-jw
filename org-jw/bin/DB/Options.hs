@@ -59,6 +59,7 @@ data DBEmbedOpts = DBEmbedOpts
   , _embedApiKeyOpt :: !String
   , _embedBatchSizeOpt :: !Int
   , _embedChunkSizeOpt :: !Int
+  , _embedConcurrencyOpt :: !Int
   , _embedForce :: !Bool
   }
   deriving (Show, Eq, Typeable, Generic)
@@ -331,6 +332,13 @@ embedOpts =
       ( long "chunk-size"
           <> help "Maximum characters per text chunk (entries are split into chunks for embedding)"
           <> value 2000
+          <> showDefault
+      )
+    <*> option
+      auto
+      ( long "concurrency"
+          <> help "Maximum number of in-flight embedding API calls (also caps the DB connection pool size)"
+          <> value 8
           <> showDefault
       )
     <*> switch
