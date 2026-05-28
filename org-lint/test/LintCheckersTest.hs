@@ -53,7 +53,7 @@ runLintAt cfg level path input =
   case parseOrgFile cfg path input of
     Left (_, msg) ->
       error $ "test fixture must parse: " ++ msg ++ "\ninput: " ++ show input
-    Right org -> lintOrgFile cfg level org
+    Right org -> lintOrgFile cfg defaultLintMode level org
 
 parseFixture :: Config -> (FilePath, ByteString) -> OrgFile
 parseFixture cfg (path, bs) =
@@ -540,7 +540,7 @@ tests =
                     )
                   ]
                 parsed = map (parseFixture lintConfig) inputs
-                msgs = lintOrgFiles lintConfig LintInfo parsed
+                msgs = lintOrgFiles lintConfig defaultLintMode LintInfo parsed
                 allMsgs = concat (M.elems msgs)
              in shouldFire
                   "DuplicatedIdentifier (triple)"

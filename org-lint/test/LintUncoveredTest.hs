@@ -75,7 +75,7 @@ runLintAt cfg level path input =
   case parseOrgFile cfg path input of
     Left (_, msg) ->
       error $ "test fixture must parse: " ++ msg ++ "\ninput: " ++ show input
-    Right org -> lintOrgFile cfg level org
+    Right org -> lintOrgFile cfg defaultLintMode level org
 
 -- Parse fixture, returning 'Left' for parse errors so callers that
 -- need only the lint pass can deepseq the result.
@@ -370,7 +370,7 @@ emptyFileTests =
               [ parseFixture lintConfig ("tri-" <> i <> ".org") (mkFixture i)
               | i <- ["a", "b", "c"]
               ]
-            msgs = lintOrgFiles lintConfig LintInfo parsed
+            msgs = lintOrgFiles lintConfig defaultLintMode LintInfo parsed
             allMsgs = concat (M.elems msgs)
         -- Force all DuplicatedIdentifier arguments so lines 142-144 tick.
         forceMessages allMsgs

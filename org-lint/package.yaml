@@ -47,9 +47,12 @@ tests:
       - -with-rtsopts=-N
     dependencies:
       - bytestring
+      - directory
+      - filepath
       - org-lint
       - org-data
       - org-parse
       - org-types
       - tasty
       - tasty-hunit
+      - temporary

@@ -64,7 +64,7 @@ runLintAt ::
   ByteString ->
   [LintMessage]
 runLintAt cfg level path input =
-  lintOrgFile cfg level (parseFixture cfg path input)
+  lintOrgFile cfg defaultLintMode level (parseFixture cfg path input)
 
 -- Force every 'LintMessage' and its fields so the Writer thunks
 -- evaluate. 'rnf' walks every constructor argument, flipping
@@ -239,7 +239,7 @@ entryWithoutIdTests =
                 , ":END:"
                 ]
             org = parseFixture lintConfig "ewi.org" input
-            msgs = lintOrgFiles lintConfig LintInfo [org]
+            msgs = lintOrgFiles lintConfig defaultLintMode LintInfo [org]
             flat = concat (M.elems msgs)
         forceMessages flat
         assertBoolStrict
@@ -286,7 +286,7 @@ singleFileLintOrgFilesTests =
                 , ":END:"
                 ]
             org = parseFixture lintConfig "sf.org" input
-            msgs = lintOrgFiles lintConfig LintInfo [org]
+            msgs = lintOrgFiles lintConfig defaultLintMode LintInfo [org]
             flat = concat (M.elems msgs)
         forceMessages flat
         assertBoolStrict

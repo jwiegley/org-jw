@@ -27,7 +27,8 @@ import Prelude hiding (readFile)
 
 execLint :: Config -> LintOptions -> Collection -> IO ()
 execLint cfg opts (Collection xs) = do
-  let msgs = lintOrgFiles cfg (opts ^. kind) orgItems
+  let mode = defaultLintMode{_lintBlog = opts ^. blog}
+      msgs = lintOrgFiles cfg mode (opts ^. kind) orgItems
       n = M.foldl' (\acc ms -> acc + length ms) 0 msgs
   ecs <- forM (M.assocs msgs) $ \(path, ms) -> case ms of
     [] -> do

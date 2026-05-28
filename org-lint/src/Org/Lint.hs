@@ -17,16 +17,26 @@ import Control.Monad.Reader
 import Control.Monad.Writer
 import Crypto.Hash.SHA512
 import Data.ByteString.Base16 qualified as Base16
-import Data.Char (isLower, isUpper, toLower)
+import Data.Char (
+  isAsciiLower,
+  isAsciiUpper,
+  isDigit,
+  isLower,
+  isSpace,
+  isUpper,
+  toLower,
+ )
 import Data.Data (Data)
 import Data.Data.Lens
 import Data.Foldable (Foldable (..), forM_)
-import Data.List (intercalate, isInfixOf, isPrefixOf)
+import Data.List (dropWhileEnd, intercalate, isInfixOf, isPrefixOf, isSuffixOf)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map (Map)
 import Data.Map qualified as M
 import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Typeable (Typeable)
@@ -65,6 +75,47 @@ parseLintMessageKind = \case
   "ALL" -> Just LintAll
   "DEBUG" -> Just LintDebug
   _ -> Nothing
+
+{- | Which blog a published post belongs to. The poetry-vs-code lint rules
+(BlogSrcBlockOnPoetrySite, BlogVerseBlockOnCodeSite) need to know this, and
+it is determined entirely by the file's @#+filetags:@ (see 'blogSite').
+-}
+data Site
+  = -- | johnwiegley: personal essays and poetry; uses @#+begin_verse@.
+    PoetrySite
+  | -- | newartisans: technical posts and code; uses @#+begin_src@.
+    CodeSite
+  deriving (Data, Show, Eq, Typeable, Generic, Enum, Bounded, Ord, NFData)
+
+{- | Extra context for the stricter blog-post lint rules. Threaded through
+'lintOrgFiles', 'lintOrgFile', 'lintOrgFile'' and 'lintOrgEntry' alongside
+the 'LintMessageKind' level.
+
+When @_lintBlog@ is 'False' (the default), the blog rules are not run at all
+and 'lintOrgFile' behaves exactly as before.
+-}
+data LintMode = LintMode
+  { _lintBlog :: Bool
+  {- ^ Whether the @--blog@ flag was given. The blog rules only run when this
+  is set AND the file self-identifies as a post (see 'isBlogPost').
+  -}
+  , _lintPostIds :: Set String
+  {- ^ The universe of all post @:ID:@s in the corpus, lower-cased, used to
+  resolve @[[id:UUID]]@ links (see 'BlogUnresolvedIdLink'). Built once in
+  'lintOrgFiles' across every file.
+  -}
+  }
+  deriving (Show, Eq, Generic, NFData)
+
+{- | The default mode: blog rules disabled, no known post IDs. Use this at any
+call site that does not care about the @--blog@ checks.
+-}
+defaultLintMode :: LintMode
+defaultLintMode =
+  LintMode
+    { _lintBlog = False
+    , _lintPostIds = Set.empty
+    }
 
 data TransitionKind
   = FirstTransition
@@ -119,6 +170,16 @@ data LintMessageCode
   | HashesDoNotMatch String String
   | FileFailsToRoundTrip
   | AudioFileNotFound FilePath
+  | -- Blog-strict rules (only with --blog, on files tagged :posts:)
+    BlogLegacyFileLink String
+  | BlogUnresolvedIdLink String
+  | BlogAbsoluteInternalLink String
+  | BlogNonWebLinkScheme String
+  | BlogMissingRelativeImage FilePath
+  | BlogRawHtmlExportBlock
+  | BlogNonHtmlExportBlock String
+  | BlogSrcBlockOnPoetrySite
+  | BlogVerseBlockOnCodeSite
   deriving (Show, Eq, Generic, NFData)
 
 data LintMessage = LintMessage
@@ -128,12 +189,255 @@ data LintMessage = LintMessage
   }
   deriving (Show, Eq, Generic, NFData)
 
+-- Helpers shared by the blog-strict rules. -----------------------------------
+
+{- | The colon-delimited tags of a file's @#+filetags:@ line, lower-cased.
+These live in @_headerFileProperties@ as a @Property@ named @"filetags"@
+whose value is the raw @:a:b:c:@ string; 'tagList' splits it.
+-}
+blogFiletags :: OrgFile -> [String]
+blogFiletags org =
+  map (map toLower . (^. tagString)) $
+    org ^. orgFileProperty "filetags" . from tagList
+
+{- | True if a file is a published blog post, i.e. its filetags contain
+@posts@. All blog-strict rules are gated on this (in addition to @--blog@).
+-}
+isBlogPost :: OrgFile -> Bool
+isBlogPost org = "posts" `elem` blogFiletags org
+
+{- | Which blog a post belongs to, by filetag: @johnwiegley@ → 'PoetrySite',
+@newartisans@ → 'CodeSite'. 'Nothing' if neither (or somehow both) is set,
+in which case the poetry-vs-code rules stay silent.
+-}
+blogSite :: OrgFile -> Maybe Site
+blogSite org =
+  case (hasTag "johnwiegley", hasTag "newartisans") of
+    (True, False) -> Just PoetrySite
+    (False, True) -> Just CodeSite
+    _ -> Nothing
+ where
+  tags = blogFiletags org
+  hasTag t = t `elem` tags
+
+{- | Every bracket-link target appearing in a chunk of body text. A target is
+the text between @[[@ and the first @]@ (which terminates the target in both
+@[[target]]@ and @[[target][desc]]@ forms). Inline markup and links are not
+modeled by the parser, so this is a raw regex scan, matching the shallow
+parser caveat in the construct catalog. Bare (non-bracketed) @http://@ URLs
+are intentionally ignored — only explicit @[[...]]@ links are linted.
+-}
+bracketLinkTargets :: String -> [String]
+bracketLinkTargets paragraph =
+  map (drop 2) $
+    getAllTextMatches (paragraph =~ ("\\[\\[[^]]+" :: String))
+
+{- | The lower-cased scheme of a link target, if it has one. A scheme is a
+leading run of @[A-Za-z][A-Za-z0-9+.-]*@ immediately followed by a colon
+(matching the RFC-3986 shape). @id:@, @file:@, @https:@, @ftp:@, etc. all
+qualify; @./foo@, @/bar@ and @#anchor@ do not.
+-}
+linkScheme :: String -> Maybe String
+linkScheme target =
+  case break (== ':') target of
+    (c : cs, ':' : _)
+      | isSchemeStart c
+      , all isSchemeChar cs ->
+          Just (map toLower (c : cs))
+    _ -> Nothing
+ where
+  isSchemeStart c = isAsciiLower c || isAsciiUpper c
+  isSchemeChar c =
+    isSchemeStart c
+      || isDigit c
+      || c `elem` ['+', '.', '-']
+
+{- | The lower-cased begin-block keyword of a drawer, e.g. a @#+begin_src foo@
+block (stored by the parser as @BeginDrawer "#+begin_src foo"@) yields
+@"#+begin_src"@. Plain (non-@#+begin@) drawers yield 'Nothing'.
+-}
+drawerBeginKind :: DrawerType -> Maybe String
+drawerBeginKind (PlainDrawer _) = Nothing
+drawerBeginKind (BeginDrawer label) =
+  case words (map toLower label) of
+    (w : _) | "#+begin" `isPrefixOf` w -> Just w
+    _ -> Nothing
+
+{- | The export backend of a @#+begin_export <backend>@ drawer, lower-cased
+(e.g. @html@, @latex@). 'Nothing' for any other block. Reads the begin line
+out of the drawer's raw content (its first element) so it works regardless
+of how the @BeginDrawer@ label was truncated.
+-}
+exportBackend :: Block -> Maybe String
+exportBackend (Drawer _ ty (beginLine : _))
+  | Just kind <- drawerBeginKind ty
+  , kind == "#+begin_export" =
+      case drop 1 (words (map toLower beginLine)) of
+        (backend : _) -> Just backend
+        [] -> Just ""
+exportBackend _ = Nothing
+
+{- | The normalized body lines of an export block: the raw content with the
+@#+begin_export@ and @#+end_export@ delimiter lines stripped, each remaining
+line trimmed of leading/trailing whitespace, and blank lines dropped entirely.
+
+Whitespace normalization matters because johnwiegley indents its teaser two
+spaces (@\"  <!--more-->\"@) while newartisans keeps it flush-left; both must
+normalize to @[\"<!--more-->\"]@ so 'isMoreTeaserBlock' exempts them equally.
+-}
+exportBlockBody :: Block -> [String]
+exportBlockBody (Drawer _ _ ls) =
+  filter (not . null) (map trim (dropDelims ls))
+ where
+  trim = dropWhileEnd isSpace . dropWhile isSpace
+  dropDelims =
+    filter
+      ( \l ->
+          let l' = map toLower (trim l)
+           in not
+                ( "#+begin_export" `isPrefixOf` l'
+                    || "#+end_export" `isPrefixOf` l'
+                )
+      )
+exportBlockBody _ = []
+
+{- | Is this export block just the benign @<!--more-->@ WordPress teaser
+marker (ignoring indentation and blank lines)? Such a block renders on the
+website and correctly disappears from the PDF, so it is exempt from
+'BlogRawHtmlExportBlock'.
+-}
+isMoreTeaserBlock :: Block -> Bool
+isMoreTeaserBlock blk = exportBlockBody blk == ["<!--more-->"]
+
+{- | The source 'Loc' of any 'Block'. Every 'Block' constructor carries its
+'Loc' as the first field; blog findings report at this position so that
+preamble-body findings land on the construct's own line rather than at the
+end of the preamble.
+-}
+blockLoc :: Block -> Loc
+blockLoc (Whitespace loc _) = loc
+blockLoc (Paragraph loc _) = loc
+blockLoc (Drawer loc _ _) = loc
+blockLoc (InlineTask loc _) = loc
+
+{- | Does a link target name an image (by extension)? Used to decide whether a
+relative @[[./...]]@ / @[[file:images/...]]@ link should be checked for
+on-disk existence as an image.
+-}
+isImageTarget :: String -> Bool
+isImageTarget target =
+  any
+    (`isSuffixOfCI` stripDescAndAnchor target)
+    [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".tiff", ".tif", ".bmp"]
+ where
+  stripDescAndAnchor = takeWhile (`notElem` ['#'])
+  isSuffixOfCI suf s = map toLower suf `isSuffixOf` map toLower s
+
+{- | Run every body-scanning blog-strict rule over one 'Body' (a file preamble
+or an entry body), reporting through the supplied callback. The callback is
+given the 'Loc' of the 'Block' containing each finding so that messages land
+on the construct's own line (critical for the 975/1018 headline-less
+johnwiegley posts, whose content lives entirely in the file preamble), rather
+than at a single fixed position. The callback still applies the severity
+threshold. Shared by 'lintOrgFile'' and 'lintOrgEntry'.
+
+All checks are raw regex/string scans over the shallow parser's output, per
+the construct catalog: links come from paragraph text, blocks from the
+@#+begin_X@ drawers.
+-}
+blogBodyChecks ::
+  Config ->
+  LintMode ->
+  OrgFile ->
+  (Loc -> LintMessageKind -> LintMessageCode -> Writer [LintMessage] ()) ->
+  Body ->
+  Writer [LintMessage] ()
+blogBodyChecks cfg mode org report bodyToScan = do
+  -- Link rules: classify every [[...]] target, reporting at the Loc of the
+  -- paragraph block it appears in.
+  forM_ (bodyToScan ^.. blocks . traverse . filtered (has _Paragraph)) $ \blk ->
+    forM_ (concatMap bracketLinkTargets (runReader (showBlock "" blk) cfg)) $ \target -> do
+      let report' = report (blockLoc blk)
+          scheme = linkScheme target
+      -- RULE: legacy [[file:...]] links (broken in both web and PDF). Fires
+      -- regardless of IGNORE_LINKS: the whole point is to surface these.
+      when (scheme == Just "file") $
+        report' LintError (BlogLegacyFileLink target)
+      -- RULE: [[id:UUID]] whose UUID is not a known post/entry :ID:.
+      forM_ (idLinkUuid target) $ \uuid ->
+        unless (map toLower uuid `Set.member` _lintPostIds mode) $
+          report' LintError (BlogUnresolvedIdLink uuid)
+      -- RULE: [[/abs/path]] site-absolute permalink.
+      when ("/" `isPrefixOf` target) $
+        report' LintWarn (BlogAbsoluteInternalLink target)
+      -- RULE: bracket link whose scheme is not http/https/id/mailto. @file@ is
+      -- left to the dedicated BlogLegacyFileLink Error above so it is not
+      -- double-flagged. @mailto@ works in both the website and PDF.
+      forM_ scheme $ \s ->
+        unless (s `elem` ["http", "https", "id", "mailto", "file"]) $
+          report' LintWarn (BlogNonWebLinkScheme target)
+      -- RULE: relative image whose file is missing on disk.
+      when (isRelativeImage target && isImageTarget target) $ do
+        let path = relativeImagePath target
+        unless (pathExists cfg doesFileExist (org ^. orgFilePath) path) $
+          report' LintError (BlogMissingRelativeImage path)
+
+  -- Block rules: inspect each #+begin_X drawer, reporting at its Loc.
+  forM_ (bodyToScan ^.. blocks . traverse . filtered (has _Drawer)) $ \blk -> do
+    let report' = report (blockLoc blk)
+        mkind = blk ^? _Drawer . _2 . to drawerBeginKind . _Just
+    -- RULE: #+begin_export blocks. html with anything but the <!--more-->
+    -- teaser is dropped from the PDF; non-html backends are dropped on the
+    -- web and risk breaking xelatex.
+    forM_ (exportBackend blk) $ \backend ->
+      if backend == "html"
+        then
+          unless (isMoreTeaserBlock blk) $
+            report' LintWarn BlogRawHtmlExportBlock
+        else report' LintWarn (BlogNonHtmlExportBlock backend)
+    -- RULE (poetry-vs-code): #+begin_src on the poetry site, #+begin_verse
+    -- on the code site. Each keys off the file's site (its filetags).
+    case blogSite org of
+      Just PoetrySite ->
+        when (mkind == Just "#+begin_src") $
+          report' LintError BlogSrcBlockOnPoetrySite
+      Just CodeSite ->
+        when (mkind == Just "#+begin_verse") $
+          report' LintError BlogVerseBlockOnCodeSite
+      Nothing -> pure ()
+ where
+  -- The UUID of an [[id:UUID]] link (with any [desc] already stripped, since
+  -- the target ends at the first ']').
+  idLinkUuid target = case break (== ':') target of
+    ("id", ':' : rest) -> Just rest
+    _ -> Nothing
+
+  -- A relative-path image link: [[./...]] or [[file:images/...]] /
+  -- [[file:./...]] (i.e. a file: link with a non-absolute, local target).
+  isRelativeImage target =
+    "./" `isPrefixOf` target
+      || case break (== ':') target of
+        ("file", ':' : rest) ->
+          not ("/" `isPrefixOf` rest)
+            && isNothing (linkScheme rest)
+        _ -> False
+
+  -- The on-disk path of a relative image link, relative to the post, with the
+  -- file: scheme prefix and any [desc]/#anchor removed.
+  relativeImagePath =
+    takeWhile (/= '#') . stripFilePrefix
+   where
+    stripFilePrefix t = case break (== ':') t of
+      ("file", ':' : rest) -> rest
+      _ -> t
+
 lintOrgFiles ::
   Config ->
+  LintMode ->
   LintMessageKind ->
   [OrgFile] ->
   Map FilePath [LintMessage]
-lintOrgFiles cfg level xs =
+lintOrgFiles cfg mode level xs =
   let (entriesById, ms) = foldr doLint (M.empty, []) xs
       idMsgs = flip concatMap (M.assocs entriesById) $ \(k, loc :| locs) ->
         [ ( loc ^. file
@@ -148,6 +452,23 @@ lintOrgFiles cfg level xs =
         ]
    in M.unionWith (<>) (M.fromList ms) (M.fromList idMsgs)
  where
+  -- The universe of IDs that an [[id:...]] link may resolve to: every
+  -- file-level :ID: (where headline-less blog posts keep theirs) plus every
+  -- entry :ID:, all lower-cased for case-insensitive matching. Built once
+  -- across all files and injected into the mode handed to each file. Mirrors
+  -- the cross-file duplicate-:ID: collection just below.
+  mode' = mode{_lintPostIds = allIds}
+
+  allIds =
+    Set.fromList $
+      map (map toLower) $
+        concatMap
+          ( \org ->
+              org ^.. orgFileProperty "ID"
+                ++ org ^.. allEntries . entryId
+          )
+          xs
+
   doLint ::
     OrgFile ->
     (Map String (NonEmpty Loc), [(FilePath, [LintMessage])]) ->
@@ -169,13 +490,14 @@ lintOrgFiles cfg level xs =
                           (NE.cons loc)
               )
               (e ^? entryId)
-    msgs = lintOrgFile cfg level org
+    msgs = lintOrgFile cfg mode' level org
 
-lintOrgFile :: Config -> LintMessageKind -> OrgFile -> [LintMessage]
-lintOrgFile cfg level org = execWriter (lintOrgFile' cfg level org)
+lintOrgFile :: Config -> LintMode -> LintMessageKind -> OrgFile -> [LintMessage]
+lintOrgFile cfg mode level org = execWriter (lintOrgFile' cfg mode level org)
 
-lintOrgFile' :: Config -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
-lintOrgFile' cfg level org = do
+lintOrgFile' ::
+  Config -> LintMode -> LintMessageKind -> OrgFile -> Writer [LintMessage] ()
+lintOrgFile' cfg mode level org = do
   when (level == LintDebug) $ do
     traceM $ "Linting " ++ (org ^. orgFilePath)
   -- RULE: All files must have titles
@@ -203,6 +525,18 @@ lintOrgFile' cfg level org = do
   ruleCheckAllLinks
   -- RULE: Check that AUDIO property points to an existing file
   ruleAudioFileExists
+  -- BLOG RULES: stricter checks for published posts, only with --blog and
+  -- only on files whose #+filetags: contain :posts:. Scan the file preamble
+  -- here; lintOrgEntry scans each entry body (most johnwiegley posts are
+  -- headline-less, so the preamble is where the content lives). Each finding
+  -- reports at the byte position of the block it was found in.
+  when (_lintBlog mode && isBlogPost org) $
+    blogBodyChecks
+      cfg
+      mode
+      org
+      (\loc -> report' (loc ^. pos))
+      (org ^. orgFileHeader . headerPreamble)
   -- RULE: No duplicated file properties outside of link and tags
   forM_ (findDuplicates (props ^.. traverse . name . to (map toLower))) $ \nm ->
     unless (nm `elem` ["link", "tags"]) $
@@ -215,9 +549,9 @@ lintOrgFile' cfg level org = do
     [] -> pure ()
     e : es -> do
       mapM_
-        (lintOrgEntry cfg org False ignoreWhitespace level)
+        (lintOrgEntry cfg mode org False ignoreWhitespace level)
         (reverse es)
-      lintOrgEntry cfg org True ignoreWhitespace level e
+      lintOrgEntry cfg mode org True ignoreWhitespace level e
  where
   ignoreWhitespace = org ^? orgFileProperty "WHITESPACE" == Just "ignore"
 
@@ -380,13 +714,14 @@ lintOrgFile' cfg level org = do
 
 lintOrgEntry ::
   Config ->
+  LintMode ->
   OrgFile ->
   Bool ->
   Bool ->
   LintMessageKind ->
   Entry ->
   Writer [LintMessage] ()
-lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
+lintOrgEntry cfg mode org isLastEntry ignoreWhitespace level e = do
   -- jww (2024-05-28): NYI
   -- RULE: No open keywords in archives
   -- RULE: No CREATED date lies in the future
@@ -457,6 +792,12 @@ lintOrgEntry cfg org isLastEntry ignoreWhitespace level e = do
   ruleDrawerCase
   -- RULE: Entries with hashes match when hashed
   ruleHashesMatch
+  -- BLOG RULES: scan this entry's body for blog-strict violations (links and
+  -- blocks), only with --blog and only on posts. newartisans posts use
+  -- headings, so their content reaches here as well as via the preamble. Each
+  -- finding reports at the Loc of the block it was found in (report').
+  when (_lintBlog mode && isBlogPost org) $
+    blogBodyChecks cfg mode org report' (e ^. entryBody)
  where
   inArchive = isArchive org
 
@@ -1103,3 +1444,21 @@ showLintOrg fl (LintMessage ln kind code) =
       "File fails to round trip through parsing and printing"
     AudioFileNotFound path ->
       "Audio file referenced in :AUDIO: property not found: " ++ path
+    BlogLegacyFileLink link ->
+      "Legacy file: link in blog post, use id: or https: instead: " ++ link
+    BlogUnresolvedIdLink uuid ->
+      "Blog post id: link does not resolve to a known post: " ++ uuid
+    BlogAbsoluteInternalLink link ->
+      "Blog post uses site-absolute link: " ++ link
+    BlogNonWebLinkScheme link ->
+      "Blog post link uses non-web scheme (not http/https/id): " ++ link
+    BlogMissingRelativeImage path ->
+      "Blog post relative image not found on disk: " ++ path
+    BlogRawHtmlExportBlock ->
+      "Blog post has #+begin_export html block (dropped from PDF book)"
+    BlogNonHtmlExportBlock backend ->
+      "Blog post has non-html #+begin_export block: " ++ backend
+    BlogSrcBlockOnPoetrySite ->
+      "Blog post on poetry site (johnwiegley) uses #+begin_src; use verse"
+    BlogVerseBlockOnCodeSite ->
+      "Blog post on code site (newartisans) uses #+begin_verse; use src"

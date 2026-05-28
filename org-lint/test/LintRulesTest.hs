@@ -49,7 +49,7 @@ runLintAt cfg level path input =
   case parseOrgFile cfg path input of
     Left (_, msg) ->
       error $ "test fixture must parse: " ++ msg ++ "\ninput: " ++ show input
-    Right org -> lintOrgFile cfg level org
+    Right org -> lintOrgFile cfg defaultLintMode level org
 
 -- Parse multiple fixtures and run cross-file lint, returning the per-file
 -- message map. Used to trigger rules that only fire across files
@@ -65,7 +65,7 @@ runLintFiles cfg inputs =
               Right org -> org
           )
           inputs
-   in lintOrgFiles cfg LintInfo parsed
+   in lintOrgFiles cfg defaultLintMode LintInfo parsed
 
 -- Predicate: does this LintMessageCode match (ignoring its arguments)?
 hasCode ::

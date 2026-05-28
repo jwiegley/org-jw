@@ -1,5 +1,6 @@
 module Main where
 
+import qualified BlogLintTest
 import qualified LintCheckersTest
 import qualified LintExtraTest
 import qualified LintRulesTest
@@ -19,4 +20,5 @@ main =
       , LintCheckersTest.tests
       , LintUncoveredTest.tests
       , LintExtraTest.tests
+      , BlogLintTest.tests
       ]

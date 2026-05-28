@@ -17,6 +17,7 @@ data LintOptions = LintOptions
   { _kind :: !LintMessageKind
   , _checkDir :: !(Maybe FilePath)
   , _roundTrip :: !Bool
+  , _blog :: !Bool
   }
   deriving (Show, Eq, Typeable, Generic)
 
@@ -41,4 +42,9 @@ lintOptions =
     <*> switch
       ( long "round-trip"
           <> help "Also check files round-trip through parse/print"
+      )
+    <*> switch
+      ( long "blog"
+          <> help
+            "Enable stricter blog-post lint rules (on files tagged :posts:)"
       )

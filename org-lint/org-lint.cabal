@@ -47,6 +47,7 @@ test-suite org-lint-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      BlogLintTest
       LintCheckersTest
       LintExtraTest
       LintRulesTest
@@ -78,6 +79,7 @@ test-suite org-lint-test
     , regex-tdfa
     , tasty
     , tasty-hunit
+    , temporary
     , text
     , transformers
   default-language: Haskell2010
