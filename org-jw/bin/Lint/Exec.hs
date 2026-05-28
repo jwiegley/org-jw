@@ -27,7 +27,10 @@ import Prelude hiding (readFile)
 
 execLint :: Config -> LintOptions -> Collection -> IO ()
 execLint cfg opts (Collection xs) = do
-  let mode = defaultLintMode{_lintBlog = opts ^. blog}
+  -- Blog-strict checks activate automatically on the :posts: filetag, so the
+  -- mode no longer carries a flag; lintOrgFiles fills in _lintPostIds itself.
+  -- (The deprecated --blog switch is accepted but ignored, see Lint.Options.)
+  let mode = defaultLintMode
       msgs = lintOrgFiles cfg mode (opts ^. kind) orgItems
       n = M.foldl' (\acc ms -> acc + length ms) 0 msgs
   ecs <- forM (M.assocs msgs) $ \(path, ms) -> case ms of

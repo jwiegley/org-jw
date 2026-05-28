@@ -91,30 +91,28 @@ data Site
 'lintOrgFiles', 'lintOrgFile', 'lintOrgFile'' and 'lintOrgEntry' alongside
 the 'LintMessageKind' level.
 
-When @_lintBlog@ is 'False' (the default), the blog rules are not run at all
-and 'lintOrgFile' behaves exactly as before.
+The blog rules are no longer gated on a flag: they activate automatically for
+any file whose @#+filetags:@ contain @posts@ (see 'isBlogPost'). This record
+now only carries the cross-file post-ID universe used to resolve @id:@ links.
 -}
-data LintMode = LintMode
-  { _lintBlog :: Bool
-  {- ^ Whether the @--blog@ flag was given. The blog rules only run when this
-  is set AND the file self-identifies as a post (see 'isBlogPost').
-  -}
-  , _lintPostIds :: Set String
+newtype LintMode = LintMode
+  { _lintPostIds :: Set String
   {- ^ The universe of all post @:ID:@s in the corpus, lower-cased, used to
-  resolve @[[id:UUID]]@ links (see 'BlogUnresolvedIdLink'). Built once in
-  'lintOrgFiles' across every file.
+  resolve @[[id:UUID]]@ links (see 'BlogUnresolvedIdLink'). Built
+  unconditionally on every run in 'lintOrgFiles' across every file, so the
+  always-on 'BlogUnresolvedIdLink' check never sees an empty set.
   -}
   }
   deriving (Show, Eq, Generic, NFData)
 
-{- | The default mode: blog rules disabled, no known post IDs. Use this at any
-call site that does not care about the @--blog@ checks.
+{- | The default mode: no known post IDs. 'lintOrgFiles' overrides
+@_lintPostIds@ with the corpus-wide set before linting each file; direct
+'lintOrgFile' callers that do not resolve @id:@ links can use this as-is.
 -}
 defaultLintMode :: LintMode
 defaultLintMode =
   LintMode
-    { _lintBlog = False
-    , _lintPostIds = Set.empty
+    { _lintPostIds = Set.empty
     }
 
 data TransitionKind
@@ -170,7 +168,7 @@ data LintMessageCode
   | HashesDoNotMatch String String
   | FileFailsToRoundTrip
   | AudioFileNotFound FilePath
-  | -- Blog-strict rules (only with --blog, on files tagged :posts:)
+  | -- Blog-strict rules (auto-enabled on files tagged :posts:)
     BlogLegacyFileLink String
   | BlogUnresolvedIdLink String
   | BlogAbsoluteInternalLink String
@@ -180,6 +178,11 @@ data LintMessageCode
   | BlogNonHtmlExportBlock String
   | BlogSrcBlockOnPoetrySite
   | BlogVerseBlockOnCodeSite
+  | {- | Inline emphasis whose body spans 3+ source lines (>= 2 newlines):
+    Org/Pandoc leaks the markers as literal text. Carries the marker char
+    and a one-line snippet of the offending span.
+    -}
+    BlogMultilineEmphasis Char String
   deriving (Show, Eq, Generic, NFData)
 
 data LintMessage = LintMessage
@@ -333,6 +336,111 @@ isImageTarget target =
   stripDescAndAnchor = takeWhile (`notElem` ['#'])
   isSuffixOfCI suf s = map toLower suf `isSuffixOf` map toLower s
 
+{- | The inline-emphasis markers Org/Pandoc recognize: @/italic/@, @*bold*@,
+@_underline_@, @=verbatim=@, @~code~@.
+-}
+emphasisMarkers :: [Char]
+emphasisMarkers = "/*_=~"
+
+{- | May this character precede an OPENING emphasis marker? Mirrors the
+reference detector's @OPEN_PREV@ set, generalized so that any whitespace
+(including a newline, i.e. start-of-line) qualifies, per the rule "at
+start-of-line OR preceded by whitespace or one of @-(['\"{@".
+-}
+isEmphOpenPrev :: Char -> Bool
+isEmphOpenPrev c = isSpace c || c `elem` ['-', '(', '[', '\'', '"', '{']
+
+{- | May this character follow a CLOSING emphasis marker? Mirrors the reference
+detector's @CLOSE_NEXT@ set: end-of-line, whitespace, or one of the closing
+punctuation characters.
+-}
+isEmphCloseNext :: Char -> Bool
+isEmphCloseNext c =
+  isSpace c
+    || c `elem` ['-', '.', ',', ';', ':', '!', '?', '\'', ')', '}', '[', '"']
+
+{- | Blank out the interior of every @[[...]]@ link in a line, replacing each
+non-bracket character of the link with a space (preserving length so byte
+offsets stay valid). This keeps URL/path slashes inside links from
+false-positiving as emphasis markers.
+-}
+blankBracketLinks :: String -> String
+blankBracketLinks = go False
+ where
+  go _ [] = []
+  go _ ('[' : '[' : rest) = '[' : '[' : go True rest
+  go _ (']' : ']' : rest) = ']' : ']' : go False rest
+  go True (c : rest)
+    | c == '\n' = '\n' : go True rest
+    | otherwise = ' ' : go True rest
+  go False (c : rest) = c : go False rest
+
+{- | Find inline-emphasis spans whose body crosses 2 or more newlines (3+
+source lines), which Org/Pandoc renders by leaking the markers as literal
+text. Operates on one contiguous prose run (lines joined by @\\n@), with link
+interiors already blanked. Returns @(charOffsetOfOpenMarker, markerChar,
+snippet)@ for each offending span, where the snippet is the span body with
+newlines flattened to spaces and truncated for the message.
+
+Mirrors the reference @find_breaking@ semantics: an opening marker must sit at
+a valid open position (see 'isEmphOpenPrev') and be immediately followed by a
+non-space that is not the same marker; the matching close must be immediately
+preceded by a non-space and followed by a valid close character (see
+'isEmphCloseNext'); the body must be non-empty; only spans with >= 2 newlines
+are reported. The search for a close abandons a candidate open once it has
+scanned more than three intervening newlines.
+-}
+findMultilineEmphasis :: String -> [(Int, Char, String)]
+findMultilineEmphasis runBody = go 0
+ where
+  arr = runBody
+  n = length arr
+  charAt k = arr !! k
+
+  go i
+    | i >= n = []
+    | c `elem` emphasisMarkers
+    , isEmphOpenPrev prev
+    , not (isSpace nxt)
+    , nxt /= c =
+        case findClose c (i + 1) of
+          Just j ->
+            let spanStr = take (j - i + 1) (drop i arr)
+                bodyInner = take (j - i - 1) (drop (i + 1) arr)
+             in if not (null bodyInner) && countNewlines spanStr >= 2
+                  then (i, c, snippetOf spanStr) : go (j + 1)
+                  else go (j + 1)
+          Nothing -> go (i + 1)
+    | otherwise = go (i + 1)
+   where
+    c = charAt i
+    prev = if i > 0 then charAt (i - 1) else '\n'
+    nxt = if i + 1 < n then charAt (i + 1) else '\n'
+
+  -- Locate the closing marker for an open of char @c@ starting at index
+  -- @from0@.
+  findClose c from0 = loop from0
+   where
+    loop j
+      | j >= n = Nothing
+      | charAt j == c
+      , let p = charAt (j - 1)
+      , let q = if j + 1 < n then charAt (j + 1) else '\n'
+      , not (isSpace p)
+      , isEmphCloseNext q =
+          Just j
+      | charAt j == '\n'
+      , countNewlines (take (j - from0 + 1) (drop from0 arr)) > 3 =
+          Nothing
+      | otherwise = loop (j + 1)
+
+  countNewlines = length . filter (== '\n')
+
+  -- Flatten newlines to spaces and cap the length for the lint message.
+  snippetOf s =
+    let flat = map (\ch -> if ch == '\n' then ' ' else ch) s
+     in if length flat > 90 then take 90 flat ++ "..." else flat
+
 {- | Run every body-scanning blog-strict rule over one 'Body' (a file preamble
 or an entry body), reporting through the supplied callback. The callback is
 given the 'Loc' of the 'Block' containing each finding so that messages land
@@ -405,12 +513,79 @@ blogBodyChecks cfg mode org report bodyToScan = do
         when (mkind == Just "#+begin_verse") $
           report' LintError BlogVerseBlockOnCodeSite
       Nothing -> pure ()
+
+  -- RULE: inline emphasis whose body spans 3+ source lines (>= 2 newlines).
+  -- Org/Pandoc leaks the markers as literal text in that case. We scan
+  -- contiguous prose runs (stitched across blank lines, broken at blocks and
+  -- at headline/#+keyword/:drawer lines), with link interiors blanked out,
+  -- and report at the line where the span opens.
+  forM_ proseRuns $ \run -> do
+    let bodyText = blankBracketLinks (intercalate "\n" (map snd run))
+    forM_ (findMultilineEmphasis bodyText) $ \(off, marker, snippet) ->
+      report (Loc (org ^. orgFilePath) (lineposAt run off)) LintWarn $
+        BlogMultilineEmphasis marker snippet
  where
   -- The UUID of an [[id:UUID]] link (with any [desc] already stripped, since
   -- the target ends at the first ']').
   idLinkUuid target = case break (== ':') target of
     ("id", ':' : rest) -> Just rest
     _ -> Nothing
+
+  -- Contiguous prose runs from the body, each a list of (bytePos, lineText)
+  -- entries (one per source line). Runs break at Drawer/InlineTask blocks and
+  -- at lines that begin a headline/#+keyword/:drawer (mirroring the reference
+  -- detector's "break span continuity" cases), so an emphasis span is never
+  -- considered to cross such a boundary.
+  proseRuns :: [[(Int, String)]]
+  proseRuns = splitRuns (concatMap blockLines (bodyToScan ^. blocks))
+
+  -- Each (Int, String): Nothing-like break markers are encoded as Left;
+  -- prose lines as Right (pos, text). Drawer/InlineTask blocks emit a break.
+  blockLines :: Block -> [Either () (Int, String)]
+  blockLines (Paragraph loc ls) =
+    -- The block's pos is the FIRST line; later lines step back by the length
+    -- of the preceding lines plus their newlines (pos counts bytes from end).
+    zipWith
+      ( \i l ->
+          if isRunBreakLine l
+            then Left ()
+            else Right (loc ^. pos - lineOffset i ls, l)
+      )
+      [0 ..]
+      ls
+  blockLines (Whitespace loc txt) = [Right (loc ^. pos, txt)]
+  blockLines (Drawer _ _ _) = [Left ()]
+  blockLines (InlineTask _ _) = [Left ()]
+
+  -- Byte length consumed by the first @i@ lines of a block (each line plus
+  -- the newline that follows it in the source).
+  lineOffset i ls = sum [length l + 1 | l <- take i ls]
+
+  -- A prose line that should break run continuity (headline / #+keyword /
+  -- :drawer:), matching the reference detector's skip set.
+  isRunBreakLine l =
+    let s = dropWhile isSpace l
+     in "*" `isPrefixOf` s || "#+" `isPrefixOf` s || ":" `isPrefixOf` s
+
+  splitRuns :: [Either () (Int, String)] -> [[(Int, String)]]
+  splitRuns xs = case break isBreak (dropWhile isBreak xs) of
+    ([], []) -> []
+    (run, rest) -> map fromRight run : splitRuns rest
+   where
+    isBreak (Left _) = True
+    isBreak _ = False
+    fromRight (Right r) = r
+    fromRight (Left _) = error "splitRuns: unexpected break"
+
+  -- Map a character offset within a run's joined body back to the byte
+  -- position of the source line that contains it.
+  lineposAt :: [(Int, String)] -> Int -> Int
+  lineposAt run off = walk run off
+   where
+    walk [] _ = run ^?! _head . _1 -- offset past end; fall back to run start
+    walk ((p, l) : rest) k
+      | k <= length l = p
+      | otherwise = walk rest (k - length l - 1) -- skip the line and its \n
 
   -- A relative-path image link: [[./...]] or [[file:images/...]] /
   -- [[file:./...]] (i.e. a file: link with a non-absolute, local target).
@@ -525,12 +700,13 @@ lintOrgFile' cfg mode level org = do
   ruleCheckAllLinks
   -- RULE: Check that AUDIO property points to an existing file
   ruleAudioFileExists
-  -- BLOG RULES: stricter checks for published posts, only with --blog and
-  -- only on files whose #+filetags: contain :posts:. Scan the file preamble
-  -- here; lintOrgEntry scans each entry body (most johnwiegley posts are
-  -- headline-less, so the preamble is where the content lives). Each finding
-  -- reports at the byte position of the block it was found in.
-  when (_lintBlog mode && isBlogPost org) $
+  -- BLOG RULES: stricter checks for published posts. These activate
+  -- automatically for any file whose #+filetags: contain :posts: (no flag
+  -- needed). Scan the file preamble here; lintOrgEntry scans each entry body
+  -- (most johnwiegley posts are headline-less, so the preamble is where the
+  -- content lives). Each finding reports at the byte position of the block it
+  -- was found in.
+  when (isBlogPost org) $
     blogBodyChecks
       cfg
       mode
@@ -793,10 +969,11 @@ lintOrgEntry cfg mode org isLastEntry ignoreWhitespace level e = do
   -- RULE: Entries with hashes match when hashed
   ruleHashesMatch
   -- BLOG RULES: scan this entry's body for blog-strict violations (links and
-  -- blocks), only with --blog and only on posts. newartisans posts use
-  -- headings, so their content reaches here as well as via the preamble. Each
-  -- finding reports at the Loc of the block it was found in (report').
-  when (_lintBlog mode && isBlogPost org) $
+  -- blocks). These activate automatically on the :posts: filetag (no flag).
+  -- newartisans posts use headings, so their content reaches here as well as
+  -- via the preamble. Each finding reports at the Loc of the block it was
+  -- found in (report').
+  when (isBlogPost org) $
     blogBodyChecks cfg mode org report' (e ^. entryBody)
  where
   inArchive = isArchive org
@@ -1462,3 +1639,8 @@ showLintOrg fl (LintMessage ln kind code) =
       "Blog post on poetry site (johnwiegley) uses #+begin_src; use verse"
     BlogVerseBlockOnCodeSite ->
       "Blog post on code site (newartisans) uses #+begin_verse; use src"
+    BlogMultilineEmphasis marker snippet ->
+      "Blog post inline emphasis "
+        ++ show marker
+        ++ " spans 3+ lines (markers leak as literal text): "
+        ++ snippet

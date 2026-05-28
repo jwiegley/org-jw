@@ -1,19 +1,18 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-{- | Tests for the blog-strict lint rules (the @--blog@ mode).
+{- | Tests for the blog-strict lint rules.
 
-These rules only fire when:
-
-  1. the 'LintMode' has @_lintBlog = True@ (the @--blog@ CLI flag), AND
-  2. the file's @#+filetags:@ contain the tag @posts@.
+These rules fire whenever the file's @#+filetags:@ contain the tag @posts@.
+Activation is driven solely by that tag -- there is no longer a @--blog@ flag
+gate (the flag is accepted but a deprecated no-op).
 
 The poetry-vs-code rules additionally key off the @johnwiegley@ (poetry) vs
 @newartisans@ (code) filetag.
 
 Each rule gets at least one positive case (it fires when it should) and one
-negative case (it stays silent when it should). We also prove the two gates
-(mode off, and non-post file) suppress every rule, that the preamble of a
+negative case (it stays silent when it should). We also prove that a non-post
+file (lacking the @posts@ tag) is unaffected, that the preamble of a
 headline-less post is scanned (most johnwiegley posts have no headlines), and
 that 'id:' resolution and the relative-image on-disk check work.
 -}
@@ -46,14 +45,11 @@ lintConfig =
     , _checkFiles = False
     }
 
--- The blog mode under test: --blog enabled, no known post IDs (individual
--- tests that need id: resolution build their own corpus via 'runBlogFiles').
-blogMode :: LintMode
-blogMode = defaultLintMode{_lintBlog = True}
-
--- The non-blog (default) mode, used to prove the --blog gate.
-plainMode :: LintMode
-plainMode = defaultLintMode
+-- The lint mode used throughout: the plain default mode. Blog activation is
+-- tag-driven, so no flag is set here. Tests that need id: resolution build
+-- their own corpus via 'runBlogFiles' (which populates _lintPostIds).
+testMode :: LintMode
+testMode = defaultLintMode
 
 fromLines :: [ByteString] -> ByteString
 fromLines = BS.intercalate "\n" . (++ [""])
@@ -108,6 +104,7 @@ isBlogCode = \case
   BlogNonHtmlExportBlock _ -> True
   BlogSrcBlockOnPoetrySite -> True
   BlogVerseBlockOnCodeSite -> True
+  BlogMultilineEmphasis _ _ -> True
   _ -> False
 
 -- A post header (PROPERTIES + filetags + title). The given tags string is
@@ -148,7 +145,14 @@ tests =
     , gatingTests
     , imageTests
     , regressionTests
+    , multilineEmphasisTests
     ]
+
+-- Predicate for any BlogMultilineEmphasis finding, with optional marker match.
+isMultilineEmph :: Maybe Char -> LintMessageCode -> Bool
+isMultilineEmph Nothing (BlogMultilineEmphasis _ _) = True
+isMultilineEmph (Just m) (BlogMultilineEmphasis c _) = c == m
+isMultilineEmph _ _ = False
 
 linkRuleTests :: TestTree
 linkRuleTests =
@@ -160,7 +164,7 @@ linkRuleTests =
           (\case BlogLegacyFileLink _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               (poetryPost ["See [[file:detachment]] for more."])
           )
@@ -170,7 +174,7 @@ linkRuleTests =
           (\case BlogLegacyFileLink _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               (poetryPost ["See [[https://example.com][here]]."])
           )
@@ -180,7 +184,7 @@ linkRuleTests =
           (\case BlogUnresolvedIdLink _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               (poetryPost ["Jump to [[id:NO-SUCH-UUID-9999]]."])
           )
@@ -190,7 +194,7 @@ linkRuleTests =
           (\case BlogUnresolvedIdLink _ -> True; _ -> False)
           ( runBlogFiles
               lintConfig
-              blogMode
+              testMode
               [
                 ( "linker.org"
                 , poetryPost ["Jump to [[id:TARGET-ID-1234]]."]
@@ -214,7 +218,7 @@ linkRuleTests =
           (\case BlogUnresolvedIdLink _ -> True; _ -> False)
           ( runBlogFiles
               lintConfig
-              blogMode
+              testMode
               [
                 ( "linker.org"
                 , poetryPost ["Jump to [[id:target-id-abcd]]."]
@@ -238,7 +242,7 @@ linkRuleTests =
           (\case BlogAbsoluteInternalLink _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               (poetryPost ["Old link [[/2009/03/hello.html]]."])
           )
@@ -248,7 +252,7 @@ linkRuleTests =
           (\case BlogAbsoluteInternalLink _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               (poetryPost ["Good [[https://example.com/page]]."])
           )
@@ -258,7 +262,7 @@ linkRuleTests =
           (\case BlogNonWebLinkScheme _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               (codePost ["Download [[ftp://ftp.example.com/x.tar]]."])
           )
@@ -268,7 +272,7 @@ linkRuleTests =
           (\case BlogNonWebLinkScheme _ -> True; _ -> False)
           ( runBlogFiles
               lintConfig
-              blogMode
+              testMode
               [
                 ( "post.org"
                 , codePost
@@ -295,7 +299,7 @@ linkRuleTests =
           (\case BlogNonWebLinkScheme _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               (codePost ["Chat at [[irc://irc.example.com/chan]]."])
           )
@@ -307,7 +311,7 @@ linkRuleTests =
           (\case BlogNonWebLinkScheme _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               (poetryPost ["See [[file:detachment]] here."])
           )
@@ -323,7 +327,7 @@ blockRuleTests =
           (== BlogRawHtmlExportBlock)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( poetryPost
                   [ "#+begin_export html"
@@ -338,7 +342,7 @@ blockRuleTests =
           (== BlogRawHtmlExportBlock)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( poetryPost
                   [ "Intro paragraph."
@@ -355,7 +359,7 @@ blockRuleTests =
           (\case BlogNonHtmlExportBlock _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( codePost
                   [ "#+begin_export latex"
@@ -370,7 +374,7 @@ blockRuleTests =
           (\case BlogNonHtmlExportBlock _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( poetryPost
                   [ "#+begin_export html"
@@ -385,7 +389,7 @@ blockRuleTests =
           (\case BlogNonHtmlExportBlock _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( fromLines
                   ( postHeader ":newartisans:posts:"
@@ -411,7 +415,7 @@ siteRuleTests =
           (== BlogSrcBlockOnPoetrySite)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( poetryPost
                   [ "#+begin_src haskell"
@@ -426,7 +430,7 @@ siteRuleTests =
           (== BlogSrcBlockOnPoetrySite)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( codePost
                   [ "#+begin_src haskell"
@@ -441,7 +445,7 @@ siteRuleTests =
           (== BlogVerseBlockOnCodeSite)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( codePost
                   [ "#+begin_verse"
@@ -456,7 +460,7 @@ siteRuleTests =
           (== BlogVerseBlockOnCodeSite)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( poetryPost
                   [ "#+begin_verse"
@@ -471,7 +475,7 @@ siteRuleTests =
           (\c -> c == BlogSrcBlockOnPoetrySite || c == BlogVerseBlockOnCodeSite)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( fromLines
                   [ ":PROPERTIES:"
@@ -495,18 +499,20 @@ siteRuleTests =
 gatingTests :: TestTree
 gatingTests =
   testGroup
-    "gating"
-    [ testCase "no blog rule fires when --blog is off (plain mode)" $
-        shouldNotFire
+    "gating (tag-driven, no flag)"
+    [ testCase "blog rules fire for a posts file with NO flag (default mode)" $
+        -- Activation is now driven solely by the :posts: filetag. With the
+        -- plain default mode (no flag), a posts file's findings must surface.
+        shouldFire
           "any blog code"
           isBlogCode
           ( runBlog
               lintConfig
-              plainMode
+              testMode
               "post.org"
               ( poetryPost
                   [ "See [[file:detachment]] and [[/abs/x.html]]"
-                  , "and [[ftp://h/x]] and [[id:NOPE-1]]."
+                  , "and [[ftp://h/x]]."
                   , "#+begin_src haskell"
                   , "x = 1"
                   , "#+end_src"
@@ -522,7 +528,7 @@ gatingTests =
           isBlogCode
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "notes.org"
               ( fromLines
                   [ ":PROPERTIES:"
@@ -547,7 +553,7 @@ gatingTests =
           (\case BlogLegacyFileLink _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "preamble-only.org"
               ( fromLines
                   [ ":PROPERTIES:"
@@ -573,7 +579,7 @@ imageTests =
           (\case BlogMissingRelativeImage _ -> True; _ -> False)
           ( runBlog
               (lintConfig{_checkFiles = True})
-              blogMode
+              testMode
               "/tmp/blogtest-missing/post.org"
               (codePost ["Figure: [[./images/missing.png]]."])
           )
@@ -586,7 +592,7 @@ imageTests =
               msgs =
                 runBlog
                   (lintConfig{_checkFiles = True})
-                  blogMode
+                  testMode
                   post
                   (codePost ["Figure: [[./images/real.png]]."])
           shouldNotFire
@@ -599,13 +605,11 @@ imageTests =
           (\case BlogMissingRelativeImage _ -> True; _ -> False)
           ( runBlog
               (lintConfig{_checkFiles = True})
-              blogMode
+              testMode
               "/tmp/blogtest-missing2/post.org"
               (poetryPost ["Old image [[file:images/patbunny.jpg]]."])
           )
-    , testCase "blogMode and plainMode differ in _lintBlog; default ids empty" $ do
-        _lintBlog blogMode @?= True
-        _lintBlog plainMode @?= False
+    , testCase "default mode carries an empty post-ID set" $
         Set.size (_lintPostIds defaultLintMode) @?= 0
     ]
 
@@ -624,7 +628,7 @@ regressionTests =
           (== BlogRawHtmlExportBlock)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( poetryPost
                   [ "Intro."
@@ -643,7 +647,7 @@ regressionTests =
           (== BlogRawHtmlExportBlock)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( poetryPost
                   [ "#+begin_export html"
@@ -661,7 +665,7 @@ regressionTests =
           (\case BlogNonWebLinkScheme _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               (codePost ["Mail me at [[mailto:johnw@newartisans.com]]."])
           )
@@ -673,7 +677,7 @@ regressionTests =
           (\case BlogNonWebLinkScheme _ -> True; _ -> False)
           ( runBlog
               lintConfig
-              blogMode
+              testMode
               "post.org"
               ( codePost
                   [ "Mail [[mailto:johnw@newartisans.com]],"
@@ -698,7 +702,7 @@ regressionTests =
             msgs =
               runBlog
                 lintConfig
-                blogMode
+                testMode
                 "long-preamble.org"
                 (poetryPost body)
             topPos =
@@ -717,4 +721,293 @@ regressionTests =
               ++ show botPos
           )
           (maximum topPos > maximum botPos)
+    , testCase "id: link to a known corpus post is NOT flagged with NO flag" $ do
+        -- Activation regression: now that the rules auto-enable on the :posts:
+        -- tag, the cross-file post-ID universe (_lintPostIds) MUST be built on
+        -- every run -- otherwise an always-on BlogUnresolvedIdLink would see
+        -- an empty set and wrongly flag EVERY id: link. We pass the plain
+        -- default mode (no flag) and confirm the resolvable id: link is clean,
+        -- while a genuinely unknown id: link still fires.
+        let msgs =
+              runBlogFiles
+                lintConfig
+                testMode
+                [
+                  ( "linker.org"
+                  , poetryPost
+                      [ "Resolvable [[id:KNOWN-POST-7777]] and"
+                      , "broken [[id:MISSING-9999]]."
+                      ]
+                  )
+                ,
+                  ( "target.org"
+                  , fromLines
+                      [ ":PROPERTIES:"
+                      , ":ID:       KNOWN-POST-7777"
+                      , ":CREATED:  [2024-10-07 Mon 20:15]"
+                      , ":END:"
+                      , "#+filetags: :newartisans:posts:"
+                      , "#+title: Target"
+                      ]
+                  )
+                ]
+        shouldNotFire
+          "BlogUnresolvedIdLink for the KNOWN id"
+          (\case BlogUnresolvedIdLink u -> u == "KNOWN-POST-7777"; _ -> False)
+          msgs
+        shouldFire
+          "BlogUnresolvedIdLink for the MISSING id"
+          (\case BlogUnresolvedIdLink u -> u == "MISSING-9999"; _ -> False)
+          msgs
+    ]
+
+-- Tests for BlogMultilineEmphasis: inline emphasis whose body spans 3+ source
+-- lines (>= 2 newlines), which Org/Pandoc renders by leaking the markers as
+-- literal text. Mirrors the reference detector semantics.
+multilineEmphasisTests :: TestTree
+multilineEmphasisTests =
+  testGroup
+    "multiline emphasis"
+    [ testCase "POSITIVE: /italic/ span across 3 lines is flagged" $
+        shouldFire
+          "BlogMultilineEmphasis /"
+          (isMultilineEmph (Just '/'))
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              ( poetryPost
+                  [ "Health-wise, but /up to this point the"
+                  , "duty-driven sector of our community has"
+                  , "focused on the wrong group/."
+                  ]
+              )
+          )
+    , testCase "POSITIVE: *bold* span across 3 lines is flagged" $
+        shouldFire
+          "BlogMultilineEmphasis *"
+          (isMultilineEmph (Just '*'))
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              ( poetryPost
+                  [ "Here is *bold text that"
+                  , "spans across three"
+                  , "separate source lines* now."
+                  ]
+              )
+          )
+    , testCase "POSITIVE: =verbatim= span across 3 lines is flagged" $
+        shouldFire
+          "BlogMultilineEmphasis ="
+          (isMultilineEmph (Just '='))
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              ( poetryPost
+                  [ "A =verbatim run that"
+                  , "wraps over three"
+                  , "source lines here= ends."
+                  ]
+              )
+          )
+    , testCase "POSITIVE: span fires even inside a multi-line paragraph block" $
+        -- The open marker is on the 3rd line of a single prose paragraph; the
+        -- finding must still fire (the parser keeps contiguous prose in one
+        -- block, so scanning must look inside it, not just at its first line).
+        shouldFire
+          "BlogMultilineEmphasis /"
+          (isMultilineEmph (Just '/'))
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              ( poetryPost
+                  [ "First plain line of the paragraph,"
+                  , "second plain line, then the emphasis"
+                  , "opens /here and runs onto"
+                  , "the next line and finally"
+                  , "closes on this line/."
+                  ]
+              )
+          )
+    , testCase "POSITIVE: reports at the open line, not the paragraph start" $ do
+        -- An earlier paragraph carries a [[file:...]] finding on its first
+        -- line; a later paragraph's emphasis opens on its THIRD line. Since
+        -- FlatParse positions count bytes from the end, the emphasis (later in
+        -- the file) must report a STRICTLY SMALLER position than the file:
+        -- link. If the emphasis were wrongly reported at its paragraph's first
+        -- line it would still be smaller, so we further require the gap to
+        -- exceed the first two lines of its own paragraph by placing long
+        -- filler before the open marker.
+        let body =
+              [ "Early [[file:legacy-target]] reference here."
+              , ""
+              , "Filler first line of the later paragraph here padding."
+              , "Filler second line of the later paragraph here padding."
+              , "Now /the emphasis opens on this third line and"
+              , "continues to a fourth line and"
+              , "then finally closes on this line/."
+              ]
+            msgs = runBlog lintConfig testMode "open.org" (poetryPost body)
+            emphPos =
+              positionsOf (isMultilineEmph Nothing) msgs
+            filePos =
+              positionsOf
+                (\case BlogLegacyFileLink _ -> True; _ -> False)
+                msgs
+        assertBool "expected one multiline-emphasis finding" (length emphPos == 1)
+        assertBool "expected one file: finding" (length filePos == 1)
+        assertBool
+          ( "emphasis should report deeper in the file than the file: link; "
+              ++ "got emph="
+              ++ show emphPos
+              ++ " file="
+              ++ show filePos
+          )
+          (maximum emphPos < maximum filePos)
+    , testCase "NEGATIVE: span across exactly 2 lines (1 newline) is NOT flagged" $
+        shouldNotFire
+          "BlogMultilineEmphasis"
+          (isMultilineEmph Nothing)
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              ( poetryPost
+                  [ "Here is /emphasis that spans"
+                  , "exactly two lines/ only."
+                  ]
+              )
+          )
+    , testCase "NEGATIVE: same-line /italic/ is NOT flagged" $
+        shouldNotFire
+          "BlogMultilineEmphasis"
+          (isMultilineEmph Nothing)
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              (poetryPost ["This is /italic/ all on one line, fine."])
+          )
+    , testCase "NEGATIVE: a Unix path /usr/local/bin is NOT flagged" $
+        shouldNotFire
+          "BlogMultilineEmphasis"
+          (isMultilineEmph Nothing)
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              ( poetryPost
+                  [ "The binary lives in /usr/local/bin and"
+                  , "we discuss it across"
+                  , "three full source lines."
+                  ]
+              )
+          )
+    , testCase "NEGATIVE: a URL https://x/y/z is NOT flagged" $
+        shouldNotFire
+          "BlogMultilineEmphasis"
+          (isMultilineEmph Nothing)
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              ( poetryPost
+                  [ "See https://example.com/a/b/c for the"
+                  , "details that we describe"
+                  , "over three source lines."
+                  ]
+              )
+          )
+    , testCase "NEGATIVE: division-like a / b is NOT flagged" $
+        shouldNotFire
+          "BlogMultilineEmphasis"
+          (isMultilineEmph Nothing)
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              ( poetryPost
+                  [ "We compute a / b in the formula and"
+                  , "then keep talking about it"
+                  , "over three source lines."
+                  ]
+              )
+          )
+    , testCase "NEGATIVE: emphasis inside #+begin_src is NOT flagged" $
+        shouldNotFire
+          "BlogMultilineEmphasis"
+          (isMultilineEmph Nothing)
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              ( codePost
+                  [ "#+begin_src haskell"
+                  , "-- x = /not emphasis that"
+                  , "-- spans three"
+                  , "-- code lines here/"
+                  , "#+end_src"
+                  ]
+              )
+          )
+    , testCase "NEGATIVE: emphasis inside #+begin_example is NOT flagged" $
+        shouldNotFire
+          "BlogMultilineEmphasis"
+          (isMultilineEmph Nothing)
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              ( poetryPost
+                  [ "#+begin_example"
+                  , "/literal that"
+                  , "spans three"
+                  , "example lines/"
+                  , "#+end_example"
+                  ]
+              )
+          )
+    , testCase "NEGATIVE: posts-less file is NOT flagged (tag gate)" $
+        shouldNotFire
+          "BlogMultilineEmphasis"
+          (isMultilineEmph Nothing)
+          ( runBlog
+              lintConfig
+              testMode
+              "notes.org"
+              ( fromLines
+                  [ ":PROPERTIES:"
+                  , ":ID:       NOTE-MLE-1"
+                  , ":CREATED:  [2024-10-07 Mon 20:15]"
+                  , ":END:"
+                  , "#+filetags: :johnwiegley:essays:"
+                  , "#+title: Not a post"
+                  , ""
+                  , "Here is /emphasis that"
+                  , "spans across three"
+                  , "source lines here/ now."
+                  ]
+              )
+          )
+    , testCase "NEGATIVE: slashes inside an [[...]] link do not false-positive" $
+        -- Link interiors are blanked before scanning, so a wrapped link URL
+        -- with slashes never reads as emphasis even across 3 lines.
+        shouldNotFire
+          "BlogMultilineEmphasis"
+          (isMultilineEmph Nothing)
+          ( runBlog
+              lintConfig
+              testMode
+              "post.org"
+              ( poetryPost
+                  [ "A link [[https://example.com/very/long/path/that"
+                  , "wraps/onto/more/lines/here][described"
+                  , "link text]] and then prose."
+                  ]
+              )
+          )
     ]

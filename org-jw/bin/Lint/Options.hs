@@ -18,6 +18,10 @@ data LintOptions = LintOptions
   , _checkDir :: !(Maybe FilePath)
   , _roundTrip :: !Bool
   , _blog :: !Bool
+  {- ^ Deprecated no-op. The blog-strict checks now auto-enable on the @posts@
+  filetag, so this flag no longer affects behavior; it is still accepted so
+  existing @org lint --blog@ invocations keep working.
+  -}
   }
   deriving (Show, Eq, Typeable, Generic)
 
@@ -46,5 +50,6 @@ lintOptions =
     <*> switch
       ( long "blog"
           <> help
-            "Enable stricter blog-post lint rules (on files tagged :posts:)"
+            "Deprecated no-op: blog-strict checks now auto-enable on the \
+            \:posts: filetag (flag still accepted for compatibility)"
       )
