@@ -49,6 +49,21 @@ library:
     - Org.DB.Sync
     - Org.DB.Migrate
     - Org.DB.Embed
+    - Org.DB.Embed.Retry
   dependencies:
     - org-types
     - org-data
+
+tests:
+  org-db-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - org-db
+      - http-client
+      - tasty
+      - tasty-hunit
