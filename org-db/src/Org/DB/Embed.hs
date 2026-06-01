@@ -36,6 +36,7 @@ import Network.TLS (ClientParams (..), Shared (..), Supported (..), defaultParam
 import Network.TLS.Extra.Cipher (ciphersuite_default)
 import Numeric (showFFloat)
 import Org.DB.Connection (withPooledDB)
+import Org.DB.Embed.Retry (defaultRetryPolicy, isTransientHttpException, retryingOn)
 import Org.DB.Types
 import System.Environment (lookupEnv)
 import System.X509 (getSystemCertificateStore)
@@ -607,7 +608,12 @@ callEmbeddingAPI cfg manager texts = do
               , ("Authorization", "Bearer " <> TE.encodeUtf8 (embedApiKey cfg))
               ]
           }
-  resp <- httpLbs req manager
+  -- Retry transient connection failures (notably the misleading crypton
+  -- "cannot get any source of entropy" error, which is really a transient
+  -- /dev/urandom open() failure during the TLS handshake under concurrency).
+  -- Embedding requests are idempotent, so retrying is safe.
+  resp <-
+    retryingOn defaultRetryPolicy isTransientHttpException (httpLbs req manager)
   let sc = statusCode (responseStatus resp)
   if sc >= 200 && sc < 300
     then case eitherDecode (responseBody resp) of
