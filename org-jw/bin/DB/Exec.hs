@@ -5,10 +5,10 @@ module DB.Exec where
 
 import Control.Exception (bracket)
 import Control.Lens
-import Control.Monad (when)
+import Control.Monad (join, when)
 import DB.Options
 import Data.ByteString.Char8 qualified as BS8
-import Data.List (sortBy)
+import Data.List (nub, sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
@@ -18,6 +18,7 @@ import Data.Text.IO qualified as TIO
 import Data.Text.Lazy.IO qualified as TLIO
 import Data.Time (getCurrentTime, utctDay)
 import Org.DB
+import Org.DB.Render (entryRowJson)
 import Org.Data
 import Org.Dot
 import Org.Types
@@ -102,7 +103,14 @@ execDb _cfg opts coll = do
         CsvFormat -> do
           putStrLn "id,file_id,depth,keyword,title"
           mapM_ printEntryRowCsv limited
-        JsonFormat -> mapM_ printEntryRowJson limited
+        JsonFormat -> do
+          let fileIds = nub (map erFileId limited)
+          pathPairs <-
+            mapM (\fid -> (,) fid <$> queryFilePath db fid) fileIds
+          let pathFor fid = join (lookup fid pathPairs)
+          mapM_
+            (\row -> TIO.putStrLn (entryRowJson (pathFor (erFileId row)) row))
+            limited
     DBSync sopts -> withDB dbCfg $ \db -> do
       _ <- requireEmbeddingDimensions db
       case sopts ^. syncDirection of
@@ -222,19 +230,6 @@ printEntryRowCsv row =
       <> fromMaybe "" (erKeywordValue row)
       <> ","
       <> csvEscape (erTitle row)
-
-printEntryRowJson :: EntryRow -> IO ()
-printEntryRowJson row =
-  TIO.putStrLn $
-    "{\"id\":\""
-      <> erId row
-      <> "\",\"title\":\""
-      <> jsonEscape (erTitle row)
-      <> "\",\"keyword\":"
-      <> maybe "null" (\k -> "\"" <> k <> "\"") (erKeywordValue row)
-      <> ",\"depth\":"
-      <> T.pack (show (erDepth row))
-      <> "}"
 
 printSearchRow :: DBHandle -> EntryRow -> T.Text -> IO ()
 printSearchRow db row src = do

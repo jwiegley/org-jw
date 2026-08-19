@@ -45,6 +45,7 @@ library:
     - Org.DB.Schema
     - Org.DB.Store
     - Org.DB.Query
+    - Org.DB.Render
     - Org.DB.Deserialize
     - Org.DB.Sync
     - Org.DB.Migrate
