@@ -43,6 +43,14 @@ tests =
         assertBool "id+depth" (("\"id\":\"abc-123\"" `T.isInfixOf` out) && ("\"depth\":2" `T.isInfixOf` out))
     , testCase "escapes quotes in title" $
         assertBool "escaped" ("\\\"quoted\\\"" `T.isInfixOf` out)
+    , testCase "escapes control characters in title as \\uXXXX" $ do
+        let ctl = entryRowJson Nothing sampleRow{erTitle = "a\SOHb"}
+        assertBool "\\u0001 present" ("\\u0001" `T.isInfixOf` ctl)
+        assertBool "raw control byte absent" (not ("\SOH" `T.isInfixOf` ctl))
+    , testCase "keyword is bare null when absent, quoted when present" $ do
+        let noKw = entryRowJson Nothing sampleRow{erKeywordValue = Nothing}
+        assertBool "bare null" ("\"keyword\":null" `T.isInfixOf` noKw)
+        assertBool "quoted value" ("\"keyword\":\"TODO\"" `T.isInfixOf` out)
     ]
  where
   out = entryRowJson Nothing sampleRow
