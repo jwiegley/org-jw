@@ -1,0 +1,229 @@
+#+TITLE: Obr Issues
+#+SEQ_TODO: TODO DOING DRAFT WAIT DEFER NOTE | DONE CANCELED
+#+ISSUE_PREFIX: org-jw-backfill-entry-ids
+
+* TODO [#B] Backfill :ID: properties into org corpus so entry matching is stable
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-backfill-entry-ids-6j7
+:LABELS:   []
+:ISSUE_TYPE: task
+:CREATED:  [2026-09-11 Fri 09:51]
+:MODIFIED: [2026-09-11 Fri 09:52]
+:CREATED_BY: johnw
+:SOURCE_REPO: org-jw
+:SOURCE_REPO_PATH: /Users/johnw/src/sys/org-jw
+:ORIGINAL_SIZE: 0
+:END:
+
+~40% of corpus entries lack a valid `:ID:` property (37,370 ID lines vs 62,886 entries in the DB). `resolveEntryId` (org-db/src/Org/DB/Store.hs:261) generates a fresh random UUID via `nextRandom` for any entry without a hex-dash ID, so `processEntriesIncremental` can never match those entries against `existingMap` — they are rewritten (upsert + deleteEntryChildren + embedding_hash NULL) and their old rows dropped as stale on every file sync.
+
+Fix: one-shot writer that parses each file in the real corpus (~/Documents/org — note ~/org is a symlink into the read-only Nix store, so writes must target the resolved Documents path), adds `:ID: <uuid4>` to each entry lacking one (into the existing PROPERTIES drawer, creating one if needed), and prints the file back via org-print. Must round-trip clean (parse → modify → print → parse identical).
+
+Sequencing: do this after the loc-free hash fix (org-jw-fix-entry-hash-loc-free-xqn) so the post-backfill store run matches by hash+ID and produces no churn beyond the newly identified entries.
+
+`ensureEntryId` (org-db/src/Org/DB/Sync.hs:148) already exists as an unused in-memory helper — reuse its Property-construction logic where sensible.
+
+Corpus scale: ~3,684 files carrying :ID:, ~991 files total in ~/org. Verify with round-trip before writing; keep a backup of the corpus before the mass edit.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "org-jw-backfill-entry-ids-6j7",
+    "depends_on_id": "org-jw-fix-entry-hash-loc-free-xqn",
+    "type": "blocks",
+    "created_at": "2026-09-11T16:52:37.821795Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#C] Batch embedding-side churn: set-based deletes and hash maintenance
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-batch-embed-churn-8z7
+:LABELS:   []
+:ISSUE_TYPE: task
+:CREATED:  [2026-09-11 Fri 09:51]
+:MODIFIED: [2026-09-11 Fri 09:52]
+:CREATED_BY: johnw
+:SOURCE_REPO: org-jw
+:SOURCE_REPO_PATH: /Users/johnw/src/sys/org-jw
+:ORIGINAL_SIZE: 0
+:END:
+
+Embedding-side churn is per-entry, not set-based (org-db/src/Org/DB/Embed.hs):
+
+1. Stale chunk deletion runs one `DELETE FROM entry_embeddings WHERE entry_id = ?` per candidate (embedEntries, ~line 78). Replace with a single `DELETE ... WHERE entry_id = ANY(?)` per batch or one set-based statement over all candidates.
+2. `updateEmbeddingHash` runs the WITH RECURSIVE ancestor walk + six correlated subqueries once per entry (65,736 executions in the observed 9-day window). Compute hashes set-wise for candidate entry ids in one statement, or maintain incrementally.
+3. `unique` helper (bottom of Embed.hs) is O(n^2) — `filter (/= x)` per element. Replace with a Set-based pass.
+
+Verification is meaningful only after the loc-free hash fix (org-jw-fix-entry-hash-loc-free-xqn) makes an unchanged corpus produce zero candidates: an embed run over an unchanged corpus must perform no per-entry DELETE statements at all.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "org-jw-batch-embed-churn-8z7",
+    "depends_on_id": "org-jw-fix-entry-hash-loc-free-xqn",
+    "type": "blocks",
+    "created_at": "2026-09-11T16:52:38.360728Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#A] Sync change detection hashes Loc (file path + byte offsets), causing full-corpus rewrite
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-fix-entry-hash-loc-free-xqn
+:LABELS:   []
+:ISSUE_TYPE: bug
+:CREATED:  [2026-09-11 Fri 09:50]
+:MODIFIED: [2026-09-11 Fri 09:50]
+:CREATED_BY: johnw
+:SOURCE_REPO: org-jw
+:SOURCE_REPO_PATH: /Users/johnw/src/sys/org-jw
+:ORIGINAL_SIZE: 0
+:END:
+
+`computeEntryHash` (org-db/src/Org/DB/Store.hs:273) serializes `entry ^. entryBody`, `entry ^. entryStamps`, and `entry ^. entryLogEntries` via `show`. All three types carry `Loc { _file :: FilePath, _pos :: Int }` (org-types/src/Org/Types.hs:54), which derives `Show`, so the "content hash" of every entry changes when:
+
+1. Any byte earlier in the file changes — every later entry's `_pos` shifts, rewriting all following entries in the file.
+2. The path form changes — `Loc._file` is the raw CLI path (org-parse/src/Org/Parse.hs:36), verbatim from `parseOrgFile cfg path`.
+
+This is the root cause of the full-corpus rewrite observed on the `org` PostgreSQL database (62,443 per-entry child-table DELETEs ≈ 99.3% of all entries in one window, plus full re-embedding).
+
+Fix: replace the three `show`-based components with loc-free serialization that mirrors exactly what the database stores:
+
+- Body blocks: reuse `blockInfo` minus the byte offset — (block_type, content, drawer_type, drawer_name) joined with "\0". This also correctly stops hashing InlineTask nested bodies, which are not persisted by `insertBody`.
+- Stamps: mirror `insertStampSQL` fields — (stamp_type, time_kind, day, day_end, time_start, time_end, suffix_kind, suffix_num, suffix_span, suffix_larger_num, suffix_larger_span).
+- Log entries: mirror `insertLogEntry` — (log_type, time fields, from/to keywords, orig-time fields, duration, nested loc-free body); LogBook recurses.
+
+Prefix the new hash with a version marker ("v2:") so the one-time invalidation of all stored hashes is explicit and future hash-semantics changes are detectable. Expected one-time cost after landing: every stored hash mismatches once → one full rewrite + re-embed pass; permanent stability thereafter.
+
+* TODO [#D] entry_body_blocks drops InlineTask nested bodies; content invisible to search
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-inline-task-bodies-lost-w1u
+:LABELS:   []
+:ISSUE_TYPE: bug
+:CREATED:  [2026-09-11 Fri 09:52]
+:MODIFIED: [2026-09-11 Fri 09:52]
+:CREATED_BY: johnw
+:SOURCE_REPO: org-jw
+:SOURCE_REPO_PATH: /Users/johnw/src/sys/org-jw
+:ORIGINAL_SIZE: 0
+:END:
+
+Discovered while designing the loc-free entry hash (discovered-from org-jw-fix-entry-hash-loc-free-xqn).
+
+`blockInfo` (org-db/src/Org/DB/Store.hs) maps `InlineTask loc _` to ("inline_task", Nothing, pos, Nothing, Nothing) — the nested Body is discarded. `insertBody` therefore persists an InlineTask as a single row with content NULL and never recurses into its nested blocks. Consequences:
+
+- Inline-task content is invisible to entry_embeddings (combinedTextExpr reads entry_body_blocks WHERE content IS NOT NULL).
+- The old `show`-based entry hash DID include nested content, so editing an inline task's text caused churn (entry marked changed) while the DB stored nothing different. The new loc-free hash drops it, matching the DB — but the content is still lost to search.
+
+Fix: persist nested inline-task blocks (e.g. child rows or a flattened content column) and include them in embeddings; decide whether the entry hash should then cover them again. Check whether the corpus actually contains InlineTask blocks before investing.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "org-jw-inline-task-bodies-lost-w1u",
+    "depends_on_id": "org-jw-fix-entry-hash-loc-free-xqn",
+    "type": "discovered-from",
+    "created_at": "2026-09-11T16:52:38.001050Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] Harden upsertEntrySQL: null embeddings only when entry hash changed
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-upsert-conditional-embed-null-aqu
+:LABELS:   []
+:ISSUE_TYPE: bug
+:CREATED:  [2026-09-11 Fri 09:51]
+:MODIFIED: [2026-09-11 Fri 09:52]
+:CREATED_BY: johnw
+:SOURCE_REPO: org-jw
+:SOURCE_REPO_PATH: /Users/johnw/src/sys/org-jw
+:ORIGINAL_SIZE: 0
+:END:
+
+`upsertEntrySQL` (org-db/src/Org/DB/Store.hs:885-895) unconditionally nulls `embedding_hash` and `title_embedding` on conflict:
+
+    ON CONFLICT (id) DO UPDATE SET ... embedding_hash = NULL, title_embedding = NULL
+
+This forces a full re-embed whenever the upsert branch fires for an entry whose content is byte-identical — e.g. duplicate :ID: collisions across files, or a file-row miss (path form change, re-init) that re-inserts every entry in the file via `insertEntryFull`.
+
+Fix: null the embeddings only when the entry's content hash actually changed:
+
+    embedding_hash = CASE WHEN entries.hash IS NOT DISTINCT FROM EXCLUDED.hash
+                           THEN entries.embedding_hash ELSE NULL END
+    title_embedding = CASE WHEN entries.hash IS NOT DISTINCT FROM EXCLUDED.hash
+                           THEN entries.title_embedding ELSE NULL END
+
+Verification is meaningful only after the loc-free hash fix (org-jw-fix-entry-hash-loc-free-xqn): re-storing an unchanged file with stable IDs must leave embedding_hash and title_embedding intact.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "org-jw-upsert-conditional-embed-null-aqu",
+    "depends_on_id": "org-jw-fix-entry-hash-loc-free-xqn",
+    "type": "blocks",
+    "created_at": "2026-09-11T16:52:38.172269Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#D] Version the entry hash scheme so semantics changes invalidate explicitly
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-version-entry-hash-scheme-u7p
+:LABELS:   []
+:ISSUE_TYPE: feature
+:CREATED:  [2026-09-11 Fri 09:51]
+:MODIFIED: [2026-09-11 Fri 09:52]
+:CREATED_BY: johnw
+:SOURCE_REPO: org-jw
+:SOURCE_REPO_PATH: /Users/johnw/src/sys/org-jw
+:ORIGINAL_SIZE: 0
+:END:
+
+Entry content hashes have no scheme version, so when hash semantics change (as in org-jw-fix-entry-hash-loc-free-xqn), stored hashes invalidate silently — indistinguishable from genuinely changed content, and un-diagnosable from the DB alone.
+
+Fix: carry an explicit version marker in entries.hash (e.g. "v2:" prefix on the loc-free serialization landed by the hash fix), document the convention in computeEntryHash, and confirm the one-time invalidation of pre-marker hashes behaves as expected. This may largely already be delivered by the hash fix; this issue exists to make the convention explicit and documented rather than incidental.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "org-jw-version-entry-hash-scheme-u7p",
+    "depends_on_id": "org-jw-fix-entry-hash-loc-free-xqn",
+    "type": "blocks",
+    "created_at": "2026-09-11T16:52:38.552074Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
