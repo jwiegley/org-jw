@@ -1,6 +1,19 @@
 #+TITLE: Obr Issues
 #+SEQ_TODO: TODO DOING DRAFT WAIT DEFER NOTE | DONE CANCELED
-#+ISSUE_PREFIX: org-jw-backfill-entry-ids
+#+ISSUE_PREFIX: org-jw
+
+* TODO [#D] Clean up 5,186 orphan files rows: 5,054 no-headline files (legitimate empty), 132 duplicate-path leftovers from the ~/doc/org era
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-77e
+:LABELS:   []
+:ISSUE_TYPE: chore
+:CREATED:  [2026-09-11 Fri 13:03]
+:MODIFIED: [2026-09-11 Fri 13:03]
+:CREATED_BY: johnw
+:SOURCE_REPO: .
+:ORIGINAL_SIZE: 0
+:END:
 
 * DONE [#B] Backfill :ID: properties into org corpus so entry matching is stable
 :PROPERTIES:
@@ -9,7 +22,7 @@
 :LABELS:   []
 :ISSUE_TYPE: task
 :CREATED:  [2026-09-11 Fri 09:51]
-:MODIFIED: [2026-09-11 Fri 11:24]
+:MODIFIED: [2026-09-11 Fri 13:03]
 :CREATED_BY: johnw
 :FINISHED: [2026-09-11 Fri 11:24]
 :CLOSE_REASON: Backfilled 2104 UUID :ID: properties across 361 files (4888 insertions, 0 deletions) in ~/Documents/org — exactly the files where ALL top-level entries lacked IDs (insertNewFile re-embed class). Backup: ~/.cache/org-jw-backup/org-corpus-20260911-110939.tar.gz. Verified: trip clean on all 362 (exit 0); post-edit JSON structural diff shows only new-UUID ID properties (2096 top+nested of 4979 entries; delta vs 2104 = 8 entries in 2 files modified externally mid-run); lint message-set identical before/after (198 diff lines = line-number shifts only); re-run reports 0 IDs to add; one read-only git-annex file skipped. Scope note recorded as comment: mixed files left alone by design; malformed-ID files flagged for follow-up.
@@ -54,6 +67,13 @@ Corpus scale: ~3,684 files carrying :ID:, ~991 files total in ~/org. Verify with
     "author": "johnw",
     "text": "SCOPE REDUCTION (2026-09-11): Only files where ALL top-level entries lack an :ID: qualify for backfill (matching insertNewFile re-embed behavior). Sampled evidence: 3,685/3,711 files carry :ID:; 25 files lack the string entirely; journal files add fresh IDs themselves; most mixed files have only headline-less structure entries (body text), which the parser does not model as DB entries. Remaining risk: mixed files where SOME starred headlines have IDs and others do not — needs per-file analysis before any write. Also found 119 malformed ID values (e.g. 'DC6A3E96-258E-4D8C-AC3') which fail isValidId and are silently re-UUIDd every sync — those rows churn forever in the DB; flagged for follow-up rather than editing (IDs are cross-referenced by org-id links).",
     "created_at": "2026-09-11T17:59:28Z"
+  },
+  {
+    "id": 2,
+    "issue_id": "org-jw-backfill-entry-ids-6j7",
+    "author": "johnw",
+    "text": "Live verification context (2026-09-11): DB now has 63,177 entries across 7,360 file rows; backfilled subset matched by hash+ID (0 updates on rerun). Legacy un-prefixed hashes still in DB self-heal on next content change per file; a --force embed pass would migrate them all at once if desired.",
+    "created_at": "2026-09-11T20:03:09Z"
   }
 ]
 #+end_src
