@@ -1049,7 +1049,10 @@ upsertEntrySQL =
   \headline = EXCLUDED.headline, title = EXCLUDED.title, \
   \verb = EXCLUDED.verb, context = EXCLUDED.context, \
   \locator = EXCLUDED.locator, hash = EXCLUDED.hash, \
-  \embedding_hash = NULL, title_embedding = NULL, updated_at = now()"
+  \embedding_hash = CASE WHEN entries.hash IS NOT DISTINCT FROM EXCLUDED.hash \
+  \  THEN entries.embedding_hash ELSE NULL END, \
+  \title_embedding = CASE WHEN entries.hash IS NOT DISTINCT FROM EXCLUDED.hash \
+  \  THEN entries.title_embedding ELSE NULL END, updated_at = now()"
 
 insertStampSQL :: Text
 insertStampSQL =
