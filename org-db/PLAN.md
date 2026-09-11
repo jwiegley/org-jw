@@ -151,6 +151,25 @@ Bidirectional sync with conflict detection (Org.DB.Sync).
 
 ---
 
+## Entry hash scheme versioning
+
+`entries.hash` (the per-entry change-detection hash written by
+`Org.DB.Store.computeEntryHash`) carries an explicit scheme version prefix.
+
+- **Current scheme: `v2:`** — loc-free content serialization (headline, title,
+  keyword, priority, tags, properties, body blocks via `blockInfo` projections,
+  stamps and log entries mirroring `insertStampSQL` / `insertLogEntry`).
+- **Superseded scheme (no prefix)** — derived-`show` serialization that
+  embedded `Loc` (file path + byte offsets); it invalidated on any earlier
+  edit in the same file and on path-form changes. All un-prefixed hashes in
+  the database are stale by definition and will be rewritten on the first
+  post-migration sync of each file.
+- **Convention**: any future change to the hash semantics MUST bump the
+  version marker (`v3:`, ...) so the one-time invalidation is explicit and
+  diagnosable from the DB alone (hashes not matching the current marker are
+  stale by definition). The regression tests in `EntryHashTest` enforce
+  marker presence and Loc-independence.
+
 ## Notes
 
 - `postgresql-simple` uses `?` placeholders natively (translates to `$N` on wire) — no placeholder migration needed

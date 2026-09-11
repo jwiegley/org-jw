@@ -215,15 +215,17 @@ Verification is meaningful only after the loc-free hash fix (org-jw-fix-entry-ha
 ]
 #+end_src
 
-* TODO [#D] Version the entry hash scheme so semantics changes invalidate explicitly
+* DONE [#D] Version the entry hash scheme so semantics changes invalidate explicitly
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       org-jw-version-entry-hash-scheme-u7p
 :LABELS:   []
 :ISSUE_TYPE: feature
 :CREATED:  [2026-09-11 Fri 09:51]
-:MODIFIED: [2026-09-11 Fri 09:52]
+:MODIFIED: [2026-09-11 Fri 12:01]
 :CREATED_BY: johnw
+:FINISHED: [2026-09-11 Fri 12:01]
+:CLOSE_REASON: Hash scheme versioning is now explicit and documented: computeEntryHash emits a v2: marker (landed with the loc-free hash fix, 21acff0), the scheme convention and superseded-scheme semantics are documented in org-db/PLAN.md (Entry hash scheme versioning section) including the rule that hash-semantics changes MUST bump the marker, and EntryHashTest asserts marker presence. Verified: cabal build all clean, 14/14 tests pass. Un-prefixed legacy hashes in the DB are stale by definition and self-heal on each file's next sync.
 :SOURCE_REPO: org-jw
 :SOURCE_REPO_PATH: /Users/johnw/src/sys/org-jw
 :ORIGINAL_SIZE: 0
