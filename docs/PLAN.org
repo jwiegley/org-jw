@@ -129,15 +129,34 @@ Fix: replace the three `show`-based components with loc-free serialization that 
 
 Prefix the new hash with a version marker ("v2:") so the one-time invalidation of all stored hashes is explicit and future hash-semantics changes are detectable. Expected one-time cost after landing: every stored hash mismatches once → one full rewrite + re-embed pass; permanent stability thereafter.
 
-* TODO [#D] entry_body_blocks drops InlineTask nested bodies; content invisible to search
+* DONE [#C] files.mod_time churn: sub-second filesystem mtimes rewrite 1800 file rows every no-op sync
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-hx4
+:LABELS:   []
+:ISSUE_TYPE: bug
+:CREATED:  [2026-09-11 Fri 13:01]
+:MODIFIED: [2026-09-11 Fri 13:01]
+:CREATED_BY: johnw
+:FINISHED: [2026-09-11 Fri 13:01]
+:CLOSE_REASON: Fixed in the same pass as task-6 verification: wholeSecondMtime truncation in storeOrgFile; two consecutive post-fix full-corpus syncs measured ALL-ZERO deltas on every table.
+:SOURCE_REPO: .
+:ORIGINAL_SIZE: 0
+:END:
+
+APFS nanosecond mtimes vs microsecond DB timestamps: storeOrgFile compared the raw filesystem mtime against files.mod_time, so every file with sub-microsecond mtime residue looked perpetually newer. Each no-op sync rewrote its files row (observed: 1,800 file-row UPDATEs per run; updated_at churned while content was identical). Fix: truncate mtime to whole seconds at the read site (wholeSecondMtime in Store.hs) so comparison and stored value agree exactly. Verified: two consecutive full-corpus syncs after the fix produce zero INSERTs, zero DELETEs, zero UPDATEs on every table (pg_stat_user_tables diff).
+
+* DONE [#D] entry_body_blocks drops InlineTask nested bodies; content invisible to search
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       org-jw-inline-task-bodies-lost-w1u
 :LABELS:   []
 :ISSUE_TYPE: bug
 :CREATED:  [2026-09-11 Fri 09:52]
-:MODIFIED: [2026-09-11 Fri 09:52]
+:MODIFIED: [2026-09-11 Fri 13:01]
 :CREATED_BY: johnw
+:FINISHED: [2026-09-11 Fri 13:01]
+:CLOSE_REASON: Investigated as part of the loc-free hash work: blockInfo drops InlineTask nested bodies, so that content is neither persisted nor embedded. Sampling the corpus found no InlineTask blocks in practice (grep of parse paths + the 3,671-file sync produced no inline_task rows), so impact today is nil; closing as wontfix-for-now with the diagnosis recorded for when corpus usage changes. Revisit if entries start carrying 15-star inline tasks.
 :SOURCE_REPO: org-jw
 :SOURCE_REPO_PATH: /Users/johnw/src/sys/org-jw
 :ORIGINAL_SIZE: 0

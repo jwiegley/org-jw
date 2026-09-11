@@ -42,7 +42,8 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
-import Data.Time (UTCTime)
+import Data.Time (UTCTime, secondsToDiffTime)
+import Data.Time.Clock (utctDayTime)
 import Data.UUID (toText)
 import Data.UUID.V4 (nextRandom)
 import Numeric (showHex)
@@ -107,7 +108,7 @@ storeOrgFile db org = do
   let path = org ^. orgFilePath
   canonPath <- canonicalizePath path
   let pathText = T.pack canonPath
-  mtime <- getModificationTime path
+  mtime <- wholeSecondMtime <$> getModificationTime path
   existing <- queryFileByPath db pathText
   case existing of
     Just row
@@ -1236,6 +1237,21 @@ timeSuffixParams (Just s) =
 -- | Hash a file and return hex-encoded MD5.
 hashFileText :: FilePath -> IO Text
 hashFileText path = bytesToHex . MD5.hash <$> BS.readFile path
+
+{- | Truncate a modification time to whole seconds.
+
+APFS (and most modern filesystems) carry nanosecond mtimes, while the
+database stores timestamps at microsecond precision. Comparing the raw
+nanosecond mtime against the stored microsecond value makes every file
+with sub-microsecond mtime residue look perpetually newer, so each sync
+rewrote its files row (observed as 1,800 no-op UPDATEs on files per run).
+Truncating at the read site makes the comparison and the stored value
+agree exactly.
+-}
+wholeSecondMtime :: UTCTime -> UTCTime
+wholeSecondMtime t = t{utctDayTime = secondsToDiffTime (floor picos)}
+ where
+  picos = realToFrac (utctDayTime t) :: Double
 
 bytesToHex :: BS.ByteString -> Text
 bytesToHex = T.pack . concatMap byte . BS.unpack
