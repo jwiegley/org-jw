@@ -65,5 +65,8 @@ tests:
     dependencies:
       - org-db
       - http-client
+      - lens
+      - org-data
+      - org-types
       - tasty
       - tasty-hunit

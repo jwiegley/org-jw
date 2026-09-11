@@ -64,6 +64,7 @@ test-suite org-db-test
   main-is: Spec.hs
   other-modules:
       EmbedRetryTest
+      EntryHashTest
       Paths_org_db
   hs-source-dirs:
       test
@@ -87,7 +88,9 @@ test-suite org-db-test
     , http-client-tls
     , http-types
     , lens
+    , org-data
     , org-db
+    , org-types
     , postgresql-simple >=0.7
     , resource-pool >=0.4
     , tasty

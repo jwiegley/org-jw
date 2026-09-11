@@ -80,15 +80,17 @@ Verification is meaningful only after the loc-free hash fix (org-jw-fix-entry-ha
 ]
 #+end_src
 
-* TODO [#A] Sync change detection hashes Loc (file path + byte offsets), causing full-corpus rewrite
+* DONE [#A] Sync change detection hashes Loc (file path + byte offsets), causing full-corpus rewrite
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       org-jw-fix-entry-hash-loc-free-xqn
 :LABELS:   []
 :ISSUE_TYPE: bug
 :CREATED:  [2026-09-11 Fri 09:50]
-:MODIFIED: [2026-09-11 Fri 09:50]
+:MODIFIED: [2026-09-11 Fri 10:43]
 :CREATED_BY: johnw
+:FINISHED: [2026-09-11 Fri 10:43]
+:CLOSE_REASON: computeEntryHash now serializes body/stamps/log entries through content-only projections (blockInfo/stampInfo/insertLogEntry mirrors) instead of derived Show, which embedded Loc (file path + byte offset). Hash carries v2: version marker; computeEntryHash exported; regression suite EntryHashTest (5 cases) proves Loc-independence + content-sensitivity. Verified: cabal build all -Werror clean, 14/14 org-db tests, fourmolu/hlint clean, make lint identical to baseline (16 pre-existing missing-asset errors; 0 round-trip failures).
 :SOURCE_REPO: org-jw
 :SOURCE_REPO_PATH: /Users/johnw/src/sys/org-jw
 :ORIGINAL_SIZE: 0

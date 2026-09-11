@@ -20,3 +20,6 @@
 
 # Allow lambda + case in place of LambdaCase extension
 - ignore: {name: "Use lambda-case"}
+
+# Lens Just-pattern hints: .~ Just x is preferred over ?~ (hlint cannot parse ?~)
+- ignore: {name: "Use ?~"}

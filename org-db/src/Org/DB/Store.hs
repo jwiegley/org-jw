@@ -20,6 +20,9 @@ module Org.DB.Store (
   queryEntryTags,
   queryEntryStamps,
 
+  -- * Entry change detection
+  computeEntryHash,
+
   -- * Vector embedding operations
   querySimilar,
 
@@ -269,21 +272,175 @@ resolveEntryId entry =
 
 {- | Compute a content hash for an entry (excluding children).
 Used to detect whether an entry's own content has changed.
+
+The serialization must be location-free: it must not depend on the
+entry's byte position in the file, on anything earlier in the file, or
+on the form of the file path the parser was handed. Otherwise a single
+edit shifts every later entry's hash and forces a full-file rewrite
+(and re-embedding) even though the content itself is unchanged. For the
+same reason the body, stamps, and log entries are serialized through
+the same content-only projections the database stores (blockInfo /
+stampInfo / insertLogEntry), never through derived Show instances,
+which embed Loc. Nested bodies of InlineTask blocks are omitted,
+matching insertBody, which does not persist them.
+The "v2" marker distinguishes this scheme from the superseded
+location-dependent one; version bumps must change it.
 -}
 computeEntryHash :: Entry -> Text
 computeEntryHash entry =
-  bytesToHex . MD5.hash . TE.encodeUtf8 $
+  ("v2:" <>) . bytesToHex . MD5.hash . TE.encodeUtf8 $
     T.intercalate
       "\0"
       [ T.pack (entry ^. entryHeadline)
+      , T.pack (entry ^. entryTitle)
       , maybe "" (\kw -> kwTypeText kw <> ":" <> kwText kw) (entry ^. entryKeyword)
       , maybe "" T.pack (entry ^. entryPriority)
       , T.intercalate "," [T.pack t | PlainTag t <- entry ^. entryTags]
       , T.intercalate "\n" [T.pack (p ^. name) <> "=" <> T.pack (p ^. value) | p <- entry ^. entryProperties]
-      , T.pack (show (entry ^. entryBody))
-      , T.pack (show (entry ^. entryStamps))
-      , T.pack (show (entry ^. entryLogEntries))
+      , bodyHashText (entry ^. entryBody)
+      , T.intercalate "\n" (map stampHashText (entry ^. entryStamps))
+      , T.intercalate "\n" (map logEntryHashText (entry ^. entryLogEntries))
       ]
+
+-- | Content-only serialization of a Body, mirroring what insertBody persists.
+bodyHashText :: Body -> Text
+bodyHashText body =
+  T.intercalate
+    "\n"
+    [ T.intercalate
+        "\0"
+        [ blockType
+        , fromMaybe "" content
+        , fromMaybe "" dType
+        , fromMaybe "" dName
+        ]
+    | block <- body ^. blocks
+    , let (blockType, content, _, dType, dName) = blockInfo block
+    ]
+
+-- | Content-only serialization of a Stamp, mirroring insertStampSQL.
+stampHashText :: Stamp -> Text
+stampHashText stamp =
+  T.intercalate
+    "\0"
+    ( stampType
+        : timeKindText (time ^. timeKind)
+        : integerText (time ^. timeDay)
+        : maybeIntText (time ^. timeDayEnd)
+        : maybeIntText (time ^. timeStart)
+        : maybeIntText (time ^. timeEnd)
+        : timeSuffixHashParams (time ^. timeSuffix)
+    )
+ where
+  (stampType, time) = stampInfo stamp
+
+-- | Content-only serialization of a LogEntry, mirroring insertLogEntry.
+logEntryHashText :: LogEntry -> Text
+logEntryHashText le = case le of
+  LogClosing _ t mb ->
+    logHash "closing" (Just t) Nothing Nothing Nothing Nothing mb
+  LogState _ toKw mFromKw t mb ->
+    logHash "state" (Just t) mFromKw (Just toKw) Nothing Nothing mb
+  LogNote _ t mb ->
+    logHash "note" (Just t) Nothing Nothing Nothing Nothing mb
+  LogRescheduled _ t oldT mb ->
+    logHash "rescheduled" (Just t) Nothing Nothing (Just oldT) Nothing mb
+  LogNotScheduled _ t oldT mb ->
+    logHash "not_scheduled" (Just t) Nothing Nothing (Just oldT) Nothing mb
+  LogDeadline _ t oldT mb ->
+    logHash "deadline" (Just t) Nothing Nothing (Just oldT) Nothing mb
+  LogNoDeadline _ t oldT mb ->
+    logHash "no_deadline" (Just t) Nothing Nothing (Just oldT) Nothing mb
+  LogRefiling _ t mb ->
+    logHash "refiling" (Just t) Nothing Nothing Nothing Nothing mb
+  LogClock _ t mDur ->
+    logHash "clock" (Just t) Nothing Nothing Nothing mDur Nothing
+  LogBook _ entries ->
+    "logbook\0" <> T.intercalate "\n" (map logEntryHashText entries)
+ where
+  logHash logType mTime mFromKw mToKw mOrigTime mDur mBody =
+    T.intercalate
+      "\0"
+      ( logType
+          : timeHashParams mTime
+          ++ keywordHashParams mFromKw mToKw
+          ++ origTimeHashParams mOrigTime
+          ++ durationHashParams mDur
+          ++ [bodyHashText b | Just b <- [mBody]]
+      )
+
+integerText :: Integer -> Text
+integerText = T.pack . show
+
+maybeIntText :: Maybe Integer -> Text
+maybeIntText = maybe "" integerText
+
+{- | TimeSuffix parameters: suffix_kind, suffix_num, suffix_span,
+suffix_larger_num, suffix_larger_span (5 values).
+-}
+timeSuffixHashParams :: Maybe TimeSuffix -> [Text]
+timeSuffixHashParams Nothing = ["", "", "", "", ""]
+timeSuffixHashParams (Just s) =
+  [ suffixKindText (s ^. suffixKind)
+  , integerText (s ^. suffixNum)
+  , timeSpanText (s ^. suffixSpan)
+  ]
+    ++ case s ^. suffixLargerSpan of
+      Nothing -> ["", ""]
+      Just (n, sp) -> [integerText n, timeSpanText sp]
+
+{- | Time parameters: time_day, time_start, time_end, time_kind (4 values),
+matching timeHashParams used for stamps and log entries.
+-}
+timeHashParams :: Maybe Time -> [Text]
+timeHashParams Nothing = ["", "", "", ""]
+timeHashParams (Just t) =
+  [ integerText (t ^. timeDay)
+  , maybeIntText (t ^. timeStart)
+  , maybeIntText (t ^. timeEnd)
+  , timeKindText (t ^. timeKind)
+  ]
+
+{- | Keyword parameters: from_keyword, from_keyword_type, to_keyword,
+to_keyword_type (4 values), matching keywordHashParams.
+-}
+keywordHashParams :: Maybe Keyword -> Maybe Keyword -> [Text]
+keywordHashParams mFrom mTo =
+  [ maybe "" kwText mFrom
+  , maybe "" kwTypeText mFrom
+  , maybe "" kwText mTo
+  , maybe "" kwTypeText mTo
+  ]
+
+{- | Original time parameters for rescheduled/deadline changes (8 values),
+matching origTimeHashParams.
+-}
+origTimeHashParams :: Maybe Time -> [Text]
+origTimeHashParams Nothing = replicate 8 ""
+origTimeHashParams (Just t) =
+  [ integerText (t ^. timeDay)
+  , maybeIntText (t ^. timeDayEnd)
+  , maybeIntText (t ^. timeStart)
+  , maybeIntText (t ^. timeEnd)
+  , timeKindText (t ^. timeKind)
+  ]
+    ++ case t ^. timeSuffix of
+      Nothing -> ["", "", ""]
+      Just s ->
+        [ suffixKindText (s ^. suffixKind)
+        , integerText (s ^. suffixNum)
+        , timeSpanText (s ^. suffixSpan)
+        ]
+
+{- | Duration parameters: duration_hours, duration_mins (2 values),
+matching durationHashParams.
+-}
+durationHashParams :: Maybe Duration -> [Text]
+durationHashParams Nothing = ["", ""]
+durationHashParams (Just d) =
+  [ integerText (d ^. hours)
+  , integerText (d ^. mins)
+  ]
 
 -- | Insert the file row and properties for a new file.
 insertFileRow :: DBHandle -> Text -> OrgFile -> Text -> UTCTime -> Text -> IO ()
