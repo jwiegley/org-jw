@@ -58,15 +58,17 @@ Corpus scale: ~3,684 files carrying :ID:, ~991 files total in ~/org. Verify with
 ]
 #+end_src
 
-* TODO [#C] Batch embedding-side churn: set-based deletes and hash maintenance
+* DONE [#C] Batch embedding-side churn: set-based deletes and hash maintenance
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       org-jw-batch-embed-churn-8z7
 :LABELS:   []
 :ISSUE_TYPE: task
 :CREATED:  [2026-09-11 Fri 09:51]
-:MODIFIED: [2026-09-11 Fri 09:52]
+:MODIFIED: [2026-09-11 Fri 11:56]
 :CREATED_BY: johnw
+:FINISHED: [2026-09-11 Fri 11:56]
+:CLOSE_REASON: Embedding-side churn now set-based: (1) stale chunk deletion is one DELETE ... WHERE entry_id = ANY(?) per 1000-id batch (Postgres text-array literal form verified live against postgres.vulcan.lan) instead of one round trip per entry; (2) updateEmbeddingHashes rewrites embedding_hash for a whole batch via VALUES-driven single UPDATE (verified live), replacing 65,736 per-entry recursive-CTE updates; (3) unique helper is Set-based instead of O(n^2). Full verification: cabal build all clean, 14/14 tests, fourmolu/hlint clean, make lint == 16-error baseline.
 :SOURCE_REPO: org-jw
 :SOURCE_REPO_PATH: /Users/johnw/src/sys/org-jw
 :ORIGINAL_SIZE: 0

@@ -13,7 +13,7 @@ module Org.DB.Embed (
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.QSem (newQSem, signalQSem, waitQSem)
 import Control.Exception (SomeException, bracket_, try)
-import Control.Monad (void)
+import Control.Monad (forM_, void)
 
 import Data.Aeson (FromJSON (..), ToJSON (..), eitherDecode, encode, object, withObject, (.:), (.=))
 import Data.Bifunctor (second)
@@ -24,6 +24,7 @@ import Data.List (sortBy)
 import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
 import Data.Pool (Pool)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -228,11 +229,11 @@ embedEntries pool cfg progress = do
     else do
       let n = max 1 (embedConcurrency cfg)
       -- Delete stale chunks for entries that will be re-embedded
+      -- Delete stale chunks for entries that will be re-embedded (one
+      -- set-based statement rather than a round trip per entry)
       withPooledDB pool $ \db ->
         dbTransaction db $
-          mapM_
-            (\eid -> dbExecute_ db "DELETE FROM entry_embeddings WHERE entry_id = ?" [SqlText eid])
-            candidateIds
+          deleteStaleChunks db candidateIds
       -- Build labeled chunks from structured segments (parallel across entries)
       allChunks <-
         concat
@@ -543,7 +544,7 @@ processChunkBatch pool cfg manager batch = do
                 (zip batch vecs)
               -- Update embedding_hash for all entries in this batch
               let entryIds = map (\(eid, _, _, _) -> eid) batch
-              mapM_ (updateEmbeddingHash db) (unique entryIds)
+              updateEmbeddingHashes db (unique entryIds)
           pure (Right (length batch))
 
 storeChunkEmbedding :: DBHandle -> Text -> Int -> Text -> Text -> [Double] -> IO ()
@@ -565,6 +566,17 @@ storeChunkEmbedding db entryId chunkPos chunkSrc chunkTxt vec = do
     , SqlText vecText
     ]
 
+{- | Delete all embedding rows for the given entry ids in a single
+statement using ANY(?).
+-}
+deleteStaleChunks :: DBHandle -> [Text] -> IO ()
+deleteStaleChunks db entryIds = do
+  forM_ (chunksOf 1000 entryIds) $ \chunk ->
+    dbExecute_
+      db
+      "DELETE FROM entry_embeddings WHERE entry_id = ANY (?)"
+      [SqlText ("{" <> T.intercalate "," chunk <> "}")]
+
 {- | Update the embedding_hash on the entry to mark it as current.
 Uses a subquery to compute the hash from the same combined_text as candidateSQL.
 -}
@@ -580,6 +592,33 @@ updateEmbeddingHash db entryId =
            \) WHERE id = ?"
     )
     [SqlText entryId]
+
+{- | Update embedding_hash for many entries in one statement, using
+the same combined_text computation as 'updateEmbeddingHash' but driven
+from a VALUES list of entry ids instead of one round trip per entry.
+-}
+updateEmbeddingHashes :: DBHandle -> [Text] -> IO ()
+updateEmbeddingHashes db entryIds = do
+  forM_ (chunksOf 1000 entryIds) $ \chunk -> do
+    let values = T.intercalate ", " ["('" <> escapeLiteral eid <> "')" | eid <- chunk]
+    dbExecute_
+      db
+      ( "UPDATE entries SET embedding_hash = (\
+        \  SELECT md5("
+          <> combinedTextExpr
+          <> ")\
+             \  FROM entries e WHERE e.id = entries.id\
+             \) WHERE id IN (SELECT id FROM (VALUES "
+          <> values
+          <> ") AS ids(id))"
+      )
+      []
+
+{- | Escape a Text literal for safe interpolation into a SQL string
+(single-quote doubling); the id is otherwise validated upstream.
+-}
+escapeLiteral :: Text -> Text
+escapeLiteral = T.replace "'" "''"
 
 showDouble :: Double -> Text
 showDouble d = T.pack (showFFloat Nothing d "")
@@ -748,6 +787,5 @@ chunksOf :: Int -> [a] -> [[a]]
 chunksOf _ [] = []
 chunksOf n xs = let (h, t) = splitAt n xs in h : chunksOf n t
 
-unique :: (Eq a) => [a] -> [a]
-unique [] = []
-unique (x : xs) = x : unique (filter (/= x) xs)
+unique :: (Ord a) => [a] -> [a]
+unique = Set.toList . Set.fromList
