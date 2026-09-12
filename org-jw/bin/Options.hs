@@ -222,8 +222,13 @@ tradeJournalOpts =
 optionsDefinition :: ParserInfo Options
 optionsDefinition =
   info
-    (helper <*> tradeJournalOpts)
+    (helper <*> versionOption <*> tradeJournalOpts)
     (fullDesc <> progDesc "" <> header tradeJournalSummary)
+ where
+  versionOption =
+    infoOption
+      tradeJournalSummary
+      (long "version" <> help "Show version")
 
 getOptions :: IO Options
 getOptions = execParser optionsDefinition
