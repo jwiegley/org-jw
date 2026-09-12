@@ -15,6 +15,7 @@ import Lint.Options
 import Options
 import Org.Data
 import Org.Print
+import Org.Types (Collection (..), CollectionItem (..))
 import Read hiding (readFile)
 import Site.Exec
 import Stats.Exec
@@ -42,13 +43,14 @@ main = do
     Just path -> applyDotFile cfg' <$> readFile path
 
   paths <- maybe (pure []) getInputPaths (inputs opts)
-  paths' <- case command opts of
-    Lint lintOpts ->
-      -- When linting, only check files that have changed since the last lint
-      -- run, if --check-dir has been given.
-      winnowPaths (lintOpts ^. checkDir) paths
+  -- When linting with --check-dir, only the files changed since the last
+  -- lint run are checked below, but the whole corpus still has to be parsed:
+  -- the [[id:...]] resolution universe and cross-file duplicate detection
+  -- need every file, not just the changed subset.
+  checkPaths <- case command opts of
+    Lint lintOpts -> winnowPaths (lintOpts ^. checkDir) paths
     _ -> pure paths
-  coll <- readCollectionIO opts cfg paths'
+  coll <- readCollectionIO opts cfg paths
 
   let orgItems = coll ^.. items . traverse . _OrgItem
   case command opts of
@@ -62,7 +64,8 @@ main = do
         forM_ (org ^. orgFileEntries) $
           mapM_ putStrLn . summarizeEntry cfg
     Json jsonOpts -> execJson cfg jsonOpts coll
-    Lint lintOpts -> execLint cfg lintOpts coll
+    Lint lintOpts ->
+      execLint cfg lintOpts coll (filterOrgItems checkPaths coll)
     Stats statsOpts -> execStats cfg statsOpts coll
     Tags tagsOpts -> execTags cfg tagsOpts coll
     Trip tripOpts -> execTrip cfg tripOpts coll
@@ -76,3 +79,17 @@ main = do
         pPrint $ e ^? anyProperty cfg "TITLE"
         pPrint $ e ^? anyProperty cfg "ITEM"
         pPrint $ e ^? anyProperty cfg "FOOBAR"
+
+-- Keep only the collection items whose file path is in the given set, but
+-- preserve relative ordering.
+filterOrgItems :: [FilePath] -> Collection -> Collection
+filterOrgItems wanted (Collection xs) =
+  Collection
+    [ x
+    | x <- xs
+    , Just p <- [itemPath x]
+    , p `elem` wanted
+    ]
+ where
+  itemPath (OrgItem o) = Just (o ^. orgFilePath)
+  itemPath (DataItem p) = Just p
