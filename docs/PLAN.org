@@ -118,6 +118,21 @@ Verification is meaningful only after the loc-free hash fix (org-jw-fix-entry-ha
 ]
 #+end_src
 
+* DONE [#B] Lint: [[id:]] links resolved against winnowed subset instead of full corpus
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-c2w
+:LABELS:   []
+:ISSUE_TYPE: bug
+:CREATED:  [2026-09-11 Fri 17:32]
+:MODIFIED: [2026-09-11 Fri 17:32]
+:CREATED_BY: johnw
+:FINISHED: [2026-09-11 Fri 17:32]
+:CLOSE_REASON: Fixed in commit a1bd0df: execLint now receives the full parsed corpus for the [[id:]] universe and duplicate-ID detection, while checking/round-tripping/chk-stamping only the winnowed subset. Verified on the org corpus: re-linting a single post with stale chk stamps resolves all cross-post id links (previously 46 corpus-wide false errors).
+:SOURCE_REPO: .
+:ORIGINAL_SIZE: 0
+:END:
+
 * DONE [#A] Sync change detection hashes Loc (file path + byte offsets), causing full-corpus rewrite
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
