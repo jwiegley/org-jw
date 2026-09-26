@@ -133,6 +133,68 @@ Verification is meaningful only after the loc-free hash fix (org-jw-fix-entry-ha
 :ORIGINAL_SIZE: 0
 :END:
 
+* TODO [#D] org_sql: add a server-side statement_timeout and reject side-effecting pg_* functions
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-d0j
+:LABELS:   []
+:ISSUE_TYPE: task
+:CREATED:  [2026-09-26 Sat 14:09]
+:MODIFIED: [2026-09-26 Sat 14:10]
+:CREATED_BY: johnw
+:SOURCE_REPO: .
+:ORIGINAL_SIZE: 0
+:END:
+
+Pre-existing. The keyword filter tokenizes on [a-z_]+, so set_config, pg_notify, pg_sleep, pg_terminate_backend, lo_import pass validation. The real boundary (READ ONLY transaction + SELECT-only openclaw role) holds, but a prompt-injected agent can hang a call with pg_sleep or signal other openclaw backends, and there is no statement_timeout. Fix: psycopg2.connect(..., options='-c statement_timeout=30000'); optionally reject tokens starting with pg_ / lo_ and set_config, dblink.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "org-jw-d0j",
+    "depends_on_id": "org-jw-k38",
+    "type": "discovered-from",
+    "created_at": "2026-09-26T21:10:08.872747Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#D] org db search: read the embedding API key from the environment so org_search can drop --api-key from argv
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-f6n
+:LABELS:   []
+:ISSUE_TYPE: task
+:CREATED:  [2026-09-26 Sat 14:09]
+:MODIFIED: [2026-09-26 Sat 14:10]
+:CREATED_BY: johnw
+:SOURCE_REPO: .
+:ORIGINAL_SIZE: 0
+:END:
+
+Pre-existing. org_search passes OPENROUTER_API_KEY to 'org' as --api-key, so it is readable from /proc/<pid>/cmdline inside the Hermes VM while a search runs. org-jw/bin/DB/Options.hs:379 defines --api-key as a strOption with no env fallback. Fix: default --api-key from OPENROUTER_API_KEY (or add --api-key-env), then drop the argv from org-db-mcp.py's org_search (the wrapper already exports the key).
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "org-jw-f6n",
+    "depends_on_id": "org-jw-k38",
+    "type": "discovered-from",
+    "created_at": "2026-09-26T21:10:09.081560Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
 * DONE [#A] Sync change detection hashes Loc (file path + byte offsets), causing full-corpus rewrite
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
@@ -163,6 +225,37 @@ Fix: replace the three `show`-based components with loc-free serialization that 
 - Log entries: mirror `insertLogEntry` — (log_type, time fields, from/to keywords, orig-time fields, duration, nested loc-free body); LogBook recurses.
 
 Prefix the new hash with a version marker ("v2:") so the one-time invalidation of all stored hashes is explicit and future hash-semantics changes are detectable. Expected one-time cost after landing: every stored hash mismatches once → one full rewrite + re-embed pass; permanent stability thereafter.
+
+* TODO [#E] org-db-mcp: document ORG_DB_TIMEOUT_S and fit org 1.0.0 embed retries inside it
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-hwp
+:LABELS:   []
+:ISSUE_TYPE: chore
+:CREATED:  [2026-09-26 Sat 14:09]
+:MODIFIED: [2026-09-26 Sat 14:10]
+:CREATED_BY: johnw
+:SOURCE_REPO: .
+:ORIGINAL_SIZE: 0
+:END:
+
+The docstring's env block omits ORG_DB_TIMEOUT_S (default 60). org 1.0.0 retries ResponseTimeout up to 4 times against the http-client 30s default, so a hung gateway makes org_search report 'timed out after 60s' instead of the HTTP error; cap the total retry budget in Org.DB.Embed or raise/document the tool timeout.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "org-jw-hwp",
+    "depends_on_id": "org-jw-k38",
+    "type": "discovered-from",
+    "created_at": "2026-09-26T21:10:09.304816Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
 
 * DONE [#C] files.mod_time churn: sub-second filesystem mtimes rewrite 1800 file rows every no-op sync
 :PROPERTIES:
@@ -222,20 +315,53 @@ Fix: persist nested inline-task blocks (e.g. child rows or a flattened content c
 ]
 #+end_src
 
-* DOING [#C] Move org-db MCP server from vulcan /etc/nixos/scripts into org-jw as flake package org-db-mcp
+* DONE [#C] Move org-db MCP server from vulcan /etc/nixos/scripts into org-jw as flake package org-db-mcp
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       org-jw-k38
 :LABELS:   []
 :ISSUE_TYPE: task
 :CREATED:  [2026-09-26 Sat 12:16]
-:MODIFIED: [2026-09-26 Sat 12:16]
+:MODIFIED: [2026-09-26 Sat 14:09]
 :CREATED_BY: johnw
+:FINISHED: [2026-09-26 Sat 14:09]
+:CLOSE_REASON: Moved into org-db-mcp/ (a81abb5) as packages.<system>.org-db-mcp with checks.<system>.org-db-mcp. Vulcan consumes it via overlay pkgs.org-db-mcp (nixos-config d05df81ea, lock org-jw -> a81abb5), switched 2026-09-26 13:57 PDT; old scripts/org-db-mcp.py deleted (b10b21908). Live-verified: org_sql/org_search return data through the Hermes agent, DELETE rejected, new vs old server byte-identical on the live DB, no tracebacks, all 8 MCP servers re-registered.
 :SOURCE_REPO: .
 :ORIGINAL_SIZE: 0
 :END:
 
 Relocate vulcan's /etc/nixos/scripts/org-db-mcp.py (FastMCP stdio server: org_sql read-only SELECT via psycopg2, org_search via `org db search`) into this repo as org-db-mcp/, exposed as flake output packages.<system>.org-db-mcp bundling its own python312 (mcp, psycopg2). Vulcan's hermes-vm.nix wrapper keeps all env/secret handling and just execs the package. Env contract (PG*, ORG_CONFIG, ORG_DB_BASE_URL, ORG_DB_MODEL, ORG_DB_TIMEOUT_S, OPENROUTER_API_KEY) unchanged. packages.default stays the org CLI.
+
+* TODO [#D] org_search: pass -- before the query so dash-prefixed queries are not parsed as org options
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-n2k
+:LABELS:   []
+:ISSUE_TYPE: bug
+:CREATED:  [2026-09-26 Sat 14:09]
+:MODIFIED: [2026-09-26 Sat 14:10]
+:CREATED_BY: johnw
+:SOURCE_REPO: .
+:ORIGINAL_SIZE: 0
+:END:
+
+Pre-existing (identical before the move into org-jw). org-db-mcp.py builds argv ... --api-key KEY <query> -n N with no -- separator, so a query starting with '-' is parsed by the org CLI: '-pool heater' fails with Invalid option, and '--format=json' injects the -f option (seen live on vulcan 2026-09-26, same on org 0.0.1 and 1.0.0). Fix: put the query after '--' (optparse-applicative honors it) and keep -n before it.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "org-jw-n2k",
+    "depends_on_id": "org-jw-k38",
+    "type": "discovered-from",
+    "created_at": "2026-09-26T21:10:08.656438Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
 
 * DONE [#B] Harden upsertEntrySQL: null embeddings only when entry hash changed
 :PROPERTIES:
