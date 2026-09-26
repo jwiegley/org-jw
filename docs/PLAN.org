@@ -222,6 +222,21 @@ Fix: persist nested inline-task blocks (e.g. child rows or a flattened content c
 ]
 #+end_src
 
+* DOING [#C] Move org-db MCP server from vulcan /etc/nixos/scripts into org-jw as flake package org-db-mcp
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-k38
+:LABELS:   []
+:ISSUE_TYPE: task
+:CREATED:  [2026-09-26 Sat 12:16]
+:MODIFIED: [2026-09-26 Sat 12:16]
+:CREATED_BY: johnw
+:SOURCE_REPO: .
+:ORIGINAL_SIZE: 0
+:END:
+
+Relocate vulcan's /etc/nixos/scripts/org-db-mcp.py (FastMCP stdio server: org_sql read-only SELECT via psycopg2, org_search via `org db search`) into this repo as org-db-mcp/, exposed as flake output packages.<system>.org-db-mcp bundling its own python312 (mcp, psycopg2). Vulcan's hermes-vm.nix wrapper keeps all env/secret handling and just execs the package. Env contract (PG*, ORG_CONFIG, ORG_DB_BASE_URL, ORG_DB_MODEL, ORG_DB_TIMEOUT_S, OPENROUTER_API_KEY) unchanged. packages.default stays the org CLI.
+
 * DONE [#B] Harden upsertEntrySQL: null embeddings only when entry hash changed
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17

@@ -61,8 +61,11 @@
           "org-types"
         ];
 
+        orgDbMcp = pkgs.callPackage ./org-db-mcp/package.nix { };
+
       in flake // {
         packages.default = flake.packages."org-jw:exe:org";
+        packages.org-db-mcp = orgDbMcp;
 
         devShells.default = flake.devShells.default // {
           withHoogle = true;
@@ -86,6 +89,14 @@
             cd $src
             find ${hsDirs} -name '*.hs' -type f \
               | xargs hlint
+            touch $out
+          '';
+
+          # MCP handshake + org_sql must reject writes; PGHOST points nowhere.
+          org-db-mcp = pkgs.runCommand "check-org-db-mcp" { } ''
+            PGHOST=/nonexistent/no-postgres \
+              ${pkgs.python312}/bin/python3 ${./org-db-mcp/selfcheck.py} \
+              ${orgDbMcp}/bin/org-db-mcp
             touch $out
           '';
         };
