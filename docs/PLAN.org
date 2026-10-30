@@ -15,6 +15,24 @@
 :ORIGINAL_SIZE: 0
 :END:
 
+* DONE [#C] Compare filename slugs by canonical Unicode
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       org-jw-8s8
+:LABELS:   []
+:ISSUE_TYPE: bug
+:CREATED:  [2026-10-30 Fri 08:47]
+:MODIFIED: [2026-10-30 Fri 14:45]
+:CREATED_BY: johnw
+:FINISHED: [2026-10-30 Fri 14:45]
+:CLOSE_REASON: Won't fix in the linter. John directed that the ingestion process produce precomposed (NFC) filenames matching the title-derived slug, rather than normalizing in lint. The eight Riḍván wiki Source-Record files were renamed to NFC and the ingest procedure now verifies filenames using the filesystem's own spelling (make lint from the repository root). The drafted NFC-comparison patch and tests were discarded uncommitted.
+:SOURCE_REPO: org-jw
+:SOURCE_REPO_PATH: /Users/johnw/src/sys/org-jw
+:ORIGINAL_SIZE: 0
+:END:
+
+The Org repository hook rejects eight decomposed macOS Riḍván filenames although the title-derived slugs are canonically equivalent. Normalize both slugs to NFC only for equality, preserve real mismatches and original path spelling, and add regression tests. Required to publish the paused UHJ wiki checkpoint.
+
 * DONE [#B] Backfill :ID: properties into org corpus so entry matching is stable
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
