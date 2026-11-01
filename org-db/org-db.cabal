@@ -20,6 +20,7 @@ library
       Org.DB.Schema
       Org.DB.Store
       Org.DB.Query
+      Org.DB.Render
       Org.DB.Deserialize
       Org.DB.Sync
       Org.DB.Migrate
@@ -65,6 +66,7 @@ test-suite org-db-test
   other-modules:
       EmbedRetryTest
       EntryHashTest
+      RenderTest
       Paths_org_db
   hs-source-dirs:
       test
