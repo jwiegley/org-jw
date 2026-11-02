@@ -32,7 +32,7 @@ echo "Running unit test suites with coverage..."
 # Test suites emit their own .tix files which we merge with the
 # round-trip .tix below (via hpc sum --union). Failures here are
 # non-fatal because the round-trip data is still useful on its own.
-cabal test org-data-test org-lint-test org-types-test org-print-test org-parse-test flatparse-util-test \
+cabal test org-data-test org-lint-test org-types-test org-print-test org-parse-test flatparse-util-test org-db-test \
     --enable-coverage \
     --builddir="$COVERAGE_BUILDDIR" \
     --test-show-details=failures 2>&1 | tail -3 || true
@@ -109,6 +109,8 @@ fi
 
 # Packages to exclude from coverage measurement:
 #  - org-db, org-dot: database/IO code not exercised by round-trip
+#    (org-db's pure modules, such as Org.DB.Render, stay in: org-db-test
+#    covers them)
 #  - org-site, org-json, org-cbor, org-filetags: feature packages not
 #    exercised by the lint --round-trip command
 #  - org-jw executable modules (Main, Options, etc.): CLI glue
