@@ -23,7 +23,7 @@ lint: $(CABAL_FILES)
 	cabal build all
 	cd ~/org
 	@CHECK=false;								\
-	if [[ $$(hostname) =~ [Hh]era ]]; then					\
+	if [[ $$(hostname) =~ [Cc]lio ]]; then					\
 	    CHECK=true;								\
 	fi;									\
 	$(FIND_FILES)								\

@@ -49,7 +49,7 @@ fi
 rm -f "$TIX_FILE"
 
 CHECK=false
-if [[ $(hostname) =~ [Hh]era ]]; then
+if [[ $(hostname) =~ [Cc]lio ]]; then
     CHECK=true
 fi
 
